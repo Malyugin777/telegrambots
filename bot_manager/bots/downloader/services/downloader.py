@@ -95,9 +95,6 @@ class VideoDownloader:
             # YouTube: ios клиент быстрее отдаёт готовые mp4
             'extractor_args': {
                 'youtube': {'player_client': ['ios', 'android']},
-                'tiktok': {
-                    'api_hostname': 'api22-normal-c-useast2a.tiktokv.com',
-                }
             },
 
             # User-Agent мобильный (быстрее отдают контент)
@@ -130,7 +127,6 @@ class VideoDownloader:
 
             'extractor_args': {
                 'youtube': {'player_client': ['android', 'web']},
-                'tiktok': {'api_hostname': 'api22-normal-c-useast2a.tiktokv.com'},
             },
         }
 

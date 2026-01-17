@@ -44,18 +44,24 @@ async def register_bot(bot_username: str, bot_name: str = "SaveNinja") -> int:
             BOT_DB_ID = bot.id
             logger.info(f"Bot found in DB: id={bot.id}, name={bot.name}")
         else:
-            # Создаём нового бота
-            new_bot = Bot(
-                name=bot_name,
-                bot_username=bot_username,
-                token_hash="downloader",  # Заглушка
-                description="All-in-One Video Downloader",
-                settings={"type": "downloader"}
+            # Создаём нового бота через raw SQL (обход проблемы с enum)
+            from sqlalchemy import text
+            result = await session.execute(
+                text("""
+                    INSERT INTO bots (name, bot_username, token_hash, description, status, settings, created_at, updated_at)
+                    VALUES (:name, :username, :token, :desc, 'ACTIVE', :settings, NOW(), NOW())
+                    RETURNING id
+                """),
+                {
+                    "name": bot_name,
+                    "username": bot_username,
+                    "token": "downloader",
+                    "desc": "All-in-One Video Downloader",
+                    "settings": '{"type": "downloader"}'
+                }
             )
-            session.add(new_bot)
-            await session.flush()
-            BOT_DB_ID = new_bot.id
-            logger.info(f"Bot registered in DB: id={new_bot.id}, username={bot_username}")
+            BOT_DB_ID = result.scalar_one()
+            logger.info(f"Bot registered in DB: id={BOT_DB_ID}, username={bot_username}")
 
         return BOT_DB_ID
 
@@ -73,65 +79,51 @@ async def track_user(tg_user: TgUser) -> int | None:
     if not tg_user:
         return None
 
-    async with db.session() as session:
-        # Upsert пользователя
-        stmt = insert(User).values(
-            telegram_id=tg_user.id,
-            username=tg_user.username,
-            first_name=tg_user.first_name,
-            last_name=tg_user.last_name,
-            language_code=tg_user.language_code,
-            last_active_at=datetime.utcnow()
-        ).on_conflict_do_update(
-            index_elements=['telegram_id'],
-            set_={
-                'username': tg_user.username,
-                'first_name': tg_user.first_name,
-                'last_name': tg_user.last_name,
-                'language_code': tg_user.language_code,
-                'last_active_at': datetime.utcnow(),
-                'updated_at': datetime.utcnow()
-            }
-        ).returning(User.id)
+    try:
+        async with db.session() as session:
+            from sqlalchemy import text
 
-        result = await session.execute(stmt)
-        user_id = result.scalar_one()
-
-        # Upsert bot_user связь
-        if BOT_DB_ID:
-            bot_user_stmt = insert(BotUser).values(
-                user_id=user_id,
-                bot_id=BOT_DB_ID,
-                last_interaction=datetime.utcnow()
-            ).on_conflict_do_update(
-                index_elements=['user_id', 'bot_id'],
-                set_={
-                    'last_interaction': datetime.utcnow(),
-                    'is_subscribed': True
+            # Upsert пользователя через raw SQL (для совместимости с enum)
+            result = await session.execute(
+                text("""
+                    INSERT INTO users (telegram_id, username, first_name, last_name, language_code, role, is_banned, created_at, updated_at, last_active_at)
+                    VALUES (:tg_id, :username, :first_name, :last_name, :lang, 'USER', false, NOW(), NOW(), NOW())
+                    ON CONFLICT (telegram_id) DO UPDATE SET
+                        username = EXCLUDED.username,
+                        first_name = EXCLUDED.first_name,
+                        last_name = EXCLUDED.last_name,
+                        language_code = EXCLUDED.language_code,
+                        last_active_at = NOW(),
+                        updated_at = NOW()
+                    RETURNING id
+                """),
+                {
+                    "tg_id": tg_user.id,
+                    "username": tg_user.username,
+                    "first_name": tg_user.first_name,
+                    "last_name": tg_user.last_name,
+                    "lang": tg_user.language_code
                 }
             )
-            # Добавляем constraint если его нет
-            try:
-                await session.execute(bot_user_stmt)
-            except Exception:
-                # Если нет уникального индекса, делаем обычный upsert
-                existing = await session.execute(
-                    select(BotUser).where(
-                        BotUser.user_id == user_id,
-                        BotUser.bot_id == BOT_DB_ID
-                    )
-                )
-                bot_user = existing.scalar_one_or_none()
-                if bot_user:
-                    bot_user.last_interaction = datetime.utcnow()
-                else:
-                    session.add(BotUser(
-                        user_id=user_id,
-                        bot_id=BOT_DB_ID,
-                        last_interaction=datetime.utcnow()
-                    ))
+            user_id = result.scalar_one()
 
-        return user_id
+            # Upsert bot_user связь
+            if BOT_DB_ID:
+                await session.execute(
+                    text("""
+                        INSERT INTO bot_users (user_id, bot_id, is_subscribed, joined_at, last_interaction)
+                        VALUES (:user_id, :bot_id, true, NOW(), NOW())
+                        ON CONFLICT (user_id, bot_id) DO UPDATE SET
+                            last_interaction = NOW(),
+                            is_subscribed = true
+                    """),
+                    {"user_id": user_id, "bot_id": BOT_DB_ID}
+                )
+
+            return user_id
+    except Exception as e:
+        logger.warning(f"Failed to track user: {e}")
+        return None
 
 
 async def log_action(user_id: int | None, action: str, details: dict = None):

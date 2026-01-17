@@ -35,9 +35,7 @@ URL_PATTERN = re.compile(
     r"tiktok\.com|"                          # TikTok
     r"instagram\.com|instagr\.am|"           # Instagram (все форматы)
     r"youtube\.com/shorts|youtu\.be|"        # YouTube Shorts
-    r"pinterest\.[a-z.]+|pin\.it|"           # Pinterest
-    r"twitter\.com|x\.com|"                  # Twitter/X
-    r"facebook\.com|fb\.watch"               # Facebook
+    r"pinterest\.[a-z.]+|pin\.it"            # Pinterest
     r")"
     r"[^\s]*",
     re.IGNORECASE
@@ -47,11 +45,9 @@ URL_PATTERN = re.compile(
 def use_rapidapi(url: str) -> bool:
     """Проверяет, нужно ли использовать RapidAPI для этого URL"""
     url_lower = url.lower()
-    # RapidAPI для: Instagram, Twitter/X, Facebook (yt-dlp плохо работает)
+    # RapidAPI только для Instagram (yt-dlp требует авторизации)
     return any(domain in url_lower for domain in [
-        'instagram.com', 'instagr.am',
-        'twitter.com', 'x.com',
-        'facebook.com', 'fb.watch'
+        'instagram.com', 'instagr.am'
     ])
 
 

@@ -65,7 +65,16 @@ RAPIDAPI_HOST=social-download-all-in-one.p.rapidapi.com
 
 **Загрузчики:**
 - Instagram → RapidAPI (yt-dlp требует авторизации)
-- TikTok, YouTube, Pinterest → yt-dlp
+- TikTok, YouTube Shorts, Pinterest → yt-dlp (работает без API)
+
+## Поддерживаемые платформы
+
+| Платформа | Форматы | Движок |
+|-----------|---------|--------|
+| Instagram | Фото, видео, карусели, истории, актуальное | RapidAPI |
+| Pinterest | Фото и видео | yt-dlp |
+| TikTok | Видео без водяного знака | yt-dlp |
+| YouTube Shorts | Короткие видео | yt-dlp |
 
 ## Частые команды
 

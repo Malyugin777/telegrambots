@@ -32,12 +32,6 @@ START_MESSAGE = """
 ▶️ <b>YouTube Shorts</b>
 Короткие видео
 
-🐦 <b>Twitter/X</b>
-Видео из постов
-
-📘 <b>Facebook</b>
-Видео из постов
-
 Просто отправь ссылку!
 """.strip()
 
@@ -58,12 +52,6 @@ UNSUPPORTED_URL_MESSAGE = """
 
 ▶️ <b>YouTube Shorts</b>
 Короткие видео
-
-🐦 <b>Twitter/X</b>
-Видео из постов
-
-📘 <b>Facebook</b>
-Видео из постов
 """.strip()
 
 # Помощь
@@ -82,8 +70,7 @@ HELP_MESSAGE = """
 • <code>https://vm.tiktok.com/...</code>
 • <code>https://youtube.com/shorts/...</code>
 • <code>https://pin.it/...</code>
-• <code>https://twitter.com/.../status/...</code>
-• <code>https://www.facebook.com/watch/...</code>
+• <code>https://pinterest.com/pin/...</code>
 
 <b>Ограничения:</b>
 • Максимальный размер: 50MB

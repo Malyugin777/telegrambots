@@ -6,7 +6,16 @@
 
 | Бот | Username | Описание |
 |-----|----------|----------|
-| SaveNinja | @SaveNinja_bot | Скачивание видео из TikTok, Instagram, YouTube Shorts, Pinterest |
+| SaveNinja | @SaveNinja_bot | Скачивание медиа из соцсетей |
+
+### SaveNinja - Поддерживаемые платформы
+
+| Платформа | Форматы | Движок |
+|-----------|---------|--------|
+| **Instagram** | Фото, видео, карусели, истории, актуальное | RapidAPI |
+| **Pinterest** | Фото и видео | yt-dlp |
+| **TikTok** | Видео без водяного знака | yt-dlp |
+| **YouTube Shorts** | Короткие видео | yt-dlp |
 
 ## Архитектура
 

@@ -84,23 +84,28 @@ async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: Dow
         # Отправляем файл
         file = FSInputFile(result.file_path, filename=result.filename)
 
+        # Подпись бота
+        bot_signature = "\n\n❤️ Скачано в @SaveNinja_bot"
+
         if format_type == "audio":
             await bot.send_audio(
                 chat_id=callback.message.chat.id,
                 audio=file,
                 title=result.info.title,
                 performer=result.info.author,
-                caption=f"🎵 <b>{result.info.title}</b>\n👤 {result.info.author}"
+                caption=f"🎵 <b>{result.info.title}</b>\n👤 {result.info.author}{bot_signature}"
             )
         else:
             # Формируем caption
             caption = f"🎬 <b>{result.info.title}</b>"
-            if result.info.author != "unknown":
+            if result.info.author and result.info.author != "unknown":
                 caption += f"\n👤 {result.info.author}"
             if result.info.duration:
                 minutes = result.info.duration // 60
                 seconds = result.info.duration % 60
                 caption += f"\n⏱ {minutes}:{seconds:02d}"
+
+            caption += bot_signature
 
             await bot.send_video(
                 chat_id=callback.message.chat.id,

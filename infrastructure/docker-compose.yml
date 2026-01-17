@@ -12,7 +12,6 @@ services:
       - ./certbot/conf:/etc/letsencrypt:ro
       - ./certbot/www:/var/www/certbot:ro
     depends_on:
-      - frontend
       - api
     networks:
       - nexus_network
@@ -137,18 +136,19 @@ services:
       - nexus_network
 
   # ============ Admin Panel Frontend ============
-  frontend:
-    build:
-      context: ../admin_panel/frontend
-      dockerfile: Dockerfile
-      args:
-        VITE_API_URL: /api/v1
-    container_name: nexus_frontend
-    restart: unless-stopped
-    depends_on:
-      - api
-    networks:
-      - nexus_network
+  # DISABLED: Frontend moved to Vercel
+  # frontend:
+  #   build:
+  #     context: ../admin_panel/frontend
+  #     dockerfile: Dockerfile
+  #     args:
+  #       VITE_API_URL: /api/v1
+  #   container_name: nexus_frontend
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - api
+  #   networks:
+  #     - nexus_network
 
 volumes:
   postgres_data:

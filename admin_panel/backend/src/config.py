@@ -28,7 +28,15 @@ class Settings(BaseSettings):
     debug: bool = True
 
     # CORS
-    cors_origins: list[str] = ["http://localhost:3000", "http://localhost:5173"]
+    cors_origins: list[str] = [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://admin.shadow-api.ru",
+        "https://admin.shadow-api.ru",
+        "http://shadow-api.ru",
+        "https://shadow-api.ru",
+        "https://telegrambots-flax.vercel.app",
+    ]
 
     @property
     def database_url(self) -> str:

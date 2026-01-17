@@ -4,6 +4,6 @@ asyncpg==0.29.0
 redis==5.0.1
 pydantic-settings==2.1.0
 yt-dlp  # always latest
-curl_cffi  # browser impersonation for TikTok
+curl_cffi>=0.5.10,<0.8  # browser impersonation for TikTok (yt-dlp compatible)
 aiohttp==3.9.1
 aiofiles==23.2.1

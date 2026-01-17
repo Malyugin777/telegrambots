@@ -42,7 +42,7 @@ async def login(
     # Update last login
     user.last_login = datetime.utcnow()
 
-    access_token = create_access_token(data={"sub": user.id})
+    access_token = create_access_token(data={"sub": str(user.id)})
     return TokenResponse(
         access_token=access_token,
         expires_in=settings.jwt_expire_minutes * 60,

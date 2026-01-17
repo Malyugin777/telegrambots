@@ -64,8 +64,13 @@ async def get_current_user(
     if payload is None:
         raise credentials_exception
 
-    user_id: int = payload.get("sub")
-    if user_id is None:
+    sub = payload.get("sub")
+    if sub is None:
+        raise credentials_exception
+
+    try:
+        user_id = int(sub)
+    except (ValueError, TypeError):
         raise credentials_exception
 
     result = await db.execute(select(AdminUser).where(AdminUser.id == user_id))

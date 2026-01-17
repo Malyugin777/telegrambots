@@ -1,0 +1,38 @@
+# Development compose - only DB and Redis
+# Usage: docker-compose -f docker-compose.dev.yml up -d
+
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: nexus_postgres_dev
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-nexus_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_db}
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - nexus_dev
+
+  redis:
+    image: redis:7-alpine
+    container_name: nexus_redis_dev
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_dev_data:/data
+    ports:
+      - "6379:6379"
+    networks:
+      - nexus_dev
+
+volumes:
+  postgres_dev_data:
+  redis_dev_data:
+
+networks:
+  nexus_dev:
+    driver: bridge

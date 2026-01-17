@@ -1,0 +1,191 @@
+"""
+Pydantic schemas for API requests/responses.
+"""
+from datetime import datetime
+from typing import Optional, List, Any
+from pydantic import BaseModel, Field, EmailStr
+
+from .models import UserRole, BotStatus, BroadcastStatus
+
+
+# ============ Stats ============
+
+class StatsResponse(BaseModel):
+    total_bots: int
+    active_bots: int
+    total_users: int
+    active_users_today: int  # DAU
+    messages_in_queue: int
+    broadcasts_running: int
+
+
+class ChartDataPoint(BaseModel):
+    date: str
+    value: int
+
+
+class LoadChartResponse(BaseModel):
+    messages: List[ChartDataPoint]
+    users: List[ChartDataPoint]
+
+
+# ============ Bots ============
+
+class BotBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    bot_username: Optional[str] = None
+    description: Optional[str] = None
+    webhook_url: Optional[str] = None
+    status: BotStatus = BotStatus.ACTIVE
+    settings: Optional[dict] = None
+
+
+class BotCreate(BotBase):
+    token: str = Field(..., min_length=40)  # Token to hash
+
+
+class BotUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    bot_username: Optional[str] = None
+    description: Optional[str] = None
+    webhook_url: Optional[str] = None
+    status: Optional[BotStatus] = None
+    settings: Optional[dict] = None
+    token: Optional[str] = None  # Optional token update
+
+
+class BotResponse(BotBase):
+    id: int
+    token_hash: str  # Show hash, not actual token
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BotListResponse(BaseModel):
+    data: List[BotResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+# ============ Users ============
+
+class UserResponse(BaseModel):
+    id: int
+    telegram_id: int
+    username: Optional[str]
+    first_name: Optional[str]
+    last_name: Optional[str]
+    language_code: Optional[str]
+    role: UserRole
+    is_banned: bool
+    ban_reason: Optional[str]
+    created_at: datetime
+    last_active_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class UserListResponse(BaseModel):
+    data: List[UserResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+class UserBanRequest(BaseModel):
+    is_banned: bool
+    ban_reason: Optional[str] = None
+
+
+class UserRoleUpdate(BaseModel):
+    role: UserRole
+
+
+# ============ Broadcasts ============
+
+class InlineButton(BaseModel):
+    text: str
+    url: Optional[str] = None
+    callback_data: Optional[str] = None
+
+
+class BroadcastBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    text: str = Field(..., min_length=1)
+    image_url: Optional[str] = None
+    buttons: Optional[List[List[InlineButton]]] = None  # Rows of buttons
+    target_bots: Optional[List[int]] = None
+    target_languages: Optional[List[str]] = None
+
+
+class BroadcastCreate(BroadcastBase):
+    scheduled_at: Optional[datetime] = None
+
+
+class BroadcastUpdate(BaseModel):
+    name: Optional[str] = None
+    text: Optional[str] = None
+    image_url: Optional[str] = None
+    buttons: Optional[List[List[InlineButton]]] = None
+    target_bots: Optional[List[int]] = None
+    target_languages: Optional[List[str]] = None
+    scheduled_at: Optional[datetime] = None
+
+
+class BroadcastResponse(BroadcastBase):
+    id: int
+    status: BroadcastStatus
+    scheduled_at: Optional[datetime]
+    started_at: Optional[datetime]
+    completed_at: Optional[datetime]
+    total_recipients: int
+    sent_count: int
+    failed_count: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class BroadcastListResponse(BaseModel):
+    data: List[BroadcastResponse]
+    total: int
+    page: int
+    page_size: int
+
+
+# ============ Auth ============
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+
+
+class AdminUserCreate(BaseModel):
+    username: str = Field(..., min_length=3, max_length=100)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+
+
+class AdminUserResponse(BaseModel):
+    id: int
+    username: str
+    email: str
+    is_active: bool
+    is_superuser: bool
+    created_at: datetime
+    last_login: Optional[datetime]
+
+    class Config:
+        from_attributes = True

@@ -30,21 +30,29 @@ rapidapi = RapidAPIDownloader()
 
 # Паттерн для поддерживаемых URL
 URL_PATTERN = re.compile(
-    r"https?://(?:www\.|m\.|[a-z]{2}\.)?"
+    r"https?://(?:www\.|m\.|vm\.|vt\.|[a-z]{2}\.)?"
     r"(?:"
-    r"tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|"
-    r"instagram\.com|"
-    r"youtube\.com/shorts|youtu\.be|"
-    r"pinterest\.[a-z.]+|pin\.it"
+    r"tiktok\.com|"                          # TikTok
+    r"instagram\.com|instagr\.am|"           # Instagram (все форматы)
+    r"youtube\.com/shorts|youtu\.be|"        # YouTube Shorts
+    r"pinterest\.[a-z.]+|pin\.it|"           # Pinterest
+    r"twitter\.com|x\.com|"                  # Twitter/X
+    r"facebook\.com|fb\.watch"               # Facebook
     r")"
     r"[^\s]*",
     re.IGNORECASE
 )
 
 
-def is_instagram(url: str) -> bool:
-    """Проверяет, является ли URL ссылкой на Instagram"""
-    return 'instagram.com' in url.lower()
+def use_rapidapi(url: str) -> bool:
+    """Проверяет, нужно ли использовать RapidAPI для этого URL"""
+    url_lower = url.lower()
+    # RapidAPI для: Instagram, Twitter/X, Facebook (yt-dlp плохо работает)
+    return any(domain in url_lower for domain in [
+        'instagram.com', 'instagr.am',
+        'twitter.com', 'x.com',
+        'facebook.com', 'fb.watch'
+    ])
 
 
 @router.message(F.text.regexp(URL_PATTERN))
@@ -85,8 +93,8 @@ async def handle_url(message: types.Message):
         # Instagram -> RapidAPI (yt-dlp требует авторизации)
         # Остальные -> yt-dlp (работает хорошо)
 
-        if is_instagram(url):
-            logger.info(f"Using RapidAPI for Instagram: {url}")
+        if use_rapidapi(url):
+            logger.info(f"Using RapidAPI for: {url}")
             result = await rapidapi.download(url)
 
             # Конвертируем результат RapidAPI в формат yt-dlp downloader

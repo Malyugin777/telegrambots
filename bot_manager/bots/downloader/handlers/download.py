@@ -7,6 +7,7 @@ from aiogram import Router, types, F
 from aiogram.types import FSInputFile
 
 from ..services.downloader import VideoDownloader
+from ..services.cache import get_cached_file_ids, cache_file_ids
 from ..messages import (
     CAPTION,
     STATUS_DOWNLOADING,
@@ -47,6 +48,20 @@ async def handle_url(message: types.Message):
 
     logger.info(f"Download request: user={user_id}, url={url}")
 
+    # === ПРОВЕРЯЕМ КЭШ (мгновенная отправка) ===
+    cached_video, cached_audio = await get_cached_file_ids(url)
+
+    if cached_video:
+        logger.info(f"Cache hit! Sending cached files: user={user_id}")
+        try:
+            await message.answer_video(video=cached_video, caption=CAPTION)
+            if cached_audio:
+                await message.answer_audio(audio=cached_audio, caption=CAPTION)
+            return
+        except Exception as e:
+            logger.warning(f"Cache send failed, re-downloading: {e}")
+            # Кэш протух, скачиваем заново
+
     # Статус сообщение
     status_msg = await message.answer(STATUS_DOWNLOADING)
 
@@ -63,11 +78,14 @@ async def handle_url(message: types.Message):
         await status_msg.edit_text(STATUS_SENDING)
 
         video_file = FSInputFile(video_result.file_path, filename=video_result.filename)
-        await message.answer_video(
+        video_msg = await message.answer_video(
             video=video_file,
             caption=CAPTION,
             supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
         )
+
+        # Получаем file_id для кэширования
+        video_file_id = video_msg.video.file_id if video_msg.video else None
 
         logger.info(f"Sent video: user={user_id}, size={video_result.file_size}")
 
@@ -75,6 +93,7 @@ async def handle_url(message: types.Message):
         await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
 
         audio_result = await downloader.extract_audio(video_result.file_path)
+        audio_file_id = None
 
         if audio_result.success:
             audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
@@ -83,12 +102,15 @@ async def handle_url(message: types.Message):
             title = video_result.info.title[:60] if video_result.info.title else "audio"
             performer = video_result.info.author if video_result.info.author != "unknown" else None
 
-            await message.answer_audio(
+            audio_msg = await message.answer_audio(
                 audio=audio_file,
                 caption=CAPTION,
                 title=title,
                 performer=performer,
             )
+
+            # Получаем file_id для кэширования
+            audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None
 
             logger.info(f"Sent audio: user={user_id}, size={audio_result.file_size}")
 
@@ -96,6 +118,9 @@ async def handle_url(message: types.Message):
             await downloader.cleanup(audio_result.file_path)
         else:
             logger.warning(f"Audio extraction failed: {audio_result.error}")
+
+        # === КЭШИРУЕМ FILE_ID ===
+        await cache_file_ids(url, video_file_id, audio_file_id)
 
         # Удаляем видео файл
         await downloader.cleanup(video_result.file_path)

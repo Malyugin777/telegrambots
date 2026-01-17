@@ -6,7 +6,7 @@ from aiogram import Router, F
 from aiogram.types import Message
 
 from ..config import config
-from ..services.platforms import detect_platform, Platform
+from ..services.platforms import detect_platform, Platform, is_youtube_shorts
 from ..keyboards.inline import get_format_keyboard
 
 router = Router(name="download")
@@ -23,6 +23,15 @@ async def handle_url(message: Message):
 
     if platform == Platform.UNKNOWN:
         await message.answer(config.messages["invalid_url"])
+        return
+
+    # Проверяем YouTube - только Shorts поддерживается
+    if platform == Platform.YOUTUBE and not is_youtube_shorts(url):
+        await message.answer(
+            "⚠️ <b>Поддерживаются только YouTube Shorts</b>\n\n"
+            "Обычные видео YouTube слишком большие для отправки в Telegram (лимит 50MB).\n\n"
+            "Отправь ссылку на Shorts: youtube.com/shorts/..."
+        )
         return
 
     # Показываем выбор формата

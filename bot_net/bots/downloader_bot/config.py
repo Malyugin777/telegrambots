@@ -3,7 +3,7 @@
 """
 import os
 from dataclasses import dataclass, field
-from typing import List
+from typing import List, Optional
 
 
 @dataclass
@@ -25,6 +25,9 @@ class DownloaderConfig:
 
     # Пути
     download_path: str = os.getenv("DOWNLOAD_PATH", "/tmp/downloads")
+
+    # Instagram cookies (для обхода блокировок)
+    instagram_cookies_file: Optional[str] = field(default_factory=lambda: os.getenv("INSTAGRAM_COOKIES_FILE"))
 
     # Redis
     redis_url: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -62,6 +65,10 @@ class DownloaderConfig:
         "video_too_long": "❌ Видео слишком длинное (>{max_duration} сек)",
         "rate_limit": "⏳ Подожди немного перед следующим запросом.",
         "choose_format": "🎬 Выбери формат:",
+        "instagram_unavailable": (
+            "⚠️ <b>Instagram временно недоступен</b>\n\n"
+            "Попробуй TikTok или YouTube Shorts."
+        ),
     })
 
     def __post_init__(self):

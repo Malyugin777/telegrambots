@@ -18,6 +18,12 @@ from concurrent.futures import ThreadPoolExecutor
 
 import yt_dlp
 
+from ..config import config
+
+
+def _is_instagram_url(url: str) -> bool:
+    return "instagram.com" in url.lower()
+
 logger = logging.getLogger(__name__)
 
 # Константы
@@ -50,6 +56,7 @@ class DownloadResult:
     info: MediaInfo = field(default_factory=MediaInfo)
     file_size: int = 0
     error: Optional[str] = None
+    is_instagram_error: bool = False
 
 
 class VideoDownloader:
@@ -68,7 +75,7 @@ class VideoDownloader:
         """Инициализация загрузчика"""
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    def _get_video_options(self, output_path: str) -> dict:
+    def _get_video_options(self, output_path: str, url: str = "") -> dict:
         """
         Опции yt-dlp для скачивания видео
 
@@ -124,7 +131,7 @@ class VideoDownloader:
             },
         }
 
-    def _get_audio_options(self, output_path: str) -> dict:
+    def _get_audio_options(self, output_path: str, url: str = "") -> dict:
         """
         Опции yt-dlp для извлечения аудио
 

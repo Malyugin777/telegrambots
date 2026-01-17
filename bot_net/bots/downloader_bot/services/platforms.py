@@ -97,3 +97,16 @@ def extract_video_id(url: str, platform: Platform) -> Optional[str]:
 
     match = re.search(pattern, url)
     return match.group(1) if match else None
+
+
+def is_youtube_shorts(url: str) -> bool:
+    """
+    Проверяет, является ли YouTube URL ссылкой на Shorts
+
+    Args:
+        url: YouTube URL
+
+    Returns:
+        True если это Shorts, False если обычное видео
+    """
+    return bool(re.search(r'youtube\.com/shorts/', url, re.IGNORECASE))

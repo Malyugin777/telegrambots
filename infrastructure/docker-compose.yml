@@ -1,52 +1,26 @@
+version: '3.8'
+
 services:
-  # ============ Reverse Proxy ============
-  nginx:
-    image: nginx:alpine
-    container_name: nexus_nginx
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./certbot/conf:/etc/letsencrypt:ro
-      - ./certbot/www:/var/www/certbot:ro
-    depends_on:
-      - api
-    networks:
-      - nexus_network
-    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
-
-  # ============ SSL Certificates ============
-  certbot:
-    image: certbot/certbot
-    container_name: nexus_certbot
-    restart: unless-stopped
-    volumes:
-      - ./certbot/conf:/etc/letsencrypt
-      - ./certbot/www:/var/www/certbot
-    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
-
-  # ============ Database ============
   postgres:
     image: postgres:16-alpine
     container_name: nexus_postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-nexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-nexus_secure_pwd_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-nexus_db}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-nexus} -d ${POSTGRES_DB:-nexus_db}"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
       - nexus_network
 
-  # ============ Cache / FSM Storage ============
   redis:
     image: redis:7-alpine
     container_name: nexus_redis
@@ -54,6 +28,8 @@ services:
     command: redis-server --appendonly yes
     volumes:
       - redis_data:/data
+    ports:
+      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -62,71 +38,19 @@ services:
     networks:
       - nexus_network
 
-  # ============ Bot Network (Main Bot) ============
-  # DISABLED: не используется, нет токена
-  # bot_net:
-  #   build:
-  #     context: ..
-  #     dockerfile: bot_net/Dockerfile
-  #   container_name: nexus_bots
-  #   restart: unless-stopped
-  #   env_file:
-  #     - .env
-  #   depends_on:
-  #     postgres:
-  #       condition: service_healthy
-  #     redis:
-  #       condition: service_healthy
-  #   networks:
-  #     - nexus_network
-
-  # ============ Downloader Bot (SaveNinja) ============
-  downloader_bot:
+  bot_manager:
     build:
       context: ..
-      dockerfile: bot_net/bots/downloader_bot/Dockerfile
-    container_name: nexus_downloader
-    restart: always
-    env_file:
-      - .env
-    environment:
-      - DOWNLOADER_BOT_TOKEN=${DOWNLOADER_BOT_TOKEN}
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=${REDIS_URL}
-      - FORCE_SUB_CHANNELS=${FORCE_SUB_CHANNELS:-}
-      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-5}
-      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
-    volumes:
-      # RAM-диск для временных файлов (быстрее и не изнашивает SSD)
-      - type: tmpfs
-        target: /tmp/downloads
-        tmpfs:
-          size: 524288000  # 500MB
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    networks:
-      - nexus_network
-
-  # ============ Admin Panel API ============
-  api:
-    build:
-      context: ../admin_panel/backend
-      dockerfile: Dockerfile
-    container_name: nexus_api
+      dockerfile: bot_manager/Dockerfile
+    container_name: nexus_bot_manager
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      - CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","https://admin.shadow-api.ru","https://shadow-api.ru","https://telegrambots-flax.vercel.app"]
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+    volumes:
+      - /tmp/downloads:/tmp/downloads
     depends_on:
       postgres:
         condition: service_healthy
@@ -134,21 +58,6 @@ services:
         condition: service_healthy
     networks:
       - nexus_network
-
-  # ============ Admin Panel Frontend ============
-  # DISABLED: Frontend moved to Vercel
-  # frontend:
-  #   build:
-  #     context: ../admin_panel/frontend
-  #     dockerfile: Dockerfile
-  #     args:
-  #       VITE_API_URL: /api/v1
-  #   container_name: nexus_frontend
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - api
-  #   networks:
-  #     - nexus_network
 
 volumes:
   postgres_data:

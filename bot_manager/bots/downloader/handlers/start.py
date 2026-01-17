@@ -5,6 +5,7 @@ from aiogram import Router, types
 from aiogram.filters import CommandStart, Command
 
 from ..messages import START_MESSAGE, HELP_MESSAGE
+from bot_manager.middlewares import log_action
 
 router = Router()
 
@@ -12,10 +13,12 @@ router = Router()
 @router.message(CommandStart())
 async def cmd_start(message: types.Message):
     """Команда /start"""
+    await log_action(message.from_user.id, "start")
     await message.answer(START_MESSAGE)
 
 
 @router.message(Command("help"))
 async def cmd_help(message: types.Message):
     """Команда /help"""
+    await log_action(message.from_user.id, "help")
     await message.answer(HELP_MESSAGE)

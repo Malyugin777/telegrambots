@@ -11,6 +11,9 @@ from shared.config import settings
 # Import bot routers
 from bot_manager.bots.downloader import router as downloader_router
 
+# Import middlewares
+from bot_manager.middlewares import UserTrackingMiddleware, init_bot_record
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -25,9 +28,22 @@ async def start_bot(token: str, name: str, router):
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()
+
+    # Регистрируем middleware для трекинга пользователей
+    dp.message.middleware(UserTrackingMiddleware())
+    dp.callback_query.middleware(UserTrackingMiddleware())
+
     dp.include_router(router)
 
-    logger.info(f"Starting bot: {name}")
+    # Получаем информацию о боте и регистрируем в БД
+    bot_info = await bot.get_me()
+    await init_bot_record(
+        bot_username=bot_info.username,
+        bot_id=bot_info.id,
+        bot_name=name
+    )
+
+    logger.info(f"Starting bot: {name} (@{bot_info.username})")
 
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

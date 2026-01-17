@@ -20,6 +20,7 @@ from ..messages import (
     STATUS_EXTRACTING_AUDIO,
     UNSUPPORTED_URL_MESSAGE,
 )
+from bot_manager.middlewares import log_action
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -62,6 +63,20 @@ async def handle_url(message: types.Message):
     user_id = message.from_user.id
 
     logger.info(f"Download request: user={user_id}, url={url}")
+
+    # Определяем платформу для логирования
+    platform = "unknown"
+    if "instagram" in url.lower() or "instagr.am" in url.lower():
+        platform = "instagram"
+    elif "tiktok" in url.lower():
+        platform = "tiktok"
+    elif "youtube" in url.lower() or "youtu.be" in url.lower():
+        platform = "youtube"
+    elif "pinterest" in url.lower() or "pin.it" in url.lower():
+        platform = "pinterest"
+
+    # Логируем запрос на скачивание
+    await log_action(user_id, "download_request", f"{platform}:{url[:100]}")
 
     # === ПРОВЕРЯЕМ КЭШ (мгновенная отправка) ===
     cached_video, cached_audio = await get_cached_file_ids(url)
@@ -134,6 +149,7 @@ async def handle_url(message: types.Message):
             )
             file_id = photo_msg.photo[-1].file_id if photo_msg.photo else None
             logger.info(f"Sent photo: user={user_id}, size={result.file_size}")
+            await log_action(user_id, "download_success", f"photo:{platform}")
 
             # Кэшируем и удаляем
             await cache_file_ids(url, file_id, None)
@@ -149,6 +165,7 @@ async def handle_url(message: types.Message):
             )
             file_id = video_msg.video.file_id if video_msg.video else None
             logger.info(f"Sent video: user={user_id}, size={result.file_size}")
+            await log_action(user_id, "download_success", f"video:{platform}")
 
             # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО ===
             await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
@@ -172,6 +189,7 @@ async def handle_url(message: types.Message):
 
                 audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None
                 logger.info(f"Sent audio: user={user_id}, size={audio_result.file_size}")
+                await log_action(user_id, "audio_extracted", f"{platform}")
 
                 await downloader.cleanup(audio_result.file_path)
             else:

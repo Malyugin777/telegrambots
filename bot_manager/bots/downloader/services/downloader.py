@@ -188,6 +188,15 @@ class VideoDownloader:
             if not result.success:
                 return result
 
+            # Исправляем кривой SAR для TikTok
+            is_tiktok = 'tiktok' in url.lower() or 'vm.tiktok' in url.lower() or 'vt.tiktok' in url.lower()
+            if is_tiktok and result.file_path:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(_executor, self._fix_tiktok_sar, result.file_path)
+                # Обновляем размер после исправления
+                if os.path.exists(result.file_path):
+                    result.file_size = os.path.getsize(result.file_path)
+
             # Проверяем размер файла
             if result.file_size > MAX_FILE_SIZE_BYTES:
                 await self.cleanup(result.file_path)
@@ -387,6 +396,67 @@ class VideoDownloader:
                 success=False,
                 error=str(e)[:100]
             )
+
+    def _fix_tiktok_sar(self, video_path: str) -> Optional[str]:
+        """
+        Исправляет кривой SAR в TikTok видео (перекодирует в H.264)
+
+        TikTok отдаёт видео с SAR=9:16, DAR=1:1, что приводит к деформации.
+        Перекодируем в H.264 с SAR=1:1 для правильного отображения.
+
+        Returns:
+            Путь к исправленному файлу или None если исправление не нужно
+        """
+        import subprocess
+
+        try:
+            # Проверяем SAR текущего видео
+            probe_cmd = [
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=sample_aspect_ratio',
+                '-of', 'csv=p=0', video_path
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            sar = result.stdout.strip()
+
+            # Если SAR уже 1:1 или пустой - ничего не делаем
+            if not sar or sar == '1:1' or sar == 'N/A':
+                return None
+
+            logger.info(f"TikTok SAR fix needed: {sar} -> 1:1")
+
+            # Перекодируем с правильным SAR
+            output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
+
+            fix_cmd = [
+                'ffmpeg', '-i', video_path,
+                '-vf', 'setsar=1:1',
+                '-c:v', 'libx264',
+                '-preset', 'ultrafast',
+                '-crf', '23',
+                '-c:a', 'copy',
+                '-movflags', '+faststart',
+                '-y', output_path
+            ]
+
+            result = subprocess.run(fix_cmd, capture_output=True, timeout=120)
+
+            if result.returncode == 0 and os.path.exists(output_path):
+                # Удаляем оригинал, переименовываем fixed
+                os.remove(video_path)
+                os.rename(output_path, video_path)
+                logger.info(f"TikTok SAR fixed successfully")
+                return video_path
+            else:
+                # Не удалось исправить - возвращаем оригинал
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                logger.warning(f"TikTok SAR fix failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+                return None
+
+        except Exception as e:
+            logger.warning(f"TikTok SAR fix error: {e}")
+            return None
 
     def _format_error(self, error: str) -> str:
         """Форматирует сообщение об ошибке для пользователя"""

@@ -1,4 +1,4 @@
-# Nexus Project
+# TelegramBots
 
 Система управления сетью Telegram-ботов с веб-админкой.
 
@@ -8,21 +8,11 @@
 |-----|----------|----------|
 | SaveNinja | @SaveNinja_bot | Скачивание видео из TikTok, Instagram, YouTube Shorts, Pinterest |
 
-## Домены
-
-| Домен | Назначение |
-|-------|------------|
-| admin.shadow-api.ru | Админ-панель |
-| shadow-api.ru | Админ-панель |
-| api.shadow-api.ru | API (FastAPI) |
-
 ## Архитектура
 
 ```
-                         NGINX (порт 80)
-              admin.shadow-api.ru -> Frontend
-              api.shadow-api.ru -> API
-                         |
+                         NGINX (порт 80/443)
+                               |
           +--------------+--------------+
           |                             |
           v                             v
@@ -71,14 +61,14 @@
 ## Структура проекта
 
 ```
-nexus_project/
+TelegramBots/
 ├── infrastructure/              # Docker, Nginx конфиги
 │   ├── docker-compose.yml
 │   ├── nginx/nginx.conf
-│   └── .env.example
+│   └── .env
 │
 ├── bot_net/                     # Telegram боты
-│   ├── core/                    # Общий код
+│   ├── core/                    # Общий код ботов
 │   │   ├── database/
 │   │   └── utils/
 │   └── bots/
@@ -92,12 +82,60 @@ nexus_project/
 │           └── keyboards/
 │
 ├── admin_panel/
-│   ├── backend/                 # FastAPI
+│   ├── backend/                 # FastAPI API
 │   │   └── src/
 │   └── frontend/                # React + Refine
 │       └── src/
 │
-└── shared/                      # Общий код
+└── shared/                      # Общая конфигурация
+    └── config.py
+```
+
+## Быстрый старт
+
+### 1. Клонирование
+
+```bash
+git clone <repo-url>
+cd TelegramBots
+```
+
+### 2. Настройка окружения
+
+```bash
+cp infrastructure/.env.example infrastructure/.env
+# Отредактируй .env - добавь токены ботов и пароли
+```
+
+### 3. Запуск
+
+```bash
+cd infrastructure
+docker compose up -d --build
+```
+
+## Переменные окружения
+
+Файл `infrastructure/.env`:
+
+```env
+# Database
+POSTGRES_USER=nexus
+POSTGRES_PASSWORD=<сгенерируй надёжный пароль>
+POSTGRES_DB=nexus_db
+DATABASE_URL=postgresql+asyncpg://nexus:<пароль>@postgres:5432/nexus_db
+
+# Redis
+REDIS_URL=redis://redis:6379/0
+
+# Downloader Bot (SaveNinja)
+DOWNLOADER_BOT_TOKEN=<токен от @BotFather>
+FORCE_SUB_CHANNELS=@channel1,@channel2
+MAX_FILE_SIZE_MB=50
+
+# API
+JWT_SECRET=<сгенерируй: openssl rand -hex 32>
+CORS_ORIGINS=["https://admin.example.com"]
 ```
 
 ## Деплой
@@ -113,45 +151,13 @@ nexus_project/
 ### Ручной
 
 ```bash
-ssh root@66.151.33.167 "cd /root/nexus_project && git pull && cd infrastructure && docker compose up -d --build"
+ssh user@server "cd /path/to/TelegramBots/infrastructure && git pull && docker compose up -d --build"
 ```
-
-## Настройка
-
-### 1. Переменные окружения
-
-Файл `infrastructure/.env`:
-
-```env
-# Database
-POSTGRES_USER=nexus
-POSTGRES_PASSWORD=<пароль>
-POSTGRES_DB=nexus_db
-DATABASE_URL=postgresql+asyncpg://nexus:<пароль>@postgres:5432/nexus_db
-
-# Redis
-REDIS_URL=redis://redis:6379/0
-
-# Downloader Bot (SaveNinja)
-DOWNLOADER_BOT_TOKEN=<токен от BotFather>
-FORCE_SUB_CHANNELS=@channel1,@channel2
-MAX_FILE_SIZE_MB=50
-
-# API
-JWT_SECRET=<случайная строка>
-```
-
-### 2. Токен бота
-
-1. Открой @BotFather в Telegram
-2. `/newbot` -> получи токен
-3. Добавь в `.env` как `DOWNLOADER_BOT_TOKEN`
-4. Перезапусти: `docker compose restart nexus_downloader`
 
 ## Добавление нового бота
 
 1. Создай папку `bot_net/bots/new_bot/`
-2. Добавь структуру:
+2. Скопируй структуру из `downloader_bot`:
    ```
    new_bot/
    ├── Dockerfile
@@ -161,72 +167,64 @@ JWT_SECRET=<случайная строка>
    ├── middlewares/
    └── services/
    ```
-3. Добавь сервис в `docker-compose.yml`:
-   ```yaml
-   new_bot:
-     build:
-       context: ..
-       dockerfile: bot_net/bots/new_bot/Dockerfile
-     container_name: nexus_new_bot
-     env_file:
-       - .env
-     depends_on:
-       postgres:
-         condition: service_healthy
-       redis:
-         condition: service_healthy
-   ```
+3. Добавь сервис в `docker-compose.yml`
 4. Добавь токен в `.env`: `NEW_BOT_TOKEN=...`
-5. Задеплой: `git push`
+5. Деплой: `git push`
 
 ## API Endpoints
 
 **Auth:**
-- `POST /api/v1/auth/login` — получить JWT токен
-- `POST /api/v1/auth/register` — регистрация админа
+- `POST /api/v1/auth/login` - получить JWT токен
+- `POST /api/v1/auth/register` - регистрация админа
 
 **Stats:**
-- `GET /api/v1/stats` — статистика (users, bots, активность)
-- `GET /api/v1/stats/load-chart` — график нагрузки
+- `GET /api/v1/stats` - статистика (users, bots, активность)
+- `GET /api/v1/stats/load-chart` - график нагрузки
 
 **Bots:**
-- `GET /api/v1/bots` — список ботов
-- `POST /api/v1/bots` — добавить бота
-- `PATCH /api/v1/bots/{id}` — изменить статус
+- `GET /api/v1/bots` - список ботов
+- `POST /api/v1/bots` - добавить бота
+- `PATCH /api/v1/bots/{id}` - изменить статус
 
 **Users:**
-- `GET /api/v1/users` — список пользователей
-- `PATCH /api/v1/users/{id}/ban` — забанить
+- `GET /api/v1/users` - список пользователей
+- `PATCH /api/v1/users/{id}/ban` - забанить
+
+**Broadcasts:**
+- `GET /api/v1/broadcasts` - список рассылок
+- `POST /api/v1/broadcasts` - создать рассылку
 
 ## Полезные команды
 
 ```bash
 # Логи всех сервисов
-ssh root@66.151.33.167 "cd /root/nexus_project/infrastructure && docker compose logs -f"
+docker compose logs -f
 
 # Логи конкретного сервиса
 docker logs nexus_downloader --tail 100
 docker logs nexus_api --tail 100
-docker logs nexus_nginx --tail 100
 
 # Перезапуск сервиса
 docker restart nexus_downloader
 
 # Статус контейнеров
 docker ps
+
+# Подключение к БД
+docker exec -it nexus_postgres psql -U nexus -d nexus_db
 ```
 
 ## GitHub Secrets
 
-| Secret | Значение |
+| Secret | Описание |
 |--------|----------|
-| SERVER_HOST | 66.151.33.167 |
-| SERVER_USER | root |
-| SERVER_PASSWORD | пароль от VPS |
+| SERVER_HOST | IP адрес сервера |
+| SERVER_USER | SSH пользователь |
+| SERVER_PASSWORD | SSH пароль |
 
 ## Сборка Frontend
 
-Frontend собирается локально (VPS не хватает RAM):
+Frontend собирается локально (если VPS не хватает RAM):
 
 ```bash
 cd admin_panel/frontend
@@ -237,7 +235,14 @@ git commit -m "build frontend"
 git push
 ```
 
-## Контакты
+## TODO / Известные проблемы
 
-- VPS IP: 66.151.33.167
-- Репозиторий: https://github.com/Malyugin777/telegrambots
+- [ ] **Дублирование моделей БД** - модели в `admin_panel/backend/src/models.py` и `bot_net/core/database/models.py` нужно объединить в `shared/`
+- [ ] **Дублирование конфига** - `shared/config.py` и `admin_panel/backend/src/config.py` с разными дефолтами
+- [ ] **Миграции БД** - добавить Alembic вместо `create_all()`
+- [ ] **Тесты** - добавить unit/integration тесты
+- [ ] **N+1 запросы** - оптимизировать в `api/users.py` и `api/bots.py`
+- [ ] **Health checks** - улучшить проверки в docker-compose
+- [ ] **Кэширование** - добавить Redis кэш для статистики
+- [ ] **Rate limiting** - добавить для API endpoints
+

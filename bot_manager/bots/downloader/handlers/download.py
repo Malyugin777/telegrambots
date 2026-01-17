@@ -26,7 +26,7 @@ downloader = VideoDownloader()
 URL_PATTERN = re.compile(
     r"https?://(?:www\.|m\.|[a-z]{2}\.)?"
     r"(?:"
-    r"tiktok\.com|vm\.tiktok\.com|"
+    r"tiktok\.com|vm\.tiktok\.com|vt\.tiktok\.com|"
     r"instagram\.com|"
     r"youtube\.com/shorts|youtu\.be|"
     r"pinterest\.[a-z.]+|pin\.it"

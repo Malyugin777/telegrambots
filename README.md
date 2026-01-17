@@ -2,6 +2,12 @@
 
 Система управления сетью Telegram-ботов с веб-админкой.
 
+## Боты
+
+| Бот | Username | Описание |
+|-----|----------|----------|
+| SaveNinja | @SaveNinja_bot | Скачивание видео из TikTok, Instagram, YouTube Shorts, Pinterest |
+
 ## Домены
 
 | Домен | Назначение |
@@ -13,30 +19,27 @@
 ## Архитектура
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                    NGINX (порт 80)                          │
-│              admin.shadow-api.ru → Frontend                 │
-│              api.shadow-api.ru → API                        │
-└──────────────┬────────────────────────────┬─────────────────┘
-               │                            │
-               ▼                            ▼
-┌──────────────────────┐      ┌──────────────────────────────┐
-│   Frontend (React)   │      │       API (FastAPI)          │
-│   Refine + Ant Design│      │      /api/v1/...             │
-└──────────────────────┘      └──────────────┬───────────────┘
-                                             │
-                              ┌──────────────┴───────────────┐
-                              ▼                              ▼
-                    ┌──────────────┐              ┌──────────────┐
-                    │  PostgreSQL  │              │    Redis     │
-                    │    :5432     │              │    :6379     │
-                    └──────────────┘              └──────────────┘
-                              ▲
-                              │
-                    ┌──────────────┐
-                    │   Bot Net    │
-                    │  (Aiogram 3) │
-                    └──────────────┘
+                         NGINX (порт 80)
+              admin.shadow-api.ru -> Frontend
+              api.shadow-api.ru -> API
+                         |
+          +--------------+--------------+
+          |                             |
+          v                             v
+   Frontend (React)              API (FastAPI)
+   Refine + Ant Design            /api/v1/...
+                                       |
+                        +--------------+--------------+
+                        |                             |
+                        v                             v
+                   PostgreSQL                      Redis
+                     :5432                         :6379
+                        ^                             ^
+                        |                             |
+                        +-------------+---------------+
+                                      |
+                              Downloader Bot
+                              (SaveNinja)
 ```
 
 ## Стек технологий
@@ -56,6 +59,8 @@
 
 **Боты:**
 - Aiogram 3
+- yt-dlp (скачивание видео)
+- ffmpeg (конвертация)
 - FSM на Redis
 
 **Инфраструктура:**
@@ -67,30 +72,32 @@
 
 ```
 nexus_project/
-├── infrastructure/          # Docker, Nginx конфиги
+├── infrastructure/              # Docker, Nginx конфиги
 │   ├── docker-compose.yml
 │   ├── nginx/nginx.conf
 │   └── .env.example
-├── bot_net/                 # Telegram боты
-│   ├── core/
-│   │   ├── database/        # SQLAlchemy модели
-│   │   ├── middlewares/     # Aiogram middlewares
+│
+├── bot_net/                     # Telegram боты
+│   ├── core/                    # Общий код
+│   │   ├── database/
 │   │   └── utils/
 │   └── bots/
-│       ├── main_bot/        # Основной бот
-│       └── admin_bot/       # Админ-бот
+│       └── downloader_bot/      # SaveNinja (@SaveNinja_bot)
+│           ├── Dockerfile
+│           ├── main.py
+│           ├── config.py
+│           ├── handlers/
+│           ├── middlewares/
+│           ├── services/
+│           └── keyboards/
+│
 ├── admin_panel/
-│   ├── backend/             # FastAPI
+│   ├── backend/                 # FastAPI
 │   │   └── src/
-│   │       ├── api/         # Роуты
-│   │       ├── models.py    # SQLAlchemy
-│   │       └── schemas.py   # Pydantic
-│   └── frontend/            # React + Refine
-│       ├── src/
-│       │   ├── pages/       # Dashboard, Bots, Users...
-│       │   └── providers/   # Auth, Data providers
-│       └── dist/            # Сборка (коммитится)
-└── shared/                  # Общий код
+│   └── frontend/                # React + Refine
+│       └── src/
+│
+└── shared/                      # Общий код
 ```
 
 ## Деплой
@@ -125,20 +132,52 @@ DATABASE_URL=postgresql+asyncpg://nexus:<пароль>@postgres:5432/nexus_db
 # Redis
 REDIS_URL=redis://redis:6379/0
 
-# Bots
-MAIN_BOT_TOKEN=<токен от BotFather>
+# Downloader Bot (SaveNinja)
+DOWNLOADER_BOT_TOKEN=<токен от BotFather>
+FORCE_SUB_CHANNELS=@channel1,@channel2
+MAX_FILE_SIZE_MB=50
 
 # API
 JWT_SECRET=<случайная строка>
-CORS_ORIGINS=["http://admin.shadow-api.ru","http://shadow-api.ru"]
 ```
 
 ### 2. Токен бота
 
 1. Открой @BotFather в Telegram
-2. `/newbot` → получи токен
-3. Добавь в `.env` как `MAIN_BOT_TOKEN`
-4. Перезапусти: `docker compose restart nexus_bots`
+2. `/newbot` -> получи токен
+3. Добавь в `.env` как `DOWNLOADER_BOT_TOKEN`
+4. Перезапусти: `docker compose restart nexus_downloader`
+
+## Добавление нового бота
+
+1. Создай папку `bot_net/bots/new_bot/`
+2. Добавь структуру:
+   ```
+   new_bot/
+   ├── Dockerfile
+   ├── main.py
+   ├── config.py
+   ├── handlers/
+   ├── middlewares/
+   └── services/
+   ```
+3. Добавь сервис в `docker-compose.yml`:
+   ```yaml
+   new_bot:
+     build:
+       context: ..
+       dockerfile: bot_net/bots/new_bot/Dockerfile
+     container_name: nexus_new_bot
+     env_file:
+       - .env
+     depends_on:
+       postgres:
+         condition: service_healthy
+       redis:
+         condition: service_healthy
+   ```
+4. Добавь токен в `.env`: `NEW_BOT_TOKEN=...`
+5. Задеплой: `git push`
 
 ## API Endpoints
 
@@ -159,10 +198,6 @@ CORS_ORIGINS=["http://admin.shadow-api.ru","http://shadow-api.ru"]
 - `GET /api/v1/users` — список пользователей
 - `PATCH /api/v1/users/{id}/ban` — забанить
 
-**Broadcasts:**
-- `GET /api/v1/broadcasts` — история рассылок
-- `POST /api/v1/broadcasts` — создать рассылку
-
 ## Полезные команды
 
 ```bash
@@ -170,17 +205,12 @@ CORS_ORIGINS=["http://admin.shadow-api.ru","http://shadow-api.ru"]
 ssh root@66.151.33.167 "cd /root/nexus_project/infrastructure && docker compose logs -f"
 
 # Логи конкретного сервиса
+docker logs nexus_downloader --tail 100
 docker logs nexus_api --tail 100
-docker logs nexus_bots --tail 100
 docker logs nexus_nginx --tail 100
 
 # Перезапуск сервиса
-docker restart nexus_api
-docker restart nexus_bots
-
-# Пересоздать БД (удалит данные!)
-docker compose down -v
-docker compose up -d
+docker restart nexus_downloader
 
 # Статус контейнеров
 docker ps

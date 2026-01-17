@@ -64,23 +64,24 @@ services:
       - nexus_network
 
   # ============ Bot Network (Main Bot) ============
-  bot_net:
-    build:
-      context: ..
-      dockerfile: bot_net/Dockerfile
-    container_name: nexus_bots
-    restart: unless-stopped
-    env_file:
-      - .env
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - nexus_network
+  # DISABLED: не используется, нет токена
+  # bot_net:
+  #   build:
+  #     context: ..
+  #     dockerfile: bot_net/Dockerfile
+  #   container_name: nexus_bots
+  #   restart: unless-stopped
+  #   env_file:
+  #     - .env
+  #   depends_on:
+  #     postgres:
+  #       condition: service_healthy
+  #     redis:
+  #       condition: service_healthy
+  #   networks:
+  #     - nexus_network
 
-  # ============ Downloader Bot ============
+  # ============ Downloader Bot (SaveNinja) ============
   downloader_bot:
     build:
       context: ..

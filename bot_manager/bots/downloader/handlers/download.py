@@ -1,159 +1,108 @@
-import os
+"""
+Обработчик ссылок - скачивание видео и аудио
+"""
 import re
-import asyncio
 import logging
-from pathlib import Path
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile
-import yt_dlp
+
+from ..services.downloader import VideoDownloader
+from ..messages import (
+    CAPTION,
+    STATUS_DOWNLOADING,
+    STATUS_SENDING,
+    STATUS_EXTRACTING_AUDIO,
+    UNSUPPORTED_URL_MESSAGE,
+)
 
 router = Router()
 logger = logging.getLogger(__name__)
 
-DOWNLOAD_DIR = Path("/tmp/downloads")
-DOWNLOAD_DIR.mkdir(exist_ok=True)
+# Глобальный экземпляр загрузчика
+downloader = VideoDownloader()
 
-# Улучшенная регулярка
+# Паттерн для поддерживаемых URL
 URL_PATTERN = re.compile(
-    r"https?://(?:[a-z]{2,3}\.)?"  # поддомены типа ru. www. m.
-    r"(?:tiktok\.com|vm\.tiktok\.com|"
+    r"https?://(?:www\.|m\.|[a-z]{2}\.)?"
+    r"(?:"
+    r"tiktok\.com|vm\.tiktok\.com|"
     r"instagram\.com|"
     r"youtube\.com/shorts|youtu\.be|"
-    r"pinterest\.[a-z.]+|pin\.it)"
+    r"pinterest\.[a-z.]+|pin\.it"
+    r")"
     r"[^\s]*",
     re.IGNORECASE
 )
 
-CAPTION = "Скачано через @SaveNinja_bot"
-
-
-def get_yt_dlp_opts(output_path: str) -> dict:
-    return {
-        "outtmpl": output_path,
-        # Формат: лучшее видео до 50MB, с предпочтением mp4
-        "format": (
-            "best[ext=mp4][filesize<50M]/"
-            "best[filesize<50M]/"
-            "bestvideo[ext=mp4]+bestaudio[ext=m4a]/"
-            "bestvideo+bestaudio/best"
-        ),
-        "merge_output_format": "mp4",
-        "quiet": True,
-        "no_warnings": True,
-        "extract_flat": False,
-        "socket_timeout": 30,
-        "retries": 5,
-        "fragment_retries": 5,
-        "http_chunk_size": 10485760,
-        "nocheckcertificate": True,
-        "geo_bypass": True,
-        # YouTube: используем android и web клиенты
-        "extractor_args": {
-            "youtube": {"player_client": ["android", "web"]},
-            "tiktok": {"api_hostname": "api22-normal-c-useast2a.tiktokv.com"},
-        },
-        # User-Agent для обхода блокировок
-        "http_headers": {
-            "User-Agent": (
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
-            ),
-        },
-    }
-
-
-async def download_video(url: str, chat_id: int) -> tuple[str | None, str | None]:
-    """
-    Скачивает видео по URL.
-    Возвращает (путь_к_файлу, ошибка) - одно из значений всегда None.
-    """
-    output_path = str(DOWNLOAD_DIR / f"{chat_id}_%(id)s.%(ext)s")
-    opts = get_yt_dlp_opts(output_path)
-
-    try:
-        loop = asyncio.get_event_loop()
-
-        def _download():
-            with yt_dlp.YoutubeDL(opts) as ydl:
-                info = ydl.extract_info(url, download=True)
-                if not info:
-                    return None, "Не удалось получить информацию о видео"
-                return ydl.prepare_filename(info), None
-
-        file_path, error = await asyncio.wait_for(
-            loop.run_in_executor(None, _download),
-            timeout=60
-        )
-        if error:
-            return None, error
-        return file_path, None
-
-    except asyncio.TimeoutError:
-        logger.error(f"Download timeout for {url}")
-        return None, "Таймаут загрузки (60 сек)"
-    except yt_dlp.utils.DownloadError as e:
-        error_msg = str(e)
-        logger.error(f"yt-dlp DownloadError for {url}: {error_msg}")
-        # Форматируем ошибку для пользователя
-        if "private" in error_msg.lower():
-            return None, "Видео приватное"
-        elif "unavailable" in error_msg.lower() or "not available" in error_msg.lower():
-            return None, "Видео недоступно"
-        elif "age" in error_msg.lower():
-            return None, "Видео с ограничением по возрасту"
-        elif "login" in error_msg.lower() or "sign in" in error_msg.lower():
-            return None, "Требуется авторизация"
-        elif "404" in error_msg or "not found" in error_msg.lower():
-            return None, "Видео не найдено"
-        else:
-            return None, error_msg[:100]
-    except Exception as e:
-        logger.exception(f"Download error for {url}: {e}")
-        return None, str(e)[:100]
-
 
 @router.message(F.text.regexp(URL_PATTERN))
 async def handle_url(message: types.Message):
+    """Обработка ссылок - скачивание видео + аудио"""
     match = URL_PATTERN.search(message.text)
     if not match:
         return
-    url = match.group()
 
-    logger.info(f"Download request: user={message.from_user.id}, url={url}")
-    status_msg = await message.answer("⏳ Скачиваю видео...")
+    url = match.group()
+    user_id = message.from_user.id
+
+    logger.info(f"Download request: user={user_id}, url={url}")
+
+    # Статус сообщение
+    status_msg = await message.answer(STATUS_DOWNLOADING)
 
     try:
-        file_path, error = await download_video(url, message.chat.id)
+        # === СКАЧИВАЕМ ВИДЕО ===
+        video_result = await downloader.download(url)
 
-        if error:
-            logger.warning(f"Download failed: user={message.from_user.id}, error={error}")
-            await status_msg.edit_text(f"❌ {error}")
+        if not video_result.success:
+            logger.warning(f"Video download failed: user={user_id}, error={video_result.error}")
+            await status_msg.edit_text(f"❌ {video_result.error}")
             return
 
-        if file_path and os.path.exists(file_path):
-            file_size = os.path.getsize(file_path)
-            logger.info(f"Downloaded: {file_path}, size={file_size}")
+        # Отправляем видео
+        await status_msg.edit_text(STATUS_SENDING)
 
-            if file_size > 50 * 1024 * 1024:
-                await status_msg.edit_text("❌ Файл слишком большой (>50MB)")
-                os.remove(file_path)
-                return
+        video_file = FSInputFile(video_result.file_path, filename=video_result.filename)
+        await message.answer_video(
+            video=video_file,
+            caption=CAPTION,
+            supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
+        )
 
-            await status_msg.edit_text("📤 Отправляю...")
+        logger.info(f"Sent video: user={user_id}, size={video_result.file_size}")
 
-            video = FSInputFile(file_path)
-            await message.answer_video(video, caption=CAPTION)
-            await status_msg.delete()
+        # Удаляем видео файл
+        await downloader.cleanup(video_result.file_path)
 
-            logger.info(f"Sent video to user={message.from_user.id}")
+        # === СКАЧИВАЕМ АУДИО ===
+        await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
 
-            try:
-                os.remove(file_path)
-            except:
-                pass
+        audio_result = await downloader.download_audio(url)
+
+        if audio_result.success:
+            audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
+
+            # Получаем title и author для аудио
+            title = video_result.info.title[:60] if video_result.info.title else "audio"
+            performer = video_result.info.author if video_result.info.author != "unknown" else None
+
+            await message.answer_audio(
+                audio=audio_file,
+                caption=CAPTION,
+                title=title,
+                performer=performer,
+            )
+
+            logger.info(f"Sent audio: user={user_id}, size={audio_result.file_size}")
+
+            # Удаляем аудио файл
+            await downloader.cleanup(audio_result.file_path)
         else:
-            await status_msg.edit_text("❌ Не удалось скачать. Попробуй другую ссылку.")
+            logger.warning(f"Audio extraction failed: {audio_result.error}")
+            # Не показываем ошибку пользователю - видео уже отправлено
+
+        # Удаляем статус сообщение
+        await status_msg.delete()
 
     except Exception as e:
         logger.exception(f"Handler error: {e}")
@@ -165,8 +114,18 @@ async def handle_url(message: types.Message):
 
 @router.message(F.text)
 async def handle_text(message: types.Message):
+    """Обработка текста без поддерживаемой ссылки"""
+    # Пропускаем команды
     if message.text.startswith("/"):
         return
-    await message.answer(
-        "Отправь мне ссылку на видео из TikTok, Instagram, YouTube Shorts или Pinterest"
-    )
+
+    # Проверяем, есть ли вообще ссылка в сообщении
+    if "http" in message.text.lower():
+        # Есть ссылка, но не поддерживаемая
+        await message.answer(UNSUPPORTED_URL_MESSAGE)
+    else:
+        # Просто текст без ссылки
+        await message.answer(
+            "📎 Отправь мне ссылку на видео.\n\n"
+            "Поддерживаю: TikTok, Instagram, YouTube Shorts, Pinterest"
+        )

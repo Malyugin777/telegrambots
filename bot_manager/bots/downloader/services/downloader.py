@@ -1,0 +1,352 @@
+"""
+Сервис скачивания видео через yt-dlp
+
+Поддерживаемые платформы:
+- TikTok (vm.tiktok.com, tiktok.com) — без водяного знака
+- Instagram (фото, видео, карусели, истории)
+- YouTube Shorts (youtube.com/shorts/)
+- Pinterest (фото и видео)
+"""
+import os
+import asyncio
+import logging
+import uuid
+from dataclasses import dataclass, field
+from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+
+import yt_dlp
+
+logger = logging.getLogger(__name__)
+
+# Константы
+DOWNLOAD_DIR = "/tmp/downloads"
+MAX_FILE_SIZE_MB = 50
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+DOWNLOAD_TIMEOUT = 120  # секунд (увеличено для больших файлов)
+AUDIO_BITRATE = "320"  # kbps
+
+# Пул потоков для синхронных операций yt-dlp
+_executor = ThreadPoolExecutor(max_workers=5)
+
+
+@dataclass
+class MediaInfo:
+    """Информация о медиафайле"""
+    title: str = "video"
+    author: str = "unknown"
+    duration: int = 0
+    thumbnail: Optional[str] = None
+    platform: str = "unknown"
+
+
+@dataclass
+class DownloadResult:
+    """Результат скачивания"""
+    success: bool
+    file_path: Optional[str] = None
+    filename: Optional[str] = None
+    info: MediaInfo = field(default_factory=MediaInfo)
+    file_size: int = 0
+    error: Optional[str] = None
+    is_photo: bool = False  # Для фото из Instagram/Pinterest
+
+
+class VideoDownloader:
+    """
+    Асинхронный загрузчик видео через yt-dlp
+
+    Пример использования:
+        downloader = VideoDownloader()
+        result = await downloader.download(url)
+        if result.success:
+            await bot.send_video(chat_id, result.file_path)
+            await downloader.cleanup(result.file_path)
+    """
+
+    def __init__(self):
+        """Инициализация загрузчика"""
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+    def _get_video_options(self, output_path: str) -> dict:
+        """Опции yt-dlp для скачивания видео"""
+        return {
+            # Основные настройки
+            'quiet': True,
+            'no_warnings': True,
+            'noprogress': True,
+
+            # Формат: КРИТИЧНО - mp4 для автопроигрывания в Telegram
+            'format': (
+                'best[ext=mp4][filesize<50M]/'
+                'best[ext=mp4]/'
+                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
+                'bestvideo+bestaudio/'
+                'best'
+            ),
+            'merge_output_format': 'mp4',
+
+            # Путь сохранения
+            'outtmpl': output_path,
+
+            # Сеть
+            'socket_timeout': 30,
+            'retries': 5,
+            'fragment_retries': 5,
+            'nocheckcertificate': True,
+            'geo_bypass': True,
+
+            # Extractor args для разных платформ
+            'extractor_args': {
+                'youtube': {'player_client': ['android', 'web']},
+                'tiktok': {
+                    'api_hostname': 'api22-normal-c-useast2a.tiktokv.com',
+                    'webpage_download': True,
+                }
+            },
+
+            # User-Agent
+            'http_headers': {
+                'User-Agent': (
+                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+                    'AppleWebKit/537.36 (KHTML, like Gecko) '
+                    'Chrome/120.0.0.0 Safari/537.36'
+                ),
+            },
+        }
+
+    def _get_audio_options(self, output_path: str) -> dict:
+        """Опции yt-dlp для извлечения аудио (MP3 320kbps)"""
+        return {
+            'quiet': True,
+            'no_warnings': True,
+            'noprogress': True,
+
+            'format': 'bestaudio/best',
+            'outtmpl': output_path,
+
+            # Конвертация в MP3 320kbps
+            'postprocessors': [{
+                'key': 'FFmpegExtractAudio',
+                'preferredcodec': 'mp3',
+                'preferredquality': AUDIO_BITRATE,
+            }],
+
+            'socket_timeout': 30,
+            'retries': 5,
+            'nocheckcertificate': True,
+            'geo_bypass': True,
+
+            'extractor_args': {
+                'youtube': {'player_client': ['android', 'web']},
+                'tiktok': {'api_hostname': 'api22-normal-c-useast2a.tiktokv.com'},
+            },
+        }
+
+    def _generate_filepath(self, ext: str = "mp4") -> str:
+        """Генерирует уникальный путь к файлу"""
+        unique_id = str(uuid.uuid4())[:12]
+        return os.path.join(DOWNLOAD_DIR, f"{unique_id}.{ext}")
+
+    def _extract_info(self, info: dict) -> MediaInfo:
+        """Извлекает информацию из ответа yt-dlp"""
+        return MediaInfo(
+            title=info.get('title', 'video')[:100],
+            author=info.get('uploader') or info.get('channel') or info.get('creator') or 'unknown',
+            duration=int(info.get('duration', 0)),
+            thumbnail=info.get('thumbnail'),
+            platform=info.get('extractor', 'unknown'),
+        )
+
+    def _sanitize_filename(self, title: str, ext: str) -> str:
+        """Очищает название для использования как имя файла"""
+        safe = "".join(c for c in title if c.isalnum() or c in ' -_').strip()
+        safe = safe[:50] if safe else "video"
+        return f"{safe}.{ext}"
+
+    async def download(self, url: str) -> DownloadResult:
+        """
+        Скачивает видео по URL
+
+        Returns:
+            DownloadResult с путём к файлу или ошибкой
+        """
+        output_path = self._generate_filepath("mp4")
+        opts = self._get_video_options(output_path)
+
+        try:
+            loop = asyncio.get_running_loop()
+
+            result = await asyncio.wait_for(
+                loop.run_in_executor(_executor, self._download_sync, url, opts, False),
+                timeout=DOWNLOAD_TIMEOUT
+            )
+
+            if not result.success:
+                return result
+
+            # Проверяем размер файла
+            if result.file_size > MAX_FILE_SIZE_BYTES:
+                await self.cleanup(result.file_path)
+                return DownloadResult(
+                    success=False,
+                    error=f"Файл слишком большой ({result.file_size // 1024 // 1024}MB > {MAX_FILE_SIZE_MB}MB)"
+                )
+
+            return result
+
+        except asyncio.TimeoutError:
+            await self.cleanup(output_path)
+            return DownloadResult(
+                success=False,
+                error=f"Таймаут загрузки ({DOWNLOAD_TIMEOUT} сек)"
+            )
+        except Exception as e:
+            logger.exception(f"Download error for {url}: {e}")
+            await self.cleanup(output_path)
+            return DownloadResult(
+                success=False,
+                error=self._format_error(str(e))
+            )
+
+    async def download_audio(self, url: str) -> DownloadResult:
+        """
+        Скачивает и извлекает аудио из видео (MP3 320kbps)
+
+        Returns:
+            DownloadResult с путём к MP3 файлу
+        """
+        base_path = self._generate_filepath("temp")
+        output_template = base_path.rsplit('.', 1)[0]
+        opts = self._get_audio_options(output_template)
+
+        try:
+            loop = asyncio.get_running_loop()
+
+            result = await asyncio.wait_for(
+                loop.run_in_executor(_executor, self._download_sync, url, opts, True),
+                timeout=DOWNLOAD_TIMEOUT
+            )
+
+            if not result.success:
+                return result
+
+            if result.file_size > MAX_FILE_SIZE_BYTES:
+                await self.cleanup(result.file_path)
+                return DownloadResult(
+                    success=False,
+                    error=f"Файл слишком большой ({result.file_size // 1024 // 1024}MB)"
+                )
+
+            return result
+
+        except asyncio.TimeoutError:
+            await self.cleanup(f"{output_template}.mp3")
+            return DownloadResult(
+                success=False,
+                error=f"Таймаут загрузки ({DOWNLOAD_TIMEOUT} сек)"
+            )
+        except Exception as e:
+            logger.exception(f"Audio download error for {url}: {e}")
+            return DownloadResult(
+                success=False,
+                error=self._format_error(str(e))
+            )
+
+    def _download_sync(self, url: str, opts: dict, is_audio: bool = False) -> DownloadResult:
+        """Синхронная загрузка (выполняется в thread pool)"""
+        try:
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+
+                if not info:
+                    return DownloadResult(
+                        success=False,
+                        error="Не удалось получить информацию о видео"
+                    )
+
+                file_path = self._find_downloaded_file(info, opts, is_audio)
+
+                if not file_path or not os.path.exists(file_path):
+                    return DownloadResult(
+                        success=False,
+                        error="Файл не найден после скачивания"
+                    )
+
+                media_info = self._extract_info(info)
+                file_size = os.path.getsize(file_path)
+                ext = "mp3" if is_audio else "mp4"
+                filename = self._sanitize_filename(media_info.title, ext)
+
+                return DownloadResult(
+                    success=True,
+                    file_path=file_path,
+                    filename=filename,
+                    info=media_info,
+                    file_size=file_size
+                )
+
+        except yt_dlp.utils.DownloadError as e:
+            return DownloadResult(
+                success=False,
+                error=self._format_error(str(e))
+            )
+        except Exception as e:
+            logger.exception(f"yt-dlp sync error: {e}")
+            return DownloadResult(
+                success=False,
+                error=self._format_error(str(e))
+            )
+
+    def _find_downloaded_file(self, info: dict, opts: dict, is_audio: bool) -> Optional[str]:
+        """Находит скачанный файл"""
+        # Способ 1: из requested_downloads
+        if 'requested_downloads' in info and info['requested_downloads']:
+            filepath = info['requested_downloads'][0].get('filepath')
+            if filepath and os.path.exists(filepath):
+                return filepath
+
+        # Способ 2: по шаблону
+        template = opts.get('outtmpl', '')
+        if template:
+            base = template.replace('.%(ext)s', '').replace('%(ext)s', '')
+            extensions = ['mp3'] if is_audio else ['mp4', 'webm', 'mkv']
+            for ext in extensions:
+                path = f"{base}.{ext}"
+                if os.path.exists(path):
+                    return path
+
+        return None
+
+    def _format_error(self, error: str) -> str:
+        """Форматирует сообщение об ошибке для пользователя"""
+        error_lower = error.lower()
+
+        if "private" in error_lower:
+            return "Видео приватное"
+        elif "unavailable" in error_lower or "not available" in error_lower:
+            return "Видео недоступно"
+        elif "age" in error_lower:
+            return "Видео с ограничением по возрасту"
+        elif "copyright" in error_lower:
+            return "Заблокировано из-за авторских прав"
+        elif "geo" in error_lower or "country" in error_lower:
+            return "Недоступно в вашем регионе"
+        elif "login" in error_lower or "sign in" in error_lower:
+            return "Требуется авторизация"
+        elif "404" in error or "not found" in error_lower:
+            return "Видео не найдено"
+        elif "rate limit" in error_lower:
+            return "Слишком много запросов, попробуй позже"
+        else:
+            return error[:100] if len(error) > 100 else error
+
+    async def cleanup(self, *paths: str):
+        """Удаляет файлы после отправки"""
+        for path in paths:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                    logger.debug(f"Removed: {path}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove {path}: {e}")

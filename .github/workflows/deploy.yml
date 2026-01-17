@@ -1,0 +1,43 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to server
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          password: ${{ secrets.SERVER_PASSWORD }}
+          script: |
+            # Install Docker if not exists
+            if ! command -v docker &> /dev/null; then
+              apt-get update
+              apt-get install -y docker.io docker-compose git
+              systemctl start docker
+              systemctl enable docker
+            fi
+
+            # Clone or pull
+            if [ -d "/root/nexus_project" ]; then
+              cd /root/nexus_project
+              git pull origin main
+            else
+              git clone https://github.com/Malyugin777/telegrambots.git /root/nexus_project
+            fi
+
+            # Setup env
+            cd /root/nexus_project/infrastructure
+            if [ ! -f ".env" ]; then
+              cp .env.example .env
+            fi
+
+            # Deploy
+            docker-compose down || true
+            docker-compose up -d --build

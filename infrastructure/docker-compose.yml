@@ -63,7 +63,7 @@ services:
     networks:
       - nexus_network
 
-  # ============ Bot Network ============
+  # ============ Bot Network (Main Bot) ============
   bot_net:
     build:
       context: ..
@@ -77,6 +77,42 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    networks:
+      - nexus_network
+
+  # ============ Downloader Bot ============
+  downloader_bot:
+    build:
+      context: ..
+      dockerfile: bot_net/bots/downloader_bot/Dockerfile
+    container_name: nexus_downloader
+    restart: always
+    env_file:
+      - .env
+    environment:
+      - DOWNLOADER_BOT_TOKEN=${DOWNLOADER_BOT_TOKEN}
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=${REDIS_URL}
+      - FORCE_SUB_CHANNELS=${FORCE_SUB_CHANNELS:-}
+      - MAX_CONCURRENT_DOWNLOADS=${MAX_CONCURRENT_DOWNLOADS:-5}
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+    volumes:
+      # RAM-диск для временных файлов (быстрее и не изнашивает SSD)
+      - type: tmpfs
+        target: /tmp/downloads
+        tmpfs:
+          size: 524288000  # 500MB
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sys; sys.exit(0)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     networks:
       - nexus_network
 

@@ -76,6 +76,9 @@ class VideoDownloader:
             'no_warnings': True,
             'noprogress': True,
 
+            # Имитация браузера (критично для TikTok)
+            'impersonate': 'chrome',
+
             # Формат: быстрое скачивание - берём готовый mp4, не merge
             'format': 'best[ext=mp4]/best',
             'merge_output_format': 'mp4',
@@ -96,11 +99,6 @@ class VideoDownloader:
             'extractor_args': {
                 'youtube': {'player_client': ['ios', 'android']},
             },
-
-            # User-Agent мобильный (быстрее отдают контент)
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
-            },
         }
 
     def _get_audio_options(self, output_path: str) -> dict:
@@ -109,6 +107,9 @@ class VideoDownloader:
             'quiet': True,
             'no_warnings': True,
             'noprogress': True,
+
+            # Имитация браузера (критично для TikTok)
+            'impersonate': 'chrome',
 
             'format': 'bestaudio/best',
             'outtmpl': output_path,

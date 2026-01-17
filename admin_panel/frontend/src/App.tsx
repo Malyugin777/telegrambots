@@ -1,11 +1,11 @@
-import { Refine } from '@refinedev/core';
+import { Refine, Authenticated } from '@refinedev/core';
 import { RefineThemes, ThemedLayoutV2, useNotificationProvider } from '@refinedev/antd';
 import routerProvider, {
   NavigateToResource,
   UnsavedChangesNotifier,
   DocumentTitleHandler,
 } from '@refinedev/react-router-v6';
-import { BrowserRouter, Routes, Route, Outlet } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom';
 import { ConfigProvider, App as AntdApp, theme } from 'antd';
 import {
   DashboardOutlined,
@@ -104,20 +104,25 @@ function App() {
             <Routes>
               <Route
                 element={
-                  <ThemedLayoutV2
-                    Title={() => (
-                      <div style={{
-                        fontSize: '18px',
-                        fontWeight: 'bold',
-                        color: '#1890ff',
-                        padding: '12px 0'
-                      }}>
-                        Nexus Control
-                      </div>
-                    )}
+                  <Authenticated
+                    key="authenticated-routes"
+                    fallback={<Navigate to="/login" />}
                   >
-                    <Outlet />
-                  </ThemedLayoutV2>
+                    <ThemedLayoutV2
+                      Title={() => (
+                        <div style={{
+                          fontSize: '18px',
+                          fontWeight: 'bold',
+                          color: '#1890ff',
+                          padding: '12px 0'
+                        }}>
+                          Nexus Control
+                        </div>
+                      )}
+                    >
+                      <Outlet />
+                    </ThemedLayoutV2>
+                  </Authenticated>
                 }
               >
                 <Route index element={<NavigateToResource resource="dashboard" />} />

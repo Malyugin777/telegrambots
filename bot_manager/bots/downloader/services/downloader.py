@@ -74,8 +74,17 @@ class VideoDownloader:
         """Инициализация загрузчика"""
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    def _get_video_options(self, output_path: str) -> dict:
+    def _get_video_options(self, output_path: str, url: str = "") -> dict:
         """Опции yt-dlp для скачивания видео (оптимизировано для скорости)"""
+
+        # Для TikTok предпочитаем H.264 (лучше совместимость с Telegram)
+        is_tiktok = 'tiktok' in url.lower()
+        if is_tiktok:
+            # H.264 форматы для TikTok (без проблем с SAR)
+            format_string = 'best[ext=mp4][vcodec^=avc]/best[ext=mp4][vcodec^=h264]/best[ext=mp4]/best'
+        else:
+            format_string = 'best[ext=mp4]/best'
+
         return {
             # Основные настройки
             'quiet': True,
@@ -86,7 +95,7 @@ class VideoDownloader:
             'impersonate': CHROME_TARGET,
 
             # Формат: быстрое скачивание - берём готовый mp4, не merge
-            'format': 'best[ext=mp4]/best',
+            'format': format_string,
             'merge_output_format': 'mp4',
 
             # Путь сохранения
@@ -166,7 +175,7 @@ class VideoDownloader:
             DownloadResult с путём к файлу или ошибкой
         """
         output_path = self._generate_filepath("mp4")
-        opts = self._get_video_options(output_path)
+        opts = self._get_video_options(output_path, url)
 
         try:
             loop = asyncio.get_running_loop()
@@ -188,11 +197,11 @@ class VideoDownloader:
             if not result.success:
                 return result
 
-            # Исправляем кривой SAR для TikTok
-            is_tiktok = 'tiktok' in url.lower() or 'vm.tiktok' in url.lower() or 'vt.tiktok' in url.lower()
+            # Исправляем TikTok видео (перекодируем в H.264 с правильным SAR)
+            is_tiktok = 'tiktok' in url.lower()
             if is_tiktok and result.file_path:
                 loop = asyncio.get_running_loop()
-                await loop.run_in_executor(_executor, self._fix_tiktok_sar, result.file_path)
+                await loop.run_in_executor(_executor, self._fix_tiktok_video, result.file_path)
                 # Обновляем размер после исправления
                 if os.path.exists(result.file_path):
                     result.file_size = os.path.getsize(result.file_path)
@@ -397,61 +406,70 @@ class VideoDownloader:
                 error=str(e)[:100]
             )
 
-    def _fix_tiktok_sar(self, video_path: str) -> Optional[str]:
+    def _fix_tiktok_video(self, video_path: str) -> Optional[str]:
         """
-        Исправляет кривой SAR в TikTok видео (перекодирует в H.264)
+        Исправляет TikTok видео — перекодирует в H.264 с правильным SAR
 
-        TikTok отдаёт видео с SAR=9:16, DAR=1:1, что приводит к деформации.
-        Перекодируем в H.264 с SAR=1:1 для правильного отображения.
+        TikTok часто отдаёт HEVC с неправильными метаданными SAR/DAR,
+        что приводит к деформации в Telegram. Перекодируем в H.264.
 
         Returns:
-            Путь к исправленному файлу или None если исправление не нужно
+            Путь к исправленному файлу или None при ошибке
         """
         import subprocess
 
         try:
-            # Проверяем SAR текущего видео
+            # Проверяем кодек и SAR
             probe_cmd = [
                 'ffprobe', '-v', 'error', '-select_streams', 'v:0',
-                '-show_entries', 'stream=sample_aspect_ratio',
+                '-show_entries', 'stream=codec_name,sample_aspect_ratio',
                 '-of', 'csv=p=0', video_path
             ]
             result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
-            sar = result.stdout.strip()
+            probe_output = result.stdout.strip()
 
-            # Если SAR уже 1:1 или пустой - ничего не делаем
-            if not sar or sar == '1:1' or sar == 'N/A':
+            # Парсим codec,sar
+            parts = probe_output.split(',')
+            codec = parts[0] if parts else ''
+            sar = parts[1] if len(parts) > 1 else '1:1'
+
+            # Если уже H.264 с правильным SAR - пропускаем
+            if codec == 'h264' and (sar == '1:1' or sar == 'N/A' or not sar):
+                logger.info(f"TikTok video OK: codec={codec}, sar={sar}")
                 return None
 
-            logger.info(f"TikTok SAR fix needed: {sar} -> 1:1")
+            logger.info(f"TikTok video fix: codec={codec}, sar={sar} -> h264, 1:1")
 
-            # Перекодируем с правильным SAR
+            # Перекодируем в H.264 с правильным SAR
             output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
 
             fix_cmd = [
                 'ffmpeg', '-i', video_path,
                 '-vf', 'setsar=1:1',
                 '-c:v', 'libx264',
-                '-preset', 'ultrafast',
-                '-crf', '23',
-                '-c:a', 'copy',
+                '-preset', 'fast',  # Баланс скорости и качества
+                '-crf', '20',       # Хорошее качество
+                '-c:a', 'aac',      # Аудио тоже перекодируем для совместимости
+                '-b:a', '128k',
                 '-movflags', '+faststart',
                 '-y', output_path
             ]
 
-            result = subprocess.run(fix_cmd, capture_output=True, timeout=120)
+            result = subprocess.run(fix_cmd, capture_output=True, timeout=180)
 
             if result.returncode == 0 and os.path.exists(output_path):
                 # Удаляем оригинал, переименовываем fixed
                 os.remove(video_path)
                 os.rename(output_path, video_path)
-                logger.info(f"TikTok SAR fixed successfully")
+                new_size = os.path.getsize(video_path)
+                logger.info(f"TikTok video fixed: {new_size} bytes")
                 return video_path
             else:
                 # Не удалось исправить - возвращаем оригинал
                 if os.path.exists(output_path):
                     os.remove(output_path)
-                logger.warning(f"TikTok SAR fix failed: {result.stderr[:200] if result.stderr else 'unknown'}")
+                stderr = result.stderr.decode() if result.stderr else 'unknown'
+                logger.warning(f"TikTok fix failed: {stderr[:200]}")
                 return None
 
         except Exception as e:

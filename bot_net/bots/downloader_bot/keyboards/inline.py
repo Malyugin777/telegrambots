@@ -11,6 +11,8 @@ from aiogram.types import (
     KeyboardButton
 )
 
+from ..utils.url_parser import clean_url
+
 
 def get_main_keyboard() -> ReplyKeyboardMarkup:
     """Главная клавиатура"""
@@ -22,6 +24,43 @@ def get_main_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+def encode_url_for_callback(url: str) -> str:
+    """
+    Кодирует URL для callback_data с учётом лимита 64 байта.
+
+    Args:
+        url: URL для кодирования
+
+    Returns:
+        Base64 закодированный URL
+    """
+    # Сначала очищаем URL от всех параметров
+    clean = clean_url(url, remove_all_params=True)
+
+    # Кодируем
+    encoded = base64.urlsafe_b64encode(clean.encode()).decode()
+
+    # Telegram callback_data limit: 64 bytes
+    # Формат: "dl:video:" = 9 символов, остаётся 55
+    max_len = 54
+
+    if len(encoded) <= max_len:
+        return encoded
+
+    # URL всё ещё слишком длинный — пробуем сократить
+    # Убираем www. если есть
+    if 'www.' in clean:
+        clean = clean.replace('www.', '')
+        encoded = base64.urlsafe_b64encode(clean.encode()).decode()
+
+    if len(encoded) <= max_len:
+        return encoded
+
+    # Если и это не помогло — возвращаем что есть, надеясь на лучшее
+    # В будущем можно использовать Redis для хранения длинных URL
+    return encoded
+
+
 def get_format_keyboard(url: str) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора формата (видео/аудио)
@@ -29,12 +68,7 @@ def get_format_keyboard(url: str) -> InlineKeyboardMarkup:
     Args:
         url: URL для скачивания
     """
-    # Кодируем URL в base64 для callback_data (ограничение 64 байта)
-    url_encoded = base64.urlsafe_b64encode(url.encode()).decode()
-
-    # Если слишком длинный, обрезаем (будет ошибка, но это edge case)
-    if len(url_encoded) > 50:
-        url_encoded = url_encoded[:50]
+    url_encoded = encode_url_for_callback(url)
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [
@@ -101,7 +135,7 @@ def get_downloading_keyboard() -> InlineKeyboardMarkup:
 
 def get_error_keyboard(url: str) -> InlineKeyboardMarkup:
     """Клавиатура при ошибке (попробовать снова)"""
-    url_encoded = base64.urlsafe_b64encode(url.encode()).decode()[:50]
+    url_encoded = encode_url_for_callback(url)
 
     return InlineKeyboardMarkup(inline_keyboard=[
         [

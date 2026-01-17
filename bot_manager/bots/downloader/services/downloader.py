@@ -16,8 +16,12 @@ from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 
 import yt_dlp
+from yt_dlp.networking.impersonate import ImpersonateTarget
 
 logger = logging.getLogger(__name__)
+
+# Chrome impersonate target для TikTok
+CHROME_TARGET = ImpersonateTarget.from_str('chrome')
 
 # Константы
 DOWNLOAD_DIR = "/tmp/downloads"
@@ -77,7 +81,7 @@ class VideoDownloader:
             'noprogress': True,
 
             # Имитация браузера (критично для TikTok)
-            'impersonate': 'chrome',
+            'impersonate': CHROME_TARGET,
 
             # Формат: быстрое скачивание - берём готовый mp4, не merge
             'format': 'best[ext=mp4]/best',
@@ -109,7 +113,7 @@ class VideoDownloader:
             'noprogress': True,
 
             # Имитация браузера (критично для TikTok)
-            'impersonate': 'chrome',
+            'impersonate': CHROME_TARGET,
 
             'format': 'bestaudio/best',
             'outtmpl': output_path,

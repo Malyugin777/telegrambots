@@ -44,7 +44,8 @@ class User(Base):
     language_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
 
     role: Mapped[UserRole] = mapped_column(
-        SQLEnum(UserRole), default=UserRole.USER, server_default="user"
+        SQLEnum(UserRole, name="userrole", create_type=True, values_callable=lambda x: [e.value for e in x]),
+        default=UserRole.USER, server_default="user"
     )
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     ban_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -82,7 +83,8 @@ class Bot(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     status: Mapped[BotStatus] = mapped_column(
-        SQLEnum(BotStatus), default=BotStatus.ACTIVE, server_default="active"
+        SQLEnum(BotStatus, name="botstatus", create_type=True, values_callable=lambda x: [e.value for e in x]),
+        default=BotStatus.ACTIVE, server_default="active"
     )
 
     # Settings (JSON for flexibility)

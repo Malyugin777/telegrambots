@@ -50,7 +50,8 @@
       "Bash(ssh -o StrictHostKeyChecking=no root@66.151.33.167 \"cat > /root/telegrambots/infrastructure/.env << ''EOF''\n# Database\nPOSTGRES_USER=nexus\nPOSTGRES_PASSWORD=nexus_secure_pwd_2024\nPOSTGRES_DB=nexus_db\nPOSTGRES_HOST=postgres\nPOSTGRES_PORT=5432\n\n# Redis\nREDIS_HOST=redis\nREDIS_PORT=6379\n\n# Downloader Bot (SaveNinja)\nDOWNLOADER_BOT_TOKEN=8222846501:AAE6lJ5xBispWUBzVmCr7tKfKSI1NcSlHyI\nEOF\")",
       "Bash(ssh -o StrictHostKeyChecking=no root@66.151.33.167 \"cd /root/telegrambots/infrastructure && docker-compose down && docker-compose up -d --build\")",
       "Bash(ssh -o StrictHostKeyChecking=no root@66.151.33.167 \"cd /root/telegrambots/infrastructure && docker compose down && docker compose up -d --build\")",
-      "Bash(curl -s https://api.shadow-api.ru/api/docs)"
+      "Bash(curl -s https://api.shadow-api.ru/api/docs)",
+      "Bash(npm install:*)"
     ]
   }
 }

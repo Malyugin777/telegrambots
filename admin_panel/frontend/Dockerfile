@@ -3,6 +3,9 @@ FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# Increase Node memory for build
+ENV NODE_OPTIONS="--max-old-space-size=2048"
+
 # Install dependencies
 COPY package*.json ./
 RUN npm ci

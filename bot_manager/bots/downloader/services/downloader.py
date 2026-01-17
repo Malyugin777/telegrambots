@@ -394,6 +394,10 @@ class VideoDownloader:
 
         if "private" in error_lower:
             return "Видео приватное"
+        elif "login" in error_lower or "sign in" in error_lower or "authentication" in error_lower:
+            return "Instagram требует авторизации для этого контента"
+        elif "rate" in error_lower and "limit" in error_lower:
+            return "Слишком много запросов, попробуй через минуту"
         elif "unavailable" in error_lower or "not available" in error_lower:
             return "Видео недоступно"
         elif "age" in error_lower:
@@ -402,12 +406,8 @@ class VideoDownloader:
             return "Заблокировано из-за авторских прав"
         elif "geo" in error_lower or "country" in error_lower:
             return "Недоступно в вашем регионе"
-        elif "login" in error_lower or "sign in" in error_lower:
-            return "Требуется авторизация"
         elif "404" in error or "not found" in error_lower:
             return "Видео не найдено"
-        elif "rate limit" in error_lower:
-            return "Слишком много запросов, попробуй позже"
         else:
             return error[:100] if len(error) > 100 else error
 
@@ -465,20 +465,43 @@ class VideoDownloader:
             response = curl_requests.get(url, impersonate='chrome', timeout=30)
             response.raise_for_status()
 
-            # Ищем оригинальное изображение
-            # Приоритет: originals > 1200x > 736x
-            patterns = [
-                r'https://i\.pinimg\.com/originals/[^\s"\']+\.(?:jpg|png|webp)',
-                r'https://i\.pinimg\.com/1200x/[^\s"\']+\.(?:jpg|png|webp)',
-                r'https://i\.pinimg\.com/736x/[^\s"\']+\.(?:jpg|png|webp)',
-            ]
-
             image_url = None
-            for pattern in patterns:
-                matches = re.findall(pattern, response.text)
-                if matches:
-                    image_url = matches[0]
+
+            # Способ 1: og:image (самый надёжный)
+            og_patterns = [
+                r'<meta[^>]*property="og:image"[^>]*content="([^"]+)"',
+                r'<meta[^>]*content="([^"]+)"[^>]*property="og:image"',
+            ]
+            for pattern in og_patterns:
+                match = re.search(pattern, response.text)
+                if match:
+                    image_url = match.group(1)
+                    logger.info(f"Pinterest og:image found: {image_url}")
                     break
+
+            # Конвертируем 736x -> originals для максимального качества
+            if image_url and '/736x/' in image_url:
+                original_url = image_url.replace('/736x/', '/originals/')
+                # Проверяем что originals существует
+                try:
+                    check = curl_requests.head(original_url, impersonate='chrome', timeout=10)
+                    if check.status_code == 200:
+                        image_url = original_url
+                        logger.info(f"Upgraded to originals: {image_url}")
+                except:
+                    pass  # Используем 736x если originals недоступен
+
+            # Способ 2: ищем в JSON данных (исключая placeholder d5/3b/01)
+            if not image_url:
+                all_originals = re.findall(
+                    r'https://i\.pinimg\.com/originals/([a-f0-9]{2}/[a-f0-9]{2}/[a-f0-9]{2}/[a-f0-9]+\.(?:jpg|png|webp))',
+                    response.text
+                )
+                # Фильтруем placeholder
+                real_images = [img for img in all_originals if not img.startswith('d5/3b/01')]
+                if real_images:
+                    image_url = f"https://i.pinimg.com/originals/{real_images[0]}"
+                    logger.info(f"Pinterest originals found: {image_url}")
 
             if not image_url:
                 return DownloadResult(

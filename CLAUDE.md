@@ -94,6 +94,17 @@ ssh root@185.96.80.254 "cd /root/admin_panel && docker compose up -d --build"
 |-----|----------|--------------|
 | SaveNinja | @SaveNinja_bot | DOWNLOADER_BOT_TOKEN |
 
+## API ключи
+
+| Сервис | Переменная | Описание |
+|--------|------------|----------|
+| RapidAPI | RAPIDAPI_KEY | Social Download All In One - для Instagram |
+| RapidAPI | RAPIDAPI_HOST | social-download-all-in-one.p.rapidapi.com |
+
+**Загрузчики:**
+- **Instagram** → RapidAPI (yt-dlp требует авторизации)
+- **TikTok, YouTube, Pinterest** → yt-dlp (работает без авторизации)
+
 ## Частые проблемы
 
 ### VPS не хватает RAM для сборки frontend

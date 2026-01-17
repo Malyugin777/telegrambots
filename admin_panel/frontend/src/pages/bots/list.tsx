@@ -23,6 +23,8 @@ interface Bot {
   webhook_url: string | null;
   status: 'active' | 'paused' | 'maintenance' | 'disabled';
   created_at: string;
+  users_count: number;
+  downloads_count: number;
 }
 
 const statusColors: Record<string, string> = {
@@ -105,6 +107,20 @@ export const BotList = () => {
           )}
         />
         <Table.Column
+          dataIndex="users_count"
+          title="Users"
+          render={(value: number) => (
+            <span style={{ color: '#1890ff', fontWeight: 500 }}>{value || 0}</span>
+          )}
+        />
+        <Table.Column
+          dataIndex="downloads_count"
+          title="Downloads"
+          render={(value: number) => (
+            <span style={{ color: '#52c41a', fontWeight: 500 }}>{value || 0}</span>
+          )}
+        />
+        <Table.Column
           dataIndex="token_hash"
           title="Token"
           render={(value: string) => (
@@ -115,11 +131,6 @@ export const BotList = () => {
               </Space>
             </Tooltip>
           )}
-        />
-        <Table.Column
-          dataIndex="webhook_url"
-          title="Webhook"
-          render={(value) => (value ? value.substring(0, 30) + '...' : '-')}
         />
         <Table.Column
           title="Actions"

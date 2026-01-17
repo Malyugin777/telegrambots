@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 import random
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..redis_client import get_redis
-from ..models import Bot, User, Broadcast, BotStatus, BroadcastStatus
+from ..models import Bot, User, Broadcast, ActionLog, BotStatus, BroadcastStatus
 from ..schemas import StatsResponse, LoadChartResponse, ChartDataPoint
 from ..auth import get_current_user
 
@@ -44,6 +44,29 @@ async def get_stats(
     )
     active_users_today = result.scalar() or 0
 
+    # Downloads today
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= today_start,
+            or_(
+                ActionLog.action == "download_video",
+                ActionLog.action == "download_audio"
+            )
+        )
+    )
+    downloads_today = result.scalar() or 0
+
+    # Total downloads
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            or_(
+                ActionLog.action == "download_video",
+                ActionLog.action == "download_audio"
+            )
+        )
+    )
+    total_downloads = result.scalar() or 0
+
     # Messages in queue (from Redis)
     try:
         redis = await get_redis()
@@ -62,6 +85,8 @@ async def get_stats(
         active_bots=active_bots,
         total_users=total_users,
         active_users_today=active_users_today,
+        downloads_today=downloads_today,
+        total_downloads=total_downloads,
         messages_in_queue=queue_length,
         broadcasts_running=broadcasts_running,
     )
@@ -70,28 +95,48 @@ async def get_stats(
 @router.get("/chart", response_model=LoadChartResponse)
 async def get_load_chart(
     days: int = 7,
+    db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """
     Get load chart data for the last N days.
-    Returns fake data for now - replace with real metrics later.
+    Shows downloads and new users per day.
     """
-    messages_data = []
+    downloads_data = []
     users_data = []
 
     for i in range(days, 0, -1):
-        date = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
-        # Fake data - replace with real queries
-        messages_data.append(ChartDataPoint(
-            date=date,
-            value=random.randint(1000, 5000),
-        ))
-        users_data.append(ChartDataPoint(
-            date=date,
-            value=random.randint(100, 500),
-        ))
+        day_start = (datetime.utcnow() - timedelta(days=i)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+        day_end = day_start + timedelta(days=1)
+        date_str = day_start.strftime("%Y-%m-%d")
+
+        # Downloads per day
+        result = await db.execute(
+            select(func.count(ActionLog.id)).where(
+                ActionLog.created_at >= day_start,
+                ActionLog.created_at < day_end,
+                or_(
+                    ActionLog.action == "download_video",
+                    ActionLog.action == "download_audio"
+                )
+            )
+        )
+        downloads_count = result.scalar() or 0
+        downloads_data.append(ChartDataPoint(date=date_str, value=downloads_count))
+
+        # New users per day
+        result = await db.execute(
+            select(func.count(User.id)).where(
+                User.created_at >= day_start,
+                User.created_at < day_end
+            )
+        )
+        users_count = result.scalar() or 0
+        users_data.append(ChartDataPoint(date=date_str, value=users_count))
 
     return LoadChartResponse(
-        messages=messages_data,
+        messages=downloads_data,  # Renamed to downloads in frontend
         users=users_data,
     )

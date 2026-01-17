@@ -20,7 +20,7 @@ downloader = VideoDownloader()
 
 
 @router.callback_query(F.data.startswith("dl:"))
-async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: DownloadQueue):
+async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: DownloadQueue, user_db_id: int | None = None):
     """Обработка нажатия на кнопку скачивания"""
     await callback.answer()
 
@@ -113,7 +113,6 @@ async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: Dow
         await download_queue.increment_downloads(user_id, result.info.platform)
 
         # Логируем в БД
-        user_db_id = data.get('user_db_id')
         await log_action(
             user_id=user_db_id,
             action=f"download_{format_type}",

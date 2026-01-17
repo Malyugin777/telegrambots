@@ -12,6 +12,7 @@ import {
   RobotOutlined,
   NotificationOutlined,
   UserOutlined,
+  FileTextOutlined,
 } from '@ant-design/icons';
 
 import { dataProvider } from './providers/dataProvider';
@@ -21,6 +22,7 @@ import { Dashboard } from './pages/dashboard';
 import { BotList, BotCreate, BotEdit, BotShow } from './pages/bots';
 import { BroadcastList, BroadcastCreate, BroadcastEdit, BroadcastShow } from './pages/broadcasts';
 import { UserList, UserShow } from './pages/users';
+import { LogList } from './pages/activity-logs';
 import { Login } from './pages/login';
 
 import '@refinedev/antd/dist/reset.css';
@@ -85,6 +87,14 @@ function App() {
                   icon: <UserOutlined />,
                 },
               },
+              {
+                name: 'logs',
+                list: '/logs',
+                meta: {
+                  label: 'Logs',
+                  icon: <FileTextOutlined />,
+                },
+              },
             ]}
             options={{
               syncWithLocation: true,
@@ -130,6 +140,10 @@ function App() {
                 <Route path="/users">
                   <Route index element={<UserList />} />
                   <Route path="show/:id" element={<UserShow />} />
+                </Route>
+
+                <Route path="/logs">
+                  <Route index element={<LogList />} />
                 </Route>
               </Route>
 

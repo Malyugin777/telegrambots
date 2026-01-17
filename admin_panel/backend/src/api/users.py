@@ -4,15 +4,29 @@ Users management API endpoints.
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import User, UserRole
+from ..models import User, ActionLog, UserRole
 from ..schemas import UserResponse, UserListResponse, UserBanRequest, UserRoleUpdate
 from ..auth import get_current_user, get_superuser
 
 router = APIRouter()
+
+
+async def get_user_downloads_count(db: AsyncSession, user_id: int) -> int:
+    """Get downloads count for a user."""
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.user_id == user_id,
+            or_(
+                ActionLog.action == "download_video",
+                ActionLog.action == "download_audio"
+            )
+        )
+    )
+    return result.scalar() or 0
 
 
 @router.get("", response_model=UserListResponse)
@@ -22,11 +36,18 @@ async def list_users(
     role: Optional[UserRole] = None,
     is_banned: Optional[bool] = None,
     search: Optional[str] = None,
+    bot_id: Optional[int] = None,
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """List all telegram users with pagination and filtering."""
+    from ..models import BotUser
+
     query = select(User)
+
+    # Filter by bot
+    if bot_id:
+        query = query.join(BotUser, User.id == BotUser.user_id).where(BotUser.bot_id == bot_id)
 
     # Apply filters
     if role:
@@ -52,8 +73,28 @@ async def list_users(
     result = await db.execute(query)
     users = result.scalars().all()
 
+    # Enrich with downloads count
+    users_data = []
+    for user in users:
+        downloads_count = await get_user_downloads_count(db, user.id)
+        user_dict = {
+            "id": user.id,
+            "telegram_id": user.telegram_id,
+            "username": user.username,
+            "first_name": user.first_name,
+            "last_name": user.last_name,
+            "language_code": user.language_code,
+            "role": user.role,
+            "is_banned": user.is_banned,
+            "ban_reason": user.ban_reason,
+            "created_at": user.created_at,
+            "last_active_at": user.last_active_at,
+            "downloads_count": downloads_count,
+        }
+        users_data.append(UserResponse(**user_dict))
+
     return UserListResponse(
-        data=[UserResponse.model_validate(user) for user in users],
+        data=users_data,
         total=total,
         page=page,
         page_size=page_size,
@@ -76,7 +117,21 @@ async def get_user(
             detail="User not found",
         )
 
-    return user
+    downloads_count = await get_user_downloads_count(db, user.id)
+    return UserResponse(
+        id=user.id,
+        telegram_id=user.telegram_id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        language_code=user.language_code,
+        role=user.role,
+        is_banned=user.is_banned,
+        ban_reason=user.ban_reason,
+        created_at=user.created_at,
+        last_active_at=user.last_active_at,
+        downloads_count=downloads_count,
+    )
 
 
 @router.patch("/{user_id}/ban", response_model=UserResponse)

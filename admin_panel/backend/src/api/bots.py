@@ -5,11 +5,11 @@ import hashlib
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
-from ..models import Bot, BotStatus
+from ..models import Bot, BotUser, ActionLog, BotStatus
 from ..schemas import BotCreate, BotUpdate, BotResponse, BotListResponse
 from ..auth import get_current_user
 
@@ -19,6 +19,29 @@ router = APIRouter()
 def hash_token(token: str) -> str:
     """Create SHA-256 hash of bot token."""
     return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def get_bot_stats(db: AsyncSession, bot_id: int) -> tuple[int, int]:
+    """Get users count and downloads count for a bot."""
+    # Users count
+    result = await db.execute(
+        select(func.count(BotUser.id)).where(BotUser.bot_id == bot_id)
+    )
+    users_count = result.scalar() or 0
+
+    # Downloads count
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.bot_id == bot_id,
+            or_(
+                ActionLog.action == "download_video",
+                ActionLog.action == "download_audio"
+            )
+        )
+    )
+    downloads_count = result.scalar() or 0
+
+    return users_count, downloads_count
 
 
 @router.get("", response_model=BotListResponse)
@@ -53,8 +76,28 @@ async def list_bots(
     result = await db.execute(query)
     bots = result.scalars().all()
 
+    # Enrich with stats
+    bots_data = []
+    for bot in bots:
+        users_count, downloads_count = await get_bot_stats(db, bot.id)
+        bot_dict = {
+            "id": bot.id,
+            "name": bot.name,
+            "bot_username": bot.bot_username,
+            "description": bot.description,
+            "webhook_url": bot.webhook_url,
+            "status": bot.status,
+            "settings": bot.settings,
+            "token_hash": bot.token_hash,
+            "created_at": bot.created_at,
+            "updated_at": bot.updated_at,
+            "users_count": users_count,
+            "downloads_count": downloads_count,
+        }
+        bots_data.append(BotResponse(**bot_dict))
+
     return BotListResponse(
-        data=[BotResponse.model_validate(bot) for bot in bots],
+        data=bots_data,
         total=total,
         page=page,
         page_size=page_size,
@@ -77,7 +120,21 @@ async def get_bot(
             detail="Bot not found",
         )
 
-    return bot
+    users_count, downloads_count = await get_bot_stats(db, bot.id)
+    return BotResponse(
+        id=bot.id,
+        name=bot.name,
+        bot_username=bot.bot_username,
+        description=bot.description,
+        webhook_url=bot.webhook_url,
+        status=bot.status,
+        settings=bot.settings,
+        token_hash=bot.token_hash,
+        created_at=bot.created_at,
+        updated_at=bot.updated_at,
+        users_count=users_count,
+        downloads_count=downloads_count,
+    )
 
 
 @router.post("", response_model=BotResponse, status_code=status.HTTP_201_CREATED)

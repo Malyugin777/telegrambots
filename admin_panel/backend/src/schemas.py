@@ -15,6 +15,8 @@ class StatsResponse(BaseModel):
     active_bots: int
     total_users: int
     active_users_today: int  # DAU
+    downloads_today: int
+    total_downloads: int
     messages_in_queue: int
     broadcasts_running: int
 
@@ -59,6 +61,8 @@ class BotResponse(BotBase):
     token_hash: str  # Show hash, not actual token
     created_at: datetime
     updated_at: datetime
+    users_count: int = 0
+    downloads_count: int = 0
 
     class Config:
         from_attributes = True
@@ -85,6 +89,7 @@ class UserResponse(BaseModel):
     ban_reason: Optional[str]
     created_at: datetime
     last_active_at: Optional[datetime]
+    downloads_count: int = 0
 
     class Config:
         from_attributes = True
@@ -189,3 +194,27 @@ class AdminUserResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+# ============ Logs ============
+
+class LogResponse(BaseModel):
+    id: int
+    user_id: Optional[int]
+    bot_id: Optional[int]
+    action: str
+    details: Optional[dict]
+    created_at: datetime
+    # Joined fields
+    username: Optional[str] = None
+    bot_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class LogListResponse(BaseModel):
+    data: List[LogResponse]
+    total: int
+    page: int
+    page_size: int

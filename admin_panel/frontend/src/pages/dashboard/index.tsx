@@ -3,10 +3,11 @@ import { Row, Col, Card, Statistic, Spin } from 'antd';
 import {
   RobotOutlined,
   UserOutlined,
-  MessageOutlined,
+  DownloadOutlined,
   NotificationOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
+  FireOutlined,
 } from '@ant-design/icons';
 import { Line } from '@ant-design/charts';
 
@@ -15,6 +16,8 @@ interface Stats {
   active_bots: number;
   total_users: number;
   active_users_today: number;
+  downloads_today: number;
+  total_downloads: number;
   messages_in_queue: number;
   broadcasts_running: number;
 }
@@ -51,12 +54,12 @@ export const Dashboard = () => {
     ...(chart?.messages?.map((item) => ({
       date: item.date,
       value: item.value,
-      type: 'Messages',
+      type: 'Downloads',
     })) || []),
     ...(chart?.users?.map((item) => ({
       date: item.date,
       value: item.value,
-      type: 'Active Users',
+      type: 'New Users',
     })) || []),
   ];
 
@@ -137,10 +140,10 @@ export const Dashboard = () => {
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="Message Queue"
-              value={stats?.messages_in_queue || 0}
-              prefix={<MessageOutlined />}
-              valueStyle={{ color: '#faad14' }}
+              title="Downloads Today"
+              value={stats?.downloads_today || 0}
+              prefix={<FireOutlined />}
+              valueStyle={{ color: '#fa541c' }}
             />
           </Card>
         </Col>
@@ -148,9 +151,9 @@ export const Dashboard = () => {
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="Broadcasts Running"
-              value={stats?.broadcasts_running || 0}
-              prefix={<NotificationOutlined />}
+              title="Total Downloads"
+              value={stats?.total_downloads || 0}
+              prefix={<DownloadOutlined />}
               valueStyle={{ color: '#eb2f96' }}
             />
           </Card>

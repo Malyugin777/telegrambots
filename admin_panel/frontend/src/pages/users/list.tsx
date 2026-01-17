@@ -17,6 +17,7 @@ interface User {
   ban_reason: string | null;
   created_at: string;
   last_active_at: string | null;
+  downloads_count: number;
 }
 
 const roleColors: Record<string, string> = {
@@ -116,6 +117,13 @@ export const UserList = () => {
           title="Banned"
           render={(value: boolean) => (
             <TagField color={value ? 'red' : 'green'} value={value ? 'Yes' : 'No'} />
+          )}
+        />
+        <Table.Column
+          dataIndex="downloads_count"
+          title="Downloads"
+          render={(value: number) => (
+            <span style={{ color: '#52c41a', fontWeight: 500 }}>{value || 0}</span>
           )}
         />
         <Table.Column

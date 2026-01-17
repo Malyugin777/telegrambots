@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 DOWNLOAD_DIR = "/tmp/downloads"
 MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-DOWNLOAD_TIMEOUT = 120  # секунд (увеличено для больших файлов)
+DOWNLOAD_TIMEOUT = 60  # секунд
 AUDIO_BITRATE = "320"  # kbps
 
 # Пул потоков для синхронных операций yt-dlp
@@ -69,49 +69,40 @@ class VideoDownloader:
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
     def _get_video_options(self, output_path: str) -> dict:
-        """Опции yt-dlp для скачивания видео"""
+        """Опции yt-dlp для скачивания видео (оптимизировано для скорости)"""
         return {
             # Основные настройки
             'quiet': True,
             'no_warnings': True,
             'noprogress': True,
 
-            # Формат: КРИТИЧНО - mp4 для автопроигрывания в Telegram
-            'format': (
-                'best[ext=mp4][filesize<50M]/'
-                'best[ext=mp4]/'
-                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
-                'bestvideo+bestaudio/'
-                'best'
-            ),
+            # Формат: быстрое скачивание - берём готовый mp4, не merge
+            'format': 'best[ext=mp4]/best',
             'merge_output_format': 'mp4',
 
             # Путь сохранения
             'outtmpl': output_path,
 
-            # Сеть
-            'socket_timeout': 30,
-            'retries': 5,
-            'fragment_retries': 5,
+            # Сеть - оптимизация скорости
+            'socket_timeout': 10,
+            'retries': 2,
+            'fragment_retries': 2,
             'nocheckcertificate': True,
             'geo_bypass': True,
+            'concurrent_fragment_downloads': 5,  # Параллельное скачивание
+            'buffersize': 1024 * 64,  # 64KB буфер
 
-            # Extractor args для разных платформ
+            # YouTube: ios клиент быстрее отдаёт готовые mp4
             'extractor_args': {
-                'youtube': {'player_client': ['android', 'web']},
+                'youtube': {'player_client': ['ios', 'android']},
                 'tiktok': {
                     'api_hostname': 'api22-normal-c-useast2a.tiktokv.com',
-                    'webpage_download': True,
                 }
             },
 
-            # User-Agent
+            # User-Agent мобильный (быстрее отдают контент)
             'http_headers': {
-                'User-Agent': (
-                    'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-                    'AppleWebKit/537.36 (KHTML, like Gecko) '
-                    'Chrome/120.0.0.0 Safari/537.36'
-                ),
+                'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15',
             },
         }
 

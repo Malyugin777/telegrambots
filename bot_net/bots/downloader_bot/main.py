@@ -10,7 +10,7 @@ from aiogram.fsm.storage.redis import RedisStorage
 
 from .config import config
 from .handlers import start, download, callbacks
-from .middlewares.force_sub import ForceSubscribeMiddleware
+from .middlewares.force_sub import ForceSubscribeMiddleware, ForceSubscribeCallbackMiddleware
 from .middlewares.throttling import ThrottlingMiddleware
 from .services.queue import DownloadQueue
 
@@ -44,9 +44,12 @@ async def create_downloader_bot() -> tuple[Bot, Dispatcher]:
     dp["config"] = config
 
     # Middlewares
+    # Force Subscribe — проверка подписки на каналы
     if config.required_channels:
         dp.message.middleware(ForceSubscribeMiddleware(config.required_channels))
+        dp.callback_query.middleware(ForceSubscribeCallbackMiddleware(config.required_channels))
 
+    # Throttling — антиспам
     dp.message.middleware(ThrottlingMiddleware(
         rate_limit=config.rate_limit_messages,
         period=config.rate_limit_seconds

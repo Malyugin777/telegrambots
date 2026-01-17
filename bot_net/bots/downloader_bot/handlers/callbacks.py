@@ -1,9 +1,8 @@
 """
 Обработка callback-кнопок
 """
-import os
+import base64
 import logging
-import asyncio
 from aiogram import Router, F, Bot
 from aiogram.types import CallbackQuery, FSInputFile
 
@@ -14,6 +13,9 @@ from ..keyboards.inline import get_check_sub_keyboard
 
 router = Router(name="callbacks")
 logger = logging.getLogger(__name__)
+
+# Глобальный экземпляр загрузчика
+downloader = VideoDownloader()
 
 
 @router.callback_query(F.data.startswith("dl:"))
@@ -30,7 +32,6 @@ async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: Dow
     _, format_type, url_encoded = parts
 
     # Декодируем URL
-    import base64
     try:
         url = base64.urlsafe_b64decode(url_encoded.encode()).decode()
     except Exception:
@@ -39,12 +40,9 @@ async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: Dow
 
     user_id = callback.from_user.id
 
-    # Проверяем очередь
-    position = await download_queue.get_position(user_id)
-    if position is not None:
-        await callback.message.edit_text(
-            config.messages["queue_position"].format(position=position)
-        )
+    # Проверяем, не загружает ли уже этот пользователь
+    if await download_queue.is_active(user_id):
+        await callback.answer("⏳ Дождитесь завершения предыдущей загрузки", show_alert=True)
         return
 
     # Проверяем лимит активных загрузок
@@ -54,71 +52,81 @@ async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: Dow
         await download_queue.add_to_queue(user_id, url, format_type)
         position = await download_queue.get_position(user_id)
         await callback.message.edit_text(
-            config.messages["queue_position"].format(position=position)
+            f"⏳ <b>В очереди</b>\n\n"
+            f"Позиция: {position}\n"
+            f"Активных загрузок: {active_count}/{config.max_concurrent_downloads}"
         )
         return
 
     # Начинаем загрузку
-    await callback.message.edit_text(config.messages["downloading"])
+    await callback.message.edit_text(
+        "⏳ <b>Скачиваю...</b>\n\n"
+        "Это может занять до минуты."
+    )
 
     try:
+        # Отмечаем как активную загрузку
         await download_queue.set_active(user_id)
 
-        downloader = VideoDownloader(config)
-        extract_audio = format_type == "audio"
+        # Скачиваем
+        if format_type == "audio":
+            result = await downloader.download_audio(url)
+        else:
+            result = await downloader.download(url)
 
-        result = await downloader.download(url, extract_audio=extract_audio)
-
-        if result.error:
+        # Проверяем результат
+        if not result.success:
             await callback.message.edit_text(
-                config.messages["download_error"].format(error=result.error)
-            )
-            return
-
-        # Проверяем размер файла
-        file_size_mb = os.path.getsize(result.file_path) / (1024 * 1024)
-        if file_size_mb > config.max_file_size_mb:
-            os.remove(result.file_path)
-            await callback.message.edit_text(
-                config.messages["file_too_large"].format(max_size=config.max_file_size_mb)
+                f"❌ <b>Ошибка</b>\n\n{result.error}"
             )
             return
 
         # Отправляем файл
         file = FSInputFile(result.file_path, filename=result.filename)
 
-        if extract_audio:
+        if format_type == "audio":
             await bot.send_audio(
                 chat_id=callback.message.chat.id,
                 audio=file,
-                title=result.title,
-                performer=result.author,
-                caption=f"🎵 {result.title}"
+                title=result.info.title,
+                performer=result.info.author,
+                caption=f"🎵 <b>{result.info.title}</b>\n👤 {result.info.author}"
             )
         else:
+            # Формируем caption
+            caption = f"🎬 <b>{result.info.title}</b>"
+            if result.info.author != "unknown":
+                caption += f"\n👤 {result.info.author}"
+            if result.info.duration:
+                minutes = result.info.duration // 60
+                seconds = result.info.duration % 60
+                caption += f"\n⏱ {minutes}:{seconds:02d}"
+
             await bot.send_video(
                 chat_id=callback.message.chat.id,
                 video=file,
-                caption=f"🎬 {result.title}\n👤 {result.author}",
+                caption=caption,
                 supports_streaming=True
             )
 
-        await callback.message.edit_text(config.messages["download_success"])
+        # Удаляем сообщение "Скачиваю..."
+        await callback.message.delete()
+
+        # Обновляем статистику
+        await download_queue.increment_downloads(user_id, result.info.platform)
 
         # Удаляем файл
-        if os.path.exists(result.file_path):
-            os.remove(result.file_path)
+        await downloader.cleanup(result.file_path)
 
-        # TODO: Сохранить статистику в БД
+        logger.info(f"Download success: user={user_id}, platform={result.info.platform}, format={format_type}")
 
-    except asyncio.TimeoutError:
-        await callback.message.edit_text("❌ Таймаут загрузки")
     except Exception as e:
         logger.exception(f"Download error: {e}")
         await callback.message.edit_text(
-            config.messages["download_error"].format(error=str(e)[:100])
+            f"❌ <b>Ошибка</b>\n\n{str(e)[:100]}"
         )
     finally:
+        # Убираем из активных
         await download_queue.remove_active(user_id)
 
 
@@ -139,9 +147,15 @@ async def check_subscription(callback: CallbackQuery, bot: Bot):
             break
 
     if all_subscribed:
-        await callback.message.edit_text(config.messages["force_sub_success"])
+        await callback.message.edit_text(
+            "✅ <b>Спасибо за подписку!</b>\n\n"
+            "Теперь отправь мне ссылку на видео."
+        )
     else:
-        await callback.answer(config.messages["force_sub_failed"], show_alert=True)
+        await callback.answer(
+            "❌ Ты не подписан на все каналы. Проверь и попробуй снова.",
+            show_alert=True
+        )
 
 
 @router.callback_query(F.data == "cancel")

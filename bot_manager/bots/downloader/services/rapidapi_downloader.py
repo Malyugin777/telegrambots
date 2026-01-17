@@ -266,6 +266,10 @@ class RapidAPIDownloader:
             with open(file_path, 'wb') as f:
                 f.write(response.content)
 
+            # Фиксим видео (SAR/кодек) для корректного отображения в Telegram
+            if not is_photo:
+                self._fix_video(file_path)
+
             file_size = os.path.getsize(file_path)
 
             # Проверяем размер
@@ -353,6 +357,68 @@ class RapidAPIDownloader:
             return DownloadedFile(success=False, error="Download timeout")
         except Exception as e:
             return DownloadedFile(success=False, error=str(e)[:100])
+
+    def _fix_video(self, video_path: str) -> None:
+        """
+        Исправляет видео — перекодирует в H.264 с правильным SAR 1:1
+
+        Instagram/TikTok часто отдают видео с неправильными метаданными SAR/DAR,
+        что приводит к деформации (растянутое/сжатое) в Telegram.
+        """
+        import subprocess
+
+        try:
+            # Проверяем кодек и SAR
+            probe_cmd = [
+                'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+                '-show_entries', 'stream=codec_name,sample_aspect_ratio',
+                '-of', 'csv=p=0', video_path
+            ]
+            result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+            probe_output = result.stdout.strip()
+
+            # Парсим codec,sar
+            parts = probe_output.split(',')
+            codec = parts[0] if parts else ''
+            sar = parts[1] if len(parts) > 1 else '1:1'
+
+            # Если уже H.264 с правильным SAR - пропускаем
+            if codec == 'h264' and (sar == '1:1' or sar == 'N/A' or not sar):
+                logger.debug(f"Video OK: codec={codec}, sar={sar}")
+                return
+
+            logger.info(f"Fixing video: codec={codec}, sar={sar} -> h264, 1:1")
+
+            # Перекодируем в H.264 с правильным SAR
+            output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
+
+            fix_cmd = [
+                'ffmpeg', '-i', video_path,
+                '-vf', 'setsar=1:1',
+                '-c:v', 'libx264',
+                '-preset', 'fast',
+                '-crf', '20',
+                '-c:a', 'aac',
+                '-b:a', '128k',
+                '-movflags', '+faststart',
+                '-y', output_path
+            ]
+
+            result = subprocess.run(fix_cmd, capture_output=True, timeout=180)
+
+            if result.returncode == 0 and os.path.exists(output_path):
+                # Заменяем оригинал
+                os.remove(video_path)
+                os.rename(output_path, video_path)
+                logger.info(f"Video fixed: {os.path.getsize(video_path)} bytes")
+            else:
+                # Не удалось — оставляем оригинал
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+                logger.warning(f"Video fix failed, keeping original")
+
+        except Exception as e:
+            logger.warning(f"Video fix error: {e}")
 
     async def cleanup(self, *paths: str):
         """Удалить файлы"""

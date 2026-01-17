@@ -8,15 +8,17 @@
 - Pinterest (фото и видео)
 """
 import os
+import re
 import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, List
 from concurrent.futures import ThreadPoolExecutor
 
 import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
+from curl_cffi import requests as curl_requests
 
 logger = logging.getLogger(__name__)
 
@@ -158,7 +160,7 @@ class VideoDownloader:
 
     async def download(self, url: str) -> DownloadResult:
         """
-        Скачивает видео по URL
+        Скачивает видео/фото по URL
 
         Returns:
             DownloadResult с путём к файлу или ошибкой
@@ -173,6 +175,15 @@ class VideoDownloader:
                 loop.run_in_executor(_executor, self._download_sync, url, opts, False),
                 timeout=DOWNLOAD_TIMEOUT
             )
+
+            # Если ошибка "No video formats" для Pinterest - пробуем как фото
+            if not result.success and result.error:
+                is_pinterest = 'pinterest' in url or 'pin.it' in url
+                is_no_video = 'no video' in result.error.lower() or 'video formats' in result.error.lower()
+
+                if is_pinterest and is_no_video:
+                    logger.info(f"Pinterest video not found, trying photo: {url}")
+                    return await self.download_photo(url)
 
             if not result.success:
                 return result
@@ -409,3 +420,116 @@ class VideoDownloader:
                     logger.debug(f"Removed: {path}")
                 except Exception as e:
                     logger.warning(f"Failed to remove {path}: {e}")
+
+    async def download_photo(self, url: str) -> DownloadResult:
+        """
+        Скачивает фото по прямому URL или парсит Pinterest/Instagram
+
+        Returns:
+            DownloadResult с путём к файлу и is_photo=True
+        """
+        try:
+            loop = asyncio.get_running_loop()
+
+            # Определяем платформу
+            if 'pinterest' in url or 'pin.it' in url:
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(_executor, self._download_pinterest_photo, url),
+                    timeout=DOWNLOAD_TIMEOUT
+                )
+            else:
+                # Прямое скачивание по URL
+                result = await asyncio.wait_for(
+                    loop.run_in_executor(_executor, self._download_direct_photo, url),
+                    timeout=DOWNLOAD_TIMEOUT
+                )
+
+            return result
+
+        except asyncio.TimeoutError:
+            return DownloadResult(
+                success=False,
+                error=f"Таймаут загрузки ({DOWNLOAD_TIMEOUT} сек)"
+            )
+        except Exception as e:
+            logger.exception(f"Photo download error: {e}")
+            return DownloadResult(
+                success=False,
+                error=str(e)[:100]
+            )
+
+    def _download_pinterest_photo(self, url: str) -> DownloadResult:
+        """Скачивает фото из Pinterest"""
+        try:
+            # Загружаем страницу
+            response = curl_requests.get(url, impersonate='chrome', timeout=30)
+            response.raise_for_status()
+
+            # Ищем оригинальное изображение
+            # Приоритет: originals > 1200x > 736x
+            patterns = [
+                r'https://i\.pinimg\.com/originals/[^\s"\']+\.(?:jpg|png|webp)',
+                r'https://i\.pinimg\.com/1200x/[^\s"\']+\.(?:jpg|png|webp)',
+                r'https://i\.pinimg\.com/736x/[^\s"\']+\.(?:jpg|png|webp)',
+            ]
+
+            image_url = None
+            for pattern in patterns:
+                matches = re.findall(pattern, response.text)
+                if matches:
+                    image_url = matches[0]
+                    break
+
+            if not image_url:
+                return DownloadResult(
+                    success=False,
+                    error="Не удалось найти изображение"
+                )
+
+            # Скачиваем изображение
+            return self._download_direct_photo(image_url)
+
+        except Exception as e:
+            logger.exception(f"Pinterest photo error: {e}")
+            return DownloadResult(
+                success=False,
+                error=f"Ошибка Pinterest: {str(e)[:50]}"
+            )
+
+    def _download_direct_photo(self, image_url: str) -> DownloadResult:
+        """Скачивает фото по прямому URL"""
+        try:
+            response = curl_requests.get(image_url, impersonate='chrome', timeout=30)
+            response.raise_for_status()
+
+            # Определяем расширение
+            content_type = response.headers.get('content-type', '')
+            if 'png' in content_type or image_url.endswith('.png'):
+                ext = 'png'
+            elif 'webp' in content_type or image_url.endswith('.webp'):
+                ext = 'webp'
+            else:
+                ext = 'jpg'
+
+            # Сохраняем файл
+            output_path = self._generate_filepath(ext)
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+
+            file_size = os.path.getsize(output_path)
+
+            return DownloadResult(
+                success=True,
+                file_path=output_path,
+                filename=f"photo.{ext}",
+                file_size=file_size,
+                is_photo=True,
+                info=MediaInfo(title="photo", platform="pinterest")
+            )
+
+        except Exception as e:
+            logger.exception(f"Direct photo download error: {e}")
+            return DownloadResult(
+                success=False,
+                error=f"Ошибка скачивания: {str(e)[:50]}"
+            )

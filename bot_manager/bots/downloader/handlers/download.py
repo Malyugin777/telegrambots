@@ -38,7 +38,7 @@ URL_PATTERN = re.compile(
 
 @router.message(F.text.regexp(URL_PATTERN))
 async def handle_url(message: types.Message):
-    """Обработка ссылок - скачивание видео + аудио"""
+    """Обработка ссылок - скачивание видео/фото + аудио"""
     match = URL_PATTERN.search(message.text)
     if not match:
         return
@@ -54,7 +54,11 @@ async def handle_url(message: types.Message):
     if cached_video:
         logger.info(f"Cache hit! Sending cached files: user={user_id}")
         try:
-            await message.answer_video(video=cached_video, caption=CAPTION)
+            # Пробуем как видео, если не получится - как фото
+            try:
+                await message.answer_video(video=cached_video, caption=CAPTION)
+            except Exception:
+                await message.answer_photo(photo=cached_video, caption=CAPTION)
             if cached_audio:
                 await message.answer_audio(audio=cached_audio, caption=CAPTION)
             return
@@ -66,67 +70,75 @@ async def handle_url(message: types.Message):
     status_msg = await message.answer(STATUS_DOWNLOADING)
 
     try:
-        # === СКАЧИВАЕМ ВИДЕО ===
-        video_result = await downloader.download(url)
+        # === СКАЧИВАЕМ МЕДИА ===
+        result = await downloader.download(url)
 
-        if not video_result.success:
-            logger.warning(f"Video download failed: user={user_id}, error={video_result.error}")
-            await status_msg.edit_text(f"❌ {video_result.error}")
+        if not result.success:
+            logger.warning(f"Download failed: user={user_id}, error={result.error}")
+            await status_msg.edit_text(f"❌ {result.error}")
             return
 
-        # Отправляем видео
+        # Отправляем медиа
         await status_msg.edit_text(STATUS_SENDING)
 
-        video_file = FSInputFile(video_result.file_path, filename=video_result.filename)
-        video_msg = await message.answer_video(
-            video=video_file,
-            caption=CAPTION,
-            supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
-        )
+        media_file = FSInputFile(result.file_path, filename=result.filename)
+        file_id = None
 
-        # Получаем file_id для кэширования
-        video_file_id = video_msg.video.file_id if video_msg.video else None
-
-        logger.info(f"Sent video: user={user_id}, size={video_result.file_size}")
-
-        # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО (быстро через ffmpeg) ===
-        await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
-
-        audio_result = await downloader.extract_audio(video_result.file_path)
-        audio_file_id = None
-
-        if audio_result.success:
-            audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
-
-            # Получаем title и author для аудио
-            title = video_result.info.title[:60] if video_result.info.title else "audio"
-            performer = video_result.info.author if video_result.info.author != "unknown" else None
-
-            audio_msg = await message.answer_audio(
-                audio=audio_file,
+        if result.is_photo:
+            # === ОТПРАВЛЯЕМ ФОТО ===
+            photo_msg = await message.answer_photo(
+                photo=media_file,
                 caption=CAPTION,
-                title=title,
-                performer=performer,
             )
+            file_id = photo_msg.photo[-1].file_id if photo_msg.photo else None
+            logger.info(f"Sent photo: user={user_id}, size={result.file_size}")
 
-            # Получаем file_id для кэширования
-            audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None
+            # Кэшируем и удаляем
+            await cache_file_ids(url, file_id, None)
+            await downloader.cleanup(result.file_path)
+            await status_msg.delete()
 
-            logger.info(f"Sent audio: user={user_id}, size={audio_result.file_size}")
-
-            # Удаляем аудио файл
-            await downloader.cleanup(audio_result.file_path)
         else:
-            logger.warning(f"Audio extraction failed: {audio_result.error}")
+            # === ОТПРАВЛЯЕМ ВИДЕО ===
+            video_msg = await message.answer_video(
+                video=media_file,
+                caption=CAPTION,
+                supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
+            )
+            file_id = video_msg.video.file_id if video_msg.video else None
+            logger.info(f"Sent video: user={user_id}, size={result.file_size}")
 
-        # === КЭШИРУЕМ FILE_ID ===
-        await cache_file_ids(url, video_file_id, audio_file_id)
+            # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО ===
+            await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
 
-        # Удаляем видео файл
-        await downloader.cleanup(video_result.file_path)
+            audio_result = await downloader.extract_audio(result.file_path)
+            audio_file_id = None
 
-        # Удаляем статус сообщение
-        await status_msg.delete()
+            if audio_result.success:
+                audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
+
+                # Получаем title и author для аудио
+                title = result.info.title[:60] if result.info.title else "audio"
+                performer = result.info.author if result.info.author != "unknown" else None
+
+                audio_msg = await message.answer_audio(
+                    audio=audio_file,
+                    caption=CAPTION,
+                    title=title,
+                    performer=performer,
+                )
+
+                audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None
+                logger.info(f"Sent audio: user={user_id}, size={audio_result.file_size}")
+
+                await downloader.cleanup(audio_result.file_path)
+            else:
+                logger.warning(f"Audio extraction failed: {audio_result.error}")
+
+            # Кэшируем и удаляем
+            await cache_file_ids(url, file_id, audio_file_id)
+            await downloader.cleanup(result.file_path)
+            await status_msg.delete()
 
     except Exception as e:
         logger.exception(f"Handler error: {e}")

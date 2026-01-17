@@ -10,6 +10,7 @@ from ..config import config
 from ..services.downloader import VideoDownloader
 from ..services.queue import DownloadQueue
 from ..keyboards.inline import get_check_sub_keyboard
+from ..middlewares.user_tracking import log_action
 
 router = Router(name="callbacks")
 logger = logging.getLogger(__name__)
@@ -84,33 +85,24 @@ async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: Dow
         # Отправляем файл
         file = FSInputFile(result.file_path, filename=result.filename)
 
-        # Подпись бота
-        bot_signature = "\n\n❤️ Скачано в @SaveNinja_bot"
+        # Подпись бота (простая и кликабельная)
+        bot_signature = "❤️ @SaveNinja_bot"
 
         if format_type == "audio":
+            # Для аудио — минимальная подпись
             await bot.send_audio(
                 chat_id=callback.message.chat.id,
                 audio=file,
-                title=result.info.title,
-                performer=result.info.author,
-                caption=f"🎵 <b>{result.info.title}</b>\n👤 {result.info.author}{bot_signature}"
+                title=result.info.title[:60] if result.info.title else "audio",
+                performer=result.info.author[:30] if result.info.author and result.info.author != "unknown" else None,
+                caption=bot_signature
             )
         else:
-            # Формируем caption
-            caption = f"🎬 <b>{result.info.title}</b>"
-            if result.info.author and result.info.author != "unknown":
-                caption += f"\n👤 {result.info.author}"
-            if result.info.duration:
-                minutes = result.info.duration // 60
-                seconds = result.info.duration % 60
-                caption += f"\n⏱ {minutes}:{seconds:02d}"
-
-            caption += bot_signature
-
+            # Для видео — только подпись бота
             await bot.send_video(
                 chat_id=callback.message.chat.id,
                 video=file,
-                caption=caption,
+                caption=bot_signature,
                 supports_streaming=True
             )
 
@@ -119,6 +111,18 @@ async def handle_download(callback: CallbackQuery, bot: Bot, download_queue: Dow
 
         # Обновляем статистику
         await download_queue.increment_downloads(user_id, result.info.platform)
+
+        # Логируем в БД
+        user_db_id = data.get('user_db_id')
+        await log_action(
+            user_id=user_db_id,
+            action=f"download_{format_type}",
+            details={
+                "platform": result.info.platform,
+                "title": result.info.title[:100] if result.info.title else None,
+                "file_size": result.file_size
+            }
+        )
 
         # Удаляем файл
         await downloader.cleanup(result.file_path)

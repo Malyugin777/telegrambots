@@ -81,10 +81,13 @@ class VideoDownloader:
             'no_warnings': True,
             'noprogress': True,
 
-            # Формат: лучшее MP4 до 50MB
+            # Формат: лучшее видео до 50MB, предпочитаем готовый mp4
+            # Приоритет: готовый mp4 > объединение видео+аудио
             'format': (
-                'bestvideo[ext=mp4][filesize<50M]+bestaudio[ext=m4a]/best[ext=mp4][filesize<50M]/'
-                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best'
+                'best[ext=mp4][filesize<50M]/'
+                'best[filesize<50M]/'
+                'bestvideo[ext=mp4]+bestaudio[ext=m4a]/'
+                'bestvideo+bestaudio/best'
             ),
             'merge_output_format': 'mp4',
 
@@ -97,6 +100,11 @@ class VideoDownloader:
             'fragment_retries': 3,
             'nocheckcertificate': True,
             'geo_bypass': True,
+
+            # НЕ конвертировать/перекодировать — сохраняем оригинал
+            'postprocessor_args': {
+                'ffmpeg': ['-c', 'copy']  # Копируем без перекодирования
+            },
 
             # TikTok: скачивание без водяного знака
             'extractor_args': {

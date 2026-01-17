@@ -110,10 +110,14 @@ class BotUser(Base):
     Tracks which users interact with which bots.
     """
     __tablename__ = "bot_users"
+    __table_args__ = (
+        # Уникальный индекс для user_id + bot_id
+        {'sqlite_autoincrement': True},
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
-    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"))
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    bot_id: Mapped[int] = mapped_column(ForeignKey("bots.id", ondelete="CASCADE"), index=True)
 
     # Bot-specific user data
     is_subscribed: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")

@@ -12,7 +12,11 @@ from .config import config
 from .handlers import start, download, callbacks
 from .middlewares.force_sub import ForceSubscribeMiddleware, ForceSubscribeCallbackMiddleware
 from .middlewares.throttling import ThrottlingMiddleware
+from .middlewares.user_tracking import UserTrackingMiddleware, register_bot
 from .services.queue import DownloadQueue
+
+# Database
+from bot_net.core.database.connection import db
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,16 @@ async def create_downloader_bot() -> tuple[Bot, Dispatcher]:
     bot = Bot(
         token=config.token,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+
+    # Подключаем базу данных
+    await db.connect()
+
+    # Регистрируем бота в БД
+    bot_info = await bot.get_me()
+    await register_bot(
+        bot_username=bot_info.username,
+        bot_name="SaveNinja"
     )
 
     # Redis storage для FSM
@@ -44,6 +58,10 @@ async def create_downloader_bot() -> tuple[Bot, Dispatcher]:
     dp["config"] = config
 
     # Middlewares
+    # User Tracking — сохранение пользователей в БД (первым!)
+    dp.message.middleware(UserTrackingMiddleware())
+    dp.callback_query.middleware(UserTrackingMiddleware())
+
     # Force Subscribe — проверка подписки на каналы
     if config.required_channels:
         dp.message.middleware(ForceSubscribeMiddleware(config.required_channels))
@@ -74,6 +92,7 @@ async def run_downloader_bot():
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
+        await db.disconnect()
 
 
 if __name__ == "__main__":

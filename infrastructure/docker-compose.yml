@@ -126,7 +126,7 @@ services:
     env_file:
       - .env
     environment:
-      - CORS_ORIGINS=["http://66.151.33.167","http://localhost:3000"]
+      - CORS_ORIGINS=["http://localhost:3000","http://localhost:5173","https://admin.shadow-api.ru","https://shadow-api.ru","https://telegrambots-flax.vercel.app"]
     depends_on:
       postgres:
         condition: service_healthy

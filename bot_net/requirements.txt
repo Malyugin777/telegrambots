@@ -12,3 +12,6 @@ redis==5.2.1
 # Config
 pydantic-settings==2.6.1
 python-dotenv==1.0.1
+
+# Downloader Bot
+yt-dlp>=2024.1.0

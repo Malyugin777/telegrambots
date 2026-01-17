@@ -59,6 +59,40 @@ services:
     networks:
       - nexus_network
 
+  admin_api:
+    build:
+      context: ..
+      dockerfile: admin_panel/backend/Dockerfile
+    container_name: nexus_admin_api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
+  admin_frontend:
+    build:
+      context: ../admin_panel/frontend
+      dockerfile: Dockerfile
+    container_name: nexus_admin_frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - admin_api
+    networks:
+      - nexus_network
+
 volumes:
   postgres_data:
   redis_data:

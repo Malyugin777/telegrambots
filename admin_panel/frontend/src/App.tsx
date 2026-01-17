@@ -14,6 +14,7 @@ import {
   UserOutlined,
   FileTextOutlined,
 } from '@ant-design/icons';
+import { useTranslation } from 'react-i18next';
 
 import { dataProvider } from './providers/dataProvider';
 import { authProvider } from './providers/authProvider';
@@ -24,12 +25,16 @@ import { BroadcastList, BroadcastCreate, BroadcastEdit, BroadcastShow } from './
 import { UserList, UserShow } from './pages/users';
 import { LogList } from './pages/activity-logs';
 import { Login } from './pages/login';
+import { LanguageSwitcher } from './components';
 
+import './i18n';
 import '@refinedev/antd/dist/reset.css';
 
 const API_URL = import.meta.env.VITE_API_URL || '/api/v1';
 
 function App() {
+  const { t } = useTranslation();
+
   return (
     <BrowserRouter>
       <ConfigProvider
@@ -52,7 +57,7 @@ function App() {
                 name: 'dashboard',
                 list: '/dashboard',
                 meta: {
-                  label: 'Dashboard',
+                  label: t('menu.dashboard'),
                   icon: <DashboardOutlined />,
                 },
               },
@@ -63,7 +68,7 @@ function App() {
                 edit: '/bots/edit/:id',
                 show: '/bots/show/:id',
                 meta: {
-                  label: 'Bot Fleet',
+                  label: t('menu.bots'),
                   icon: <RobotOutlined />,
                 },
               },
@@ -74,7 +79,7 @@ function App() {
                 edit: '/broadcasts/edit/:id',
                 show: '/broadcasts/show/:id',
                 meta: {
-                  label: 'Broadcasts',
+                  label: t('menu.broadcasts'),
                   icon: <NotificationOutlined />,
                 },
               },
@@ -83,7 +88,7 @@ function App() {
                 list: '/users',
                 show: '/users/show/:id',
                 meta: {
-                  label: 'Users',
+                  label: t('menu.users'),
                   icon: <UserOutlined />,
                 },
               },
@@ -91,7 +96,7 @@ function App() {
                 name: 'logs',
                 list: '/logs',
                 meta: {
-                  label: 'Logs',
+                  label: t('menu.logs'),
                   icon: <FileTextOutlined />,
                 },
               },
@@ -116,7 +121,20 @@ function App() {
                           color: '#1890ff',
                           padding: '12px 0'
                         }}>
-                          Nexus Control
+                          {t('common.appName')}
+                        </div>
+                      )}
+                      Header={() => (
+                        <div style={{
+                          display: 'flex',
+                          justifyContent: 'flex-end',
+                          alignItems: 'center',
+                          padding: '0 24px',
+                          height: '64px',
+                          backgroundColor: '#141414',
+                          borderBottom: '1px solid #303030',
+                        }}>
+                          <LanguageSwitcher />
                         </div>
                       )}
                     >

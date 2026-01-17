@@ -1,0 +1,148 @@
+{
+  "common": {
+    "appName": "Nexus Control",
+    "appSubtitle": "Панель управления ботами",
+    "loading": "Загрузка...",
+    "refresh": "Обновить",
+    "search": "Поиск",
+    "actions": "Действия",
+    "save": "Сохранить",
+    "cancel": "Отмена",
+    "delete": "Удалить",
+    "edit": "Редактировать",
+    "create": "Создать",
+    "show": "Просмотр",
+    "back": "Назад",
+    "yes": "Да",
+    "no": "Нет",
+    "all": "Все",
+    "none": "Нет",
+    "status": "Статус",
+    "name": "Название",
+    "id": "ID",
+    "createdAt": "Создан",
+    "updatedAt": "Обновлен"
+  },
+  "menu": {
+    "dashboard": "Дашборд",
+    "bots": "Боты",
+    "broadcasts": "Рассылки",
+    "users": "Пользователи",
+    "logs": "Логи"
+  },
+  "auth": {
+    "signIn": "Войти",
+    "signOut": "Выйти",
+    "username": "Логин",
+    "password": "Пароль",
+    "email": "Email",
+    "invalidCredentials": "Неверные данные",
+    "firstTime": "Первый раз? Создайте аккаунт админа",
+    "backToLogin": "Вернуться ко входу",
+    "initialSetup": "Первичная настройка",
+    "createFirstAdmin": "Создайте первый аккаунт администратора",
+    "createAdminAccount": "Создать аккаунт админа",
+    "adminCreated": "Админ создан! Теперь можно войти.",
+    "setupFailed": "Ошибка настройки",
+    "validation": {
+      "usernameRequired": "Введите логин",
+      "passwordRequired": "Введите пароль",
+      "emailRequired": "Введите email",
+      "emailInvalid": "Неверный формат email",
+      "minUsername": "Минимум 3 символа",
+      "minPassword": "Минимум 8 символов"
+    }
+  },
+  "dashboard": {
+    "title": "Дашборд",
+    "totalBots": "Всего ботов",
+    "activeBots": "Активных ботов",
+    "totalUsers": "Всего юзеров",
+    "dauToday": "DAU (сегодня)",
+    "downloadsToday": "Скачиваний сегодня",
+    "totalDownloads": "Всего скачиваний",
+    "messagesInQueue": "Сообщений в очереди",
+    "broadcastsRunning": "Активных рассылок",
+    "activityChart": "Активность (7 дней)",
+    "chartDownloads": "Скачивания",
+    "chartNewUsers": "Новые юзеры"
+  },
+  "bots": {
+    "title": "Боты",
+    "searchBots": "Поиск ботов...",
+    "botUsername": "Юзернейм",
+    "token": "Токен",
+    "webhookUrl": "Webhook URL",
+    "usersCount": "Юзеры",
+    "downloadsCount": "Скачивания",
+    "restart": "Перезапуск",
+    "restartInitiated": "Бот перезапускается",
+    "restartFailed": "Не удалось перезапустить бота",
+    "createBot": "Создать бота",
+    "editBot": "Редактировать бота",
+    "botDetails": "Информация о боте",
+    "status": {
+      "active": "Активен",
+      "paused": "На паузе",
+      "maintenance": "Обслуживание",
+      "disabled": "Отключен"
+    }
+  },
+  "users": {
+    "title": "Пользователи",
+    "searchUsers": "Поиск юзеров...",
+    "telegramId": "Telegram ID",
+    "username": "Юзернейм",
+    "firstName": "Имя",
+    "lastName": "Фамилия",
+    "fullName": "Имя",
+    "languageCode": "Язык",
+    "lastActive": "Последняя активность",
+    "downloadsCount": "Скачивания",
+    "banned": "Заблокирован",
+    "banReason": "Причина бана",
+    "banStatus": "Статус бана",
+    "role": {
+      "title": "Роль",
+      "user": "Юзер",
+      "moderator": "Модератор",
+      "admin": "Админ",
+      "owner": "Владелец"
+    }
+  },
+  "broadcasts": {
+    "title": "Рассылки",
+    "createBroadcast": "Создать рассылку",
+    "editBroadcast": "Редактировать рассылку",
+    "broadcastDetails": "Детали рассылки",
+    "message": "Сообщение",
+    "targetBots": "Целевые боты",
+    "scheduledAt": "Запланировано на",
+    "sentAt": "Отправлено",
+    "totalRecipients": "Всего получателей",
+    "delivered": "Доставлено",
+    "failed": "Ошибок",
+    "status": {
+      "draft": "Черновик",
+      "scheduled": "Запланировано",
+      "sending": "Отправляется",
+      "completed": "Завершено",
+      "cancelled": "Отменено"
+    }
+  },
+  "logs": {
+    "title": "Логи активности",
+    "action": "Действие",
+    "entity": "Сущность",
+    "entityId": "ID сущности",
+    "details": "Детали",
+    "ipAddress": "IP адрес",
+    "userAgent": "User Agent",
+    "timestamp": "Время"
+  },
+  "language": {
+    "title": "Язык",
+    "en": "English",
+    "ru": "Русский"
+  }
+}

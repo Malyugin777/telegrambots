@@ -10,6 +10,7 @@ import {
   FireOutlined,
 } from '@ant-design/icons';
 import { Line } from '@ant-design/charts';
+import { useTranslation } from 'react-i18next';
 
 interface Stats {
   total_bots: number;
@@ -33,6 +34,8 @@ interface ChartData {
 }
 
 export const Dashboard = () => {
+  const { t } = useTranslation();
+
   const { data: statsData, isLoading: statsLoading } = useCustom<Stats>({
     url: '/stats',
     method: 'get',
@@ -54,12 +57,12 @@ export const Dashboard = () => {
     ...(chart?.messages?.map((item) => ({
       date: item.date,
       value: item.value,
-      type: 'Downloads',
+      type: t('dashboard.chartDownloads'),
     })) || []),
     ...(chart?.users?.map((item) => ({
       date: item.date,
       value: item.value,
-      type: 'New Users',
+      type: t('dashboard.chartNewUsers'),
     })) || []),
   ];
 
@@ -89,14 +92,14 @@ export const Dashboard = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <h1 style={{ marginBottom: '24px' }}>Dashboard</h1>
+      <h1 style={{ marginBottom: '24px' }}>{t('dashboard.title')}</h1>
 
       {/* Stats Cards */}
       <Row gutter={[16, 16]}>
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="Total Bots"
+              title={t('dashboard.totalBots')}
               value={stats?.total_bots || 0}
               prefix={<RobotOutlined />}
               valueStyle={{ color: '#1890ff' }}
@@ -107,7 +110,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="Active Bots"
+              title={t('dashboard.activeBots')}
               value={stats?.active_bots || 0}
               prefix={<CheckCircleOutlined />}
               valueStyle={{ color: '#52c41a' }}
@@ -118,7 +121,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="Total Users"
+              title={t('dashboard.totalUsers')}
               value={stats?.total_users || 0}
               prefix={<UserOutlined />}
               valueStyle={{ color: '#722ed1' }}
@@ -129,7 +132,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="DAU (Today)"
+              title={t('dashboard.dauToday')}
               value={stats?.active_users_today || 0}
               prefix={<UserOutlined />}
               valueStyle={{ color: '#13c2c2' }}
@@ -140,7 +143,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="Downloads Today"
+              title={t('dashboard.downloadsToday')}
               value={stats?.downloads_today || 0}
               prefix={<FireOutlined />}
               valueStyle={{ color: '#fa541c' }}
@@ -151,7 +154,7 @@ export const Dashboard = () => {
         <Col xs={24} sm={12} lg={8} xl={4}>
           <Card className="stat-card">
             <Statistic
-              title="Total Downloads"
+              title={t('dashboard.totalDownloads')}
               value={stats?.total_downloads || 0}
               prefix={<DownloadOutlined />}
               valueStyle={{ color: '#eb2f96' }}
@@ -166,7 +169,7 @@ export const Dashboard = () => {
           <Card
             title={
               <span>
-                <ClockCircleOutlined /> Activity (Last 7 Days)
+                <ClockCircleOutlined /> {t('dashboard.activityChart')}
               </span>
             }
           >

@@ -14,6 +14,7 @@ import {
 } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
 import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface Bot {
   id: number;
@@ -35,6 +36,7 @@ const statusColors: Record<string, string> = {
 };
 
 export const BotList = () => {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
 
@@ -52,9 +54,9 @@ export const BotList = () => {
   const handleRestart = async (id: number) => {
     try {
       // This would call the restart endpoint
-      message.success('Bot restart initiated');
+      message.success(t('bots.restartInitiated'));
     } catch {
-      message.error('Failed to restart bot');
+      message.error(t('bots.restartFailed'));
     }
   };
 
@@ -63,7 +65,7 @@ export const BotList = () => {
       {/* Filters */}
       <Space style={{ marginBottom: 16 }}>
         <Input
-          placeholder="Search bots..."
+          placeholder={t('bots.searchBots')}
           prefix={<SearchOutlined />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -71,58 +73,58 @@ export const BotList = () => {
           allowClear
         />
         <Select
-          placeholder="Status"
+          placeholder={t('common.status')}
           style={{ width: 150 }}
           allowClear
           value={statusFilter}
           onChange={setStatusFilter}
           options={[
-            { label: 'Active', value: 'active' },
-            { label: 'Paused', value: 'paused' },
-            { label: 'Maintenance', value: 'maintenance' },
-            { label: 'Disabled', value: 'disabled' },
+            { label: t('bots.status.active'), value: 'active' },
+            { label: t('bots.status.paused'), value: 'paused' },
+            { label: t('bots.status.maintenance'), value: 'maintenance' },
+            { label: t('bots.status.disabled'), value: 'disabled' },
           ]}
         />
         <Button
           icon={<ReloadOutlined />}
           onClick={() => tableQueryResult.refetch()}
         >
-          Refresh
+          {t('common.refresh')}
         </Button>
       </Space>
 
       <Table {...tableProps} rowKey="id">
-        <Table.Column dataIndex="id" title="ID" width={80} />
-        <Table.Column dataIndex="name" title="Name" />
+        <Table.Column dataIndex="id" title={t('common.id')} width={80} />
+        <Table.Column dataIndex="name" title={t('common.name')} />
         <Table.Column
           dataIndex="bot_username"
-          title="Username"
+          title={t('bots.botUsername')}
           render={(value) => (value ? `@${value}` : '-')}
         />
         <Table.Column
           dataIndex="status"
-          title="Status"
+          title={t('common.status')}
           render={(value: string) => (
-            <TagField color={statusColors[value] || 'default'} value={value.toUpperCase()} />
+            <TagField color={statusColors[value] || 'default'} value={t(`bots.status.${value}`)} />
           )}
         />
         <Table.Column
           dataIndex="users_count"
-          title="Users"
+          title={t('bots.usersCount')}
           render={(value: number) => (
             <span style={{ color: '#1890ff', fontWeight: 500 }}>{value || 0}</span>
           )}
         />
         <Table.Column
           dataIndex="downloads_count"
-          title="Downloads"
+          title={t('bots.downloadsCount')}
           render={(value: number) => (
             <span style={{ color: '#52c41a', fontWeight: 500 }}>{value || 0}</span>
           )}
         />
         <Table.Column
           dataIndex="token_hash"
-          title="Token"
+          title={t('bots.token')}
           render={(value: string) => (
             <Tooltip title={value}>
               <Space>
@@ -133,12 +135,12 @@ export const BotList = () => {
           )}
         />
         <Table.Column
-          title="Actions"
+          title={t('common.actions')}
           render={(_, record: Bot) => (
             <Space>
               <ShowButton hideText size="small" recordItemId={record.id} />
               <EditButton hideText size="small" recordItemId={record.id} />
-              <Tooltip title="Restart">
+              <Tooltip title={t('bots.restart')}>
                 <Button
                   size="small"
                   icon={<ReloadOutlined />}

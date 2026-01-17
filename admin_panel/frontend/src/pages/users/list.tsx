@@ -4,6 +4,7 @@ import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useUpdate } from '@refinedev/core';
 import { useState } from 'react';
 import dayjs from 'dayjs';
+import { useTranslation } from 'react-i18next';
 
 interface User {
   id: number;
@@ -28,6 +29,7 @@ const roleColors: Record<string, string> = {
 };
 
 export const UserList = () => {
+  const { t } = useTranslation();
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string | undefined>();
   const [bannedFilter, setBannedFilter] = useState<boolean | undefined>();
@@ -48,7 +50,7 @@ export const UserList = () => {
     <List>
       <Space style={{ marginBottom: 16 }}>
         <Input
-          placeholder="Search users..."
+          placeholder={t('users.searchUsers')}
           prefix={<SearchOutlined />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -56,85 +58,85 @@ export const UserList = () => {
           allowClear
         />
         <Select
-          placeholder="Role"
+          placeholder={t('users.role.title')}
           style={{ width: 130 }}
           allowClear
           value={roleFilter}
           onChange={setRoleFilter}
           options={[
-            { label: 'User', value: 'user' },
-            { label: 'Moderator', value: 'moderator' },
-            { label: 'Admin', value: 'admin' },
-            { label: 'Owner', value: 'owner' },
+            { label: t('users.role.user'), value: 'user' },
+            { label: t('users.role.moderator'), value: 'moderator' },
+            { label: t('users.role.admin'), value: 'admin' },
+            { label: t('users.role.owner'), value: 'owner' },
           ]}
         />
         <Select
-          placeholder="Ban status"
+          placeholder={t('users.banStatus')}
           style={{ width: 130 }}
           allowClear
           value={bannedFilter}
           onChange={setBannedFilter}
           options={[
-            { label: 'Banned', value: true },
-            { label: 'Active', value: false },
+            { label: t('users.banned'), value: true },
+            { label: t('bots.status.active'), value: false },
           ]}
         />
         <Button
           icon={<ReloadOutlined />}
           onClick={() => tableQueryResult.refetch()}
         >
-          Refresh
+          {t('common.refresh')}
         </Button>
       </Space>
 
       <Table {...tableProps} rowKey="id">
-        <Table.Column dataIndex="id" title="ID" width={80} />
+        <Table.Column dataIndex="id" title={t('common.id')} width={80} />
         <Table.Column
           dataIndex="telegram_id"
-          title="Telegram ID"
+          title={t('users.telegramId')}
           render={(value) => <code>{value}</code>}
         />
         <Table.Column
           dataIndex="username"
-          title="Username"
+          title={t('users.username')}
           render={(value) => (value ? `@${value}` : '-')}
         />
         <Table.Column
-          title="Name"
+          title={t('users.fullName')}
           render={(_, record: User) =>
             [record.first_name, record.last_name].filter(Boolean).join(' ') || '-'
           }
         />
         <Table.Column
           dataIndex="role"
-          title="Role"
+          title={t('users.role.title')}
           render={(value: string) => (
-            <TagField color={roleColors[value] || 'default'} value={value.toUpperCase()} />
+            <TagField color={roleColors[value] || 'default'} value={t(`users.role.${value}`)} />
           )}
         />
         <Table.Column
           dataIndex="is_banned"
-          title="Banned"
+          title={t('users.banned')}
           render={(value: boolean) => (
-            <TagField color={value ? 'red' : 'green'} value={value ? 'Yes' : 'No'} />
+            <TagField color={value ? 'red' : 'green'} value={value ? t('common.yes') : t('common.no')} />
           )}
         />
         <Table.Column
           dataIndex="downloads_count"
-          title="Downloads"
+          title={t('users.downloadsCount')}
           render={(value: number) => (
             <span style={{ color: '#52c41a', fontWeight: 500 }}>{value || 0}</span>
           )}
         />
         <Table.Column
           dataIndex="last_active_at"
-          title="Last Active"
+          title={t('users.lastActive')}
           render={(value) =>
             value ? dayjs(value).format('YYYY-MM-DD HH:mm') : '-'
           }
         />
         <Table.Column
-          title="Actions"
+          title={t('common.actions')}
           render={(_, record: User) => (
             <Space>
               <ShowButton hideText size="small" recordItemId={record.id} />

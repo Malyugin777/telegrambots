@@ -1,0 +1,148 @@
+{
+  "common": {
+    "appName": "Nexus Control",
+    "appSubtitle": "Bot Network Admin Panel",
+    "loading": "Loading...",
+    "refresh": "Refresh",
+    "search": "Search",
+    "actions": "Actions",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "show": "Show",
+    "back": "Back",
+    "yes": "Yes",
+    "no": "No",
+    "all": "All",
+    "none": "None",
+    "status": "Status",
+    "name": "Name",
+    "id": "ID",
+    "createdAt": "Created At",
+    "updatedAt": "Updated At"
+  },
+  "menu": {
+    "dashboard": "Dashboard",
+    "bots": "Bot Fleet",
+    "broadcasts": "Broadcasts",
+    "users": "Users",
+    "logs": "Logs"
+  },
+  "auth": {
+    "signIn": "Sign In",
+    "signOut": "Sign Out",
+    "username": "Username",
+    "password": "Password",
+    "email": "Email",
+    "invalidCredentials": "Invalid credentials",
+    "firstTime": "First time? Create admin account",
+    "backToLogin": "Back to login",
+    "initialSetup": "Initial Setup",
+    "createFirstAdmin": "Create the first admin account",
+    "createAdminAccount": "Create Admin Account",
+    "adminCreated": "Admin user created! You can now login.",
+    "setupFailed": "Setup failed",
+    "validation": {
+      "usernameRequired": "Please enter username",
+      "passwordRequired": "Please enter password",
+      "emailRequired": "Please enter email",
+      "emailInvalid": "Invalid email",
+      "minUsername": "At least 3 characters",
+      "minPassword": "At least 8 characters"
+    }
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "totalBots": "Total Bots",
+    "activeBots": "Active Bots",
+    "totalUsers": "Total Users",
+    "dauToday": "DAU (Today)",
+    "downloadsToday": "Downloads Today",
+    "totalDownloads": "Total Downloads",
+    "messagesInQueue": "Messages in Queue",
+    "broadcastsRunning": "Broadcasts Running",
+    "activityChart": "Activity (Last 7 Days)",
+    "chartDownloads": "Downloads",
+    "chartNewUsers": "New Users"
+  },
+  "bots": {
+    "title": "Bots",
+    "searchBots": "Search bots...",
+    "botUsername": "Username",
+    "token": "Token",
+    "webhookUrl": "Webhook URL",
+    "usersCount": "Users",
+    "downloadsCount": "Downloads",
+    "restart": "Restart",
+    "restartInitiated": "Bot restart initiated",
+    "restartFailed": "Failed to restart bot",
+    "createBot": "Create Bot",
+    "editBot": "Edit Bot",
+    "botDetails": "Bot Details",
+    "status": {
+      "active": "Active",
+      "paused": "Paused",
+      "maintenance": "Maintenance",
+      "disabled": "Disabled"
+    }
+  },
+  "users": {
+    "title": "Users",
+    "searchUsers": "Search users...",
+    "telegramId": "Telegram ID",
+    "username": "Username",
+    "firstName": "First Name",
+    "lastName": "Last Name",
+    "fullName": "Name",
+    "languageCode": "Language",
+    "lastActive": "Last Active",
+    "downloadsCount": "Downloads",
+    "banned": "Banned",
+    "banReason": "Ban Reason",
+    "banStatus": "Ban status",
+    "role": {
+      "title": "Role",
+      "user": "User",
+      "moderator": "Moderator",
+      "admin": "Admin",
+      "owner": "Owner"
+    }
+  },
+  "broadcasts": {
+    "title": "Broadcasts",
+    "createBroadcast": "Create Broadcast",
+    "editBroadcast": "Edit Broadcast",
+    "broadcastDetails": "Broadcast Details",
+    "message": "Message",
+    "targetBots": "Target Bots",
+    "scheduledAt": "Scheduled At",
+    "sentAt": "Sent At",
+    "totalRecipients": "Total Recipients",
+    "delivered": "Delivered",
+    "failed": "Failed",
+    "status": {
+      "draft": "Draft",
+      "scheduled": "Scheduled",
+      "sending": "Sending",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    }
+  },
+  "logs": {
+    "title": "Activity Logs",
+    "action": "Action",
+    "entity": "Entity",
+    "entityId": "Entity ID",
+    "details": "Details",
+    "ipAddress": "IP Address",
+    "userAgent": "User Agent",
+    "timestamp": "Timestamp"
+  },
+  "language": {
+    "title": "Language",
+    "en": "English",
+    "ru": "Russian"
+  }
+}

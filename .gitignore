@@ -27,7 +27,6 @@ logs/
 
 # Node (frontend)
 node_modules/
-dist/
 build/
 .next/
 

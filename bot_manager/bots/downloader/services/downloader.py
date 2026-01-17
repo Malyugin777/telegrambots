@@ -318,6 +318,73 @@ class VideoDownloader:
 
         return None
 
+    async def extract_audio(self, video_path: str) -> DownloadResult:
+        """
+        Извлекает аудио из уже скачанного видео (быстро через ffmpeg)
+
+        Args:
+            video_path: Путь к видеофайлу
+
+        Returns:
+            DownloadResult с путём к MP3 файлу
+        """
+        import subprocess
+
+        if not os.path.exists(video_path):
+            return DownloadResult(
+                success=False,
+                error="Видеофайл не найден"
+            )
+
+        output_path = video_path.rsplit('.', 1)[0] + ".mp3"
+
+        try:
+            loop = asyncio.get_running_loop()
+
+            def _extract():
+                cmd = [
+                    'ffmpeg', '-i', video_path,
+                    '-vn',  # Без видео
+                    '-acodec', 'libmp3lame',
+                    '-ab', f'{AUDIO_BITRATE}k',
+                    '-ar', '44100',
+                    '-y',  # Перезаписать
+                    output_path
+                ]
+                result = subprocess.run(cmd, capture_output=True, timeout=60)
+                return result.returncode == 0
+
+            success = await asyncio.wait_for(
+                loop.run_in_executor(_executor, _extract),
+                timeout=60
+            )
+
+            if success and os.path.exists(output_path):
+                file_size = os.path.getsize(output_path)
+                return DownloadResult(
+                    success=True,
+                    file_path=output_path,
+                    filename="audio.mp3",
+                    file_size=file_size
+                )
+            else:
+                return DownloadResult(
+                    success=False,
+                    error="Ошибка извлечения аудио"
+                )
+
+        except asyncio.TimeoutError:
+            return DownloadResult(
+                success=False,
+                error="Таймаут извлечения аудио"
+            )
+        except Exception as e:
+            logger.exception(f"Audio extraction error: {e}")
+            return DownloadResult(
+                success=False,
+                error=str(e)[:100]
+            )
+
     def _format_error(self, error: str) -> str:
         """Форматирует сообщение об ошибке для пользователя"""
         error_lower = error.lower()

@@ -71,13 +71,10 @@ async def handle_url(message: types.Message):
 
         logger.info(f"Sent video: user={user_id}, size={video_result.file_size}")
 
-        # Удаляем видео файл
-        await downloader.cleanup(video_result.file_path)
-
-        # === СКАЧИВАЕМ АУДИО ===
+        # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО (быстро через ffmpeg) ===
         await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
 
-        audio_result = await downloader.download_audio(url)
+        audio_result = await downloader.extract_audio(video_result.file_path)
 
         if audio_result.success:
             audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
@@ -99,7 +96,9 @@ async def handle_url(message: types.Message):
             await downloader.cleanup(audio_result.file_path)
         else:
             logger.warning(f"Audio extraction failed: {audio_result.error}")
-            # Не показываем ошибку пользователю - видео уже отправлено
+
+        # Удаляем видео файл
+        await downloader.cleanup(video_result.file_path)
 
         # Удаляем статус сообщение
         await status_msg.delete()

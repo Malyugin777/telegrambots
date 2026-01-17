@@ -51,7 +51,8 @@
       "Bash(ssh -o StrictHostKeyChecking=no root@66.151.33.167 \"cd /root/telegrambots/infrastructure && docker-compose down && docker-compose up -d --build\")",
       "Bash(ssh -o StrictHostKeyChecking=no root@66.151.33.167 \"cd /root/telegrambots/infrastructure && docker compose down && docker compose up -d --build\")",
       "Bash(curl -s https://api.shadow-api.ru/api/docs)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npm run build)"
     ]
   }
 }

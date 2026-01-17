@@ -1,5 +1,9 @@
 """
 Обработчик ссылок - скачивание видео и аудио
+
+Используем:
+- RapidAPI для Instagram (требует авторизации в yt-dlp)
+- yt-dlp для TikTok, YouTube Shorts, Pinterest (работает хорошо)
 """
 import re
 import logging
@@ -7,6 +11,7 @@ from aiogram import Router, types, F
 from aiogram.types import FSInputFile
 
 from ..services.downloader import VideoDownloader
+from ..services.rapidapi_downloader import RapidAPIDownloader
 from ..services.cache import get_cached_file_ids, cache_file_ids
 from ..messages import (
     CAPTION,
@@ -19,8 +24,9 @@ from ..messages import (
 router = Router()
 logger = logging.getLogger(__name__)
 
-# Глобальный экземпляр загрузчика
+# Глобальные экземпляры загрузчиков
 downloader = VideoDownloader()
+rapidapi = RapidAPIDownloader()
 
 # Паттерн для поддерживаемых URL
 URL_PATTERN = re.compile(
@@ -34,6 +40,11 @@ URL_PATTERN = re.compile(
     r"[^\s]*",
     re.IGNORECASE
 )
+
+
+def is_instagram(url: str) -> bool:
+    """Проверяет, является ли URL ссылкой на Instagram"""
+    return 'instagram.com' in url.lower()
 
 
 @router.message(F.text.regexp(URL_PATTERN))
@@ -70,8 +81,35 @@ async def handle_url(message: types.Message):
     status_msg = await message.answer(STATUS_DOWNLOADING)
 
     try:
-        # === СКАЧИВАЕМ МЕДИА ===
-        result = await downloader.download(url)
+        # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
+        # Instagram -> RapidAPI (yt-dlp требует авторизации)
+        # Остальные -> yt-dlp (работает хорошо)
+
+        if is_instagram(url):
+            logger.info(f"Using RapidAPI for Instagram: {url}")
+            result = await rapidapi.download(url)
+
+            # Конвертируем результат RapidAPI в формат yt-dlp downloader
+            if result.success:
+                from ..services.downloader import DownloadResult, MediaInfo
+                result = DownloadResult(
+                    success=True,
+                    file_path=result.file_path,
+                    filename=result.filename,
+                    file_size=result.file_size,
+                    is_photo=result.is_photo,
+                    info=MediaInfo(
+                        title=result.title or "video",
+                        author=result.author or "unknown",
+                        platform="instagram"
+                    )
+                )
+            else:
+                from ..services.downloader import DownloadResult
+                result = DownloadResult(success=False, error=result.error)
+        else:
+            # TikTok, YouTube, Pinterest -> yt-dlp
+            result = await downloader.download(url)
 
         if not result.success:
             logger.warning(f"Download failed: user={user_id}, error={result.error}")

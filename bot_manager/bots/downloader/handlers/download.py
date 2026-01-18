@@ -32,6 +32,7 @@ from ..messages import (
     get_unsupported_url_message,
     get_rate_limit_message,
     get_message,
+    get_error_message,
 )
 from bot_manager.middlewares import log_action
 from bot_manager.services.error_logger import error_logger
@@ -80,61 +81,47 @@ async def resolve_short_url(url: str) -> str:
     return url
 
 
-async def update_progress_message(status_msg, done_event: asyncio.Event, progress_data: dict):
+async def update_progress_message(status_msg, done_event: asyncio.Event, progress_data: dict, start_time: float):
     """
-    Обновляет статус-сообщение ТОЛЬКО 3 раза:
-    - 0 мин: "⏳ Скачиваю видео..."
-    - 5 мин: "⏳ Скачиваю... 45 MB / 200 MB (720p)"
-    - 15 мин: "⏳ Почти готово... 180 MB / 200 MB"
+    Обновляет статус-сообщение каждые 60 секунд показывая время и прогресс:
+    - "⏳ Скачиваю... 1 мин"
+    - "⏳ Скачиваю... 3 мин, 45 MB / 200 MB"
+    - "⏳ Скачиваю... 7 мин, 150 MB / 200 MB"
     """
-    UPDATE_INTERVALS = [0, 300, 900]  # 0, 5 мин, 15 мин (в секундах)
+    UPDATE_INTERVAL = 60  # Обновление каждые 60 секунд
 
     try:
-        start_time = asyncio.get_event_loop().time()
-        update_index = 0
+        last_update_time = start_time
 
-        while not done_event.is_set() and update_index < len(UPDATE_INTERVALS):
-            # Вычисляем время до следующего обновления
-            next_update_at = UPDATE_INTERVALS[update_index]
-            current_elapsed = asyncio.get_event_loop().time() - start_time
-            sleep_time = next_update_at - current_elapsed
-
-            if sleep_time > 0:
-                await asyncio.sleep(sleep_time)
+        while not done_event.is_set():
+            await asyncio.sleep(UPDATE_INTERVAL)
 
             if done_event.is_set():
                 break
 
-            # Формируем сообщение в зависимости от момента времени
+            # Считаем прошедшее время
+            elapsed = int(time.time() - start_time)
+            minutes = elapsed // 60
+
+            # Формируем сообщение
             downloaded = progress_data.get('downloaded_bytes', 0)
             total = progress_data.get('total_bytes', 0)
 
-            if update_index == 0:
-                # 0 мин - стартовое сообщение уже показано, пропускаем
-                pass
-            elif update_index == 1:
-                # 5 мин
-                if total and downloaded:
-                    downloaded_mb = int(downloaded / (1024 * 1024))
-                    total_mb = int(total / (1024 * 1024))
-                    text = f"⏳ Скачиваю... {downloaded_mb} MB / {total_mb} MB (720p)"
-                else:
-                    text = "⏳ Скачиваю большое видео..."
-                await status_msg.edit_text(text)
-                logger.info(f"[PROGRESS] 5min update: {downloaded}/{total} bytes")
-            elif update_index == 2:
-                # 15 мин
-                if total and downloaded:
-                    downloaded_mb = int(downloaded / (1024 * 1024))
-                    total_mb = int(total / (1024 * 1024))
-                    text = f"⏳ Почти готово... {downloaded_mb} MB / {total_mb} MB"
-                else:
-                    text = "⏳ Почти готово..."
-                await status_msg.edit_text(text)
-                logger.info(f"[PROGRESS] 15min update: {downloaded}/{total} bytes")
+            if total and downloaded:
+                downloaded_mb = int(downloaded / (1024 * 1024))
+                total_mb = int(total / (1024 * 1024))
+                text = f"⏳ Скачиваю... {minutes} мин, {downloaded_mb} MB / {total_mb} MB"
+            else:
+                text = f"⏳ Скачиваю... {minutes} мин, подождите"
 
-            update_index += 1
+            try:
+                await status_msg.edit_text(text)
+                logger.info(f"[PROGRESS] {minutes}min update: {downloaded}/{total} bytes")
+            except Exception as e:
+                logger.warning(f"[PROGRESS] Failed to update message: {e}")
 
+    except asyncio.CancelledError:
+        logger.debug("[PROGRESS] Task cancelled")
     except Exception as e:
         logger.warning(f"[PROGRESS] Update error: {e}")
 
@@ -272,13 +259,14 @@ async def handle_url(message: types.Message):
                 logger.info(f"[PROGRESS] {downloaded_mb:.1f}MB / {total_mb:.1f}MB, speed={speed_kbps:.1f}KB/s")
                 last_log_time[0] = now
 
+    # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
+    download_start = time.time()
+
     # Прогресс для долгих загрузок
     done_event = asyncio.Event()
-    progress_task = asyncio.create_task(update_progress_message(status_msg, done_event, progress_data))
+    progress_task = asyncio.create_task(update_progress_message(status_msg, done_event, progress_data, download_start))
 
     try:
-        # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
-        download_start = time.time()
         logger.info(f"[HANDLER_START] user={user_id}, platform={platform}, url={url[:100]}")
 
         # Переменная для отслеживания используемого API

@@ -26,11 +26,28 @@ logger = logging.getLogger(__name__)
 
 async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
-    from aiohttp import ClientTimeout
+    from aiohttp import ClientTimeout, ClientSession, TCPConnector
     from aiogram.client.session.aiohttp import AiohttpSession
 
-    # Создаём сессию с увеличенными таймаутами для больших файлов
-    session = AiohttpSession()
+    # Создаём собственную aiohttp сессию с длинными таймаутами
+    # для загрузки больших файлов (до 2GB)
+    custom_timeout = ClientTimeout(
+        total=None,        # Без общего лимита (используем request_timeout в методах)
+        connect=60,        # 1 минута на подключение
+        sock_read=600,     # 10 минут между чанками данных (KEY!)
+        sock_connect=60    # 1 минута на socket подключение
+    )
+
+    # Создаём aiohttp ClientSession с кастомным таймаутом
+    aiohttp_session = ClientSession(
+        timeout=custom_timeout,
+        connector=TCPConnector(limit=100, limit_per_host=10)
+    )
+
+    # Создаём aiogram session обёртку над aiohttp сессией
+    # ВАЖНО: не передаём timeout в AiohttpSession (будет использовать timeout из aiohttp_session)
+    session = AiohttpSession(api=None, timeout=None)
+    session._session = aiohttp_session
 
     bot = Bot(
         token=token,
@@ -38,16 +55,7 @@ async def start_bot(token: str, name: str, router):
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
 
-    # HACK: Патчим внутреннюю aiohttp сессию напрямую после создания
-    # Устанавливаем длинные таймауты для загрузки больших файлов (до 2GB)
-    if hasattr(bot.session, '_session') and bot.session._session:
-        bot.session._session._timeout = ClientTimeout(
-            total=None,        # Без общего лимита (используем request_timeout)
-            connect=60,        # 1 минута на подключение
-            sock_read=600,     # 10 минут между чанками (КЛЮЧЕВОЕ!)
-            sock_connect=60    # 1 минута на socket connect
-        )
-        logger.info("Patched aiohttp session timeout: sock_read=600s (for large file uploads)")
+    logger.info("Custom aiohttp session: sock_read=600s, total=None (for large file uploads)")
 
     dp = Dispatcher()
 

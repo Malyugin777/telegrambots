@@ -5,7 +5,7 @@ import dayjs from 'dayjs';
 import { ImageUpload } from '../../components';
 
 export const BroadcastEdit = () => {
-  const { formProps, saveButtonProps, queryResult } = useForm();
+  const { formProps, saveButtonProps } = useForm();
 
   const { selectProps: botSelectProps } = useSelect({
     resource: 'bots',

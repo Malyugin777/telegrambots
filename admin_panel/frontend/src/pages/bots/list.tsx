@@ -12,7 +12,6 @@ import {
   ReloadOutlined,
   EyeInvisibleOutlined,
 } from '@ant-design/icons';
-import { useCustom } from '@refinedev/core';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 

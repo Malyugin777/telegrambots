@@ -1,6 +1,10 @@
+from typing import TYPE_CHECKING
+
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from shared.config import settings
-from shared.database.models import Base
+
+if TYPE_CHECKING:
+    from shared.database.models import Base
 
 engine = create_async_engine(
     settings.database_url,
@@ -29,5 +33,6 @@ async def get_db():
 
 
 async def init_db():
+    from shared.database.models import Base  # Local import to avoid circular dependency
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)

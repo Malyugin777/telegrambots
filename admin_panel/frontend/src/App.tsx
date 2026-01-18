@@ -1,5 +1,5 @@
 import { Refine, Authenticated } from '@refinedev/core';
-import { RefineThemes, ThemedLayoutV2, useNotificationProvider } from '@refinedev/antd';
+import { ThemedLayoutV2, useNotificationProvider } from '@refinedev/antd';
 import routerProvider, {
   NavigateToResource,
   UnsavedChangesNotifier,

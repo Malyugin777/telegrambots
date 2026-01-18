@@ -35,6 +35,73 @@ DOWNLOAD_TIMEOUT = 120  # секунд (Instagram через RapidAPI)
 _executor = ThreadPoolExecutor(max_workers=3)
 
 
+def get_quality_for_duration(duration_seconds: int) -> int:
+    """
+    Выбор качества видео по длительности для YouTube
+
+    < 3 мин (Shorts) → 720p (маленький файл, макс качество)
+    3-15 мин → 720p (нормальный размер)
+    15-60 мин → 480p (экономия трафика)
+    > 60 мин → 360p (чтобы влезло в 2GB)
+    """
+    if duration_seconds < 180:       # < 3 мин
+        return 720
+    elif duration_seconds < 900:     # < 15 мин
+        return 720
+    elif duration_seconds < 3600:    # < 60 мин
+        return 480
+    else:                            # > 60 мин
+        return 360
+
+
+def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: int) -> Optional[RapidAPIMedia]:
+    """
+    Выбрать видео ближайшее к желаемому качеству
+
+    Логика:
+    1. Ищем точное совпадение (720p)
+    2. Если нет - берём ближайшее снизу (480p вместо 720p)
+    3. Если нет снизу - берём ближайшее сверху (1080p вместо 720p)
+    """
+    videos = [m for m in medias if m.type == "video"]
+    if not videos:
+        return None
+
+    # Парсим качество из строки ("720p" -> 720)
+    def parse_quality(quality_str: str) -> int:
+        try:
+            # Убираем 'p' и парсим число
+            return int(quality_str.lower().replace('p', '').strip())
+        except (ValueError, AttributeError):
+            return 0
+
+    # Создаём список (quality_int, media)
+    videos_with_quality = []
+    for v in videos:
+        q = parse_quality(v.quality)
+        if q > 0:
+            videos_with_quality.append((q, v))
+
+    if not videos_with_quality:
+        # Нет информации о качестве - берём первое видео
+        return videos[0]
+
+    # Сортируем по качеству
+    videos_with_quality.sort(key=lambda x: x[0])
+
+    # Ищем ближайшее
+    best_match = None
+    best_diff = float('inf')
+
+    for q, media in videos_with_quality:
+        diff = abs(q - desired_quality)
+        if diff < best_diff:
+            best_diff = diff
+            best_match = media
+
+    return best_match
+
+
 @dataclass
 class RapidAPIMedia:
     """Медиа из ответа RapidAPI"""
@@ -51,6 +118,7 @@ class RapidAPIResult:
     medias: List[RapidAPIMedia] = None
     title: str = ""
     author: str = ""
+    duration: int = 0  # Длительность видео в секундах
     error: Optional[str] = None
 
 
@@ -173,24 +241,45 @@ class RapidAPIDownloader:
                     error="No media found"
                 )
 
+            # Извлекаем длительность (может быть в секундах или "MM:SS" формате)
+            duration = 0
+            duration_raw = data.get("duration", 0)
+            if isinstance(duration_raw, int):
+                duration = duration_raw
+            elif isinstance(duration_raw, str) and ":" in duration_raw:
+                # Парсим "MM:SS" или "HH:MM:SS"
+                try:
+                    parts = duration_raw.split(":")
+                    if len(parts) == 2:  # MM:SS
+                        duration = int(parts[0]) * 60 + int(parts[1])
+                    elif len(parts) == 3:  # HH:MM:SS
+                        duration = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                except (ValueError, IndexError):
+                    pass
+
             return RapidAPIResult(
                 success=True,
                 medias=medias,
                 title=data.get("title", "")[:100],
-                author=data.get("author", "") or data.get("username", "")
+                author=data.get("author", "") or data.get("username", ""),
+                duration=duration
             )
 
         except Exception as e:
             logger.exception(f"Parse response error: {e}")
             return RapidAPIResult(success=False, error=str(e)[:100])
 
-    async def download(self, url: str) -> DownloadedFile:
+    async def download(self, url: str, adaptive_quality: bool = False) -> DownloadedFile:
         """
         Скачать медиа по URL через RapidAPI
 
         1. Получает прямые ссылки через API
-        2. Скачивает лучшее качество
+        2. Скачивает с адаптивным качеством (для YouTube) или лучшее
         3. Возвращает путь к файлу
+
+        Args:
+            url: URL видео
+            adaptive_quality: Если True, выбирает качество по длительности (для YouTube)
         """
         # Получаем инфо о медиа
         info = await self.get_media_info(url)
@@ -198,18 +287,24 @@ class RapidAPIDownloader:
         if not info.success:
             return DownloadedFile(success=False, error=info.error)
 
-        # Выбираем лучшее видео или фото
-        video_media = None
-        photo_media = None
+        # Выбираем медиа
+        if adaptive_quality and info.duration > 0:
+            # Адаптивное качество для YouTube
+            desired_quality = get_quality_for_duration(info.duration)
+            target_media = select_best_media_by_quality(info.medias, desired_quality)
+            logger.info(f"[ADAPTIVE] duration={info.duration}s -> quality={desired_quality}p")
+        else:
+            # Обычный режим - берём лучшее видео или фото
+            video_media = None
+            photo_media = None
 
-        for m in info.medias:
-            if m.type == "video" and not video_media:
-                video_media = m
-            elif m.type == "image" and not photo_media:
-                photo_media = m
+            for m in info.medias:
+                if m.type == "video" and not video_media:
+                    video_media = m
+                elif m.type == "image" and not photo_media:
+                    photo_media = m
 
-        # Приоритет: видео > фото
-        target_media = video_media or photo_media
+            target_media = video_media or photo_media
 
         if not target_media:
             return DownloadedFile(success=False, error="No suitable media found")

@@ -142,9 +142,10 @@ async def update_progress_message(status_msg, done_event: asyncio.Event, progres
 def use_rapidapi_primary(url: str) -> bool:
     """Проверяет, нужно ли использовать RapidAPI как ОСНОВНОЙ способ"""
     url_lower = url.lower()
-    # RapidAPI только для Instagram (yt-dlp требует авторизации)
+    # RapidAPI для Instagram (авторизация) и YouTube (адаптивное качество)
     return any(domain in url_lower for domain in [
-        'instagram.com', 'instagr.am'
+        'instagram.com', 'instagr.am',
+        'youtube.com', 'youtu.be'
     ])
 
 def supports_rapidapi_fallback(url: str) -> bool:
@@ -252,105 +253,153 @@ async def handle_url(message: types.Message):
         api_source = None
 
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
-        # Instagram -> RapidAPI (yt-dlp требует авторизации)
-        # YouTube/TikTok/Pinterest -> yt-dlp первым, RapidAPI fallback если упал
-        # Остальные -> yt-dlp
+        # Instagram -> RapidAPI download_all() (карусели)
+        # YouTube -> RapidAPI download() (адаптивное качество)
+        # TikTok/Pinterest -> yt-dlp первым, RapidAPI fallback если упал
+
+        is_instagram = any(d in url.lower() for d in ['instagram.com', 'instagr.am'])
+        is_youtube = any(d in url.lower() for d in ['youtube.com', 'youtu.be'])
 
         if use_rapidapi_primary(url):
             logger.info(f"Using RapidAPI (primary) for: {url}")
             api_source = "rapidapi"
 
-            # Скачиваем ВСЕ медиа (для каруселей)
-            carousel = await rapidapi.download_all(url)
+            # YouTube - адаптивное качество
+            if is_youtube:
+                from ..services.downloader import DownloadResult, MediaInfo
+                file_result = await rapidapi.download(url, adaptive_quality=True)
 
-            if not carousel.success:
-                logger.warning(f"Download failed: user={user_id}, error={carousel.error}")
-                await error_logger.log_error_by_telegram_id(
-                    telegram_id=user_id,
-                    bot_username="SaveNinja_bot",
-                    platform=platform,
-                    url=url,
-                    error_type="download_failed",
-                    error_message=carousel.error,
-                    error_details={"source": "rapidapi"}
+                if not file_result.success:
+                    logger.warning(f"Download failed: user={user_id}, error={file_result.error}")
+                    await error_logger.log_error_by_telegram_id(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        url=url,
+                        error_type="download_failed",
+                        error_message=file_result.error,
+                        error_details={"source": "rapidapi"}
+                    )
+                    await status_msg.edit_text(f"❌ {file_result.error}")
+                    return
+
+                # Проверяем размер файла для выбора способа отправки
+                file_size = file_result.file_size or 0
+                send_as_document = False
+
+                if file_size > 2_000_000_000:  # > 2GB
+                    await status_msg.edit_text("❌ Видео слишком большое (>2GB), не могу отправить в Telegram")
+                    await rapidapi.cleanup(file_result.file_path)
+                    return
+                elif file_size >= 50_000_000:  # >= 50MB
+                    send_as_document = True
+
+                # Создаём DownloadResult
+                result = DownloadResult(
+                    success=True,
+                    file_path=file_result.file_path,
+                    filename=file_result.filename,
+                    file_size=file_result.file_size,
+                    is_photo=file_result.is_photo,
+                    send_as_document=send_as_document,
+                    info=MediaInfo(
+                        title=file_result.title or "video",
+                        author=file_result.author or "unknown",
+                        platform=platform
+                    )
                 )
-                await status_msg.edit_text(f"❌ {carousel.error}")
-                return
+            else:
+                # Instagram - скачиваем ВСЕ медиа (для каруселей)
+                carousel = await rapidapi.download_all(url)
 
-            # === КАРУСЕЛЬ (несколько файлов) ===
-            if len(carousel.files) > 1:
-                await status_msg.edit_text(get_uploading_message())
+                if not carousel.success:
+                    logger.warning(f"Download failed: user={user_id}, error={carousel.error}")
+                    await error_logger.log_error_by_telegram_id(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        url=url,
+                        error_type="download_failed",
+                        error_message=carousel.error,
+                        error_details={"source": "rapidapi"}
+                    )
+                    await status_msg.edit_text(f"❌ {carousel.error}")
+                    return
 
-                # Формируем MediaGroup
-                media_group = []
-                for i, file in enumerate(carousel.files):
-                    input_file = FSInputFile(file.file_path, filename=file.filename)
-                    caption = CAPTION if i == 0 else None  # Подпись только к первому
+                # === КАРУСЕЛЬ (несколько файлов) ===
+                if len(carousel.files) > 1:
+                    await status_msg.edit_text(get_uploading_message())
 
-                    if file.is_photo:
-                        media_group.append(InputMediaPhoto(media=input_file, caption=caption))
-                    else:
-                        media_group.append(InputMediaVideo(
-                            media=input_file,
-                            caption=caption,
-                            supports_streaming=True
-                        ))
+                    # Формируем MediaGroup
+                    media_group = []
+                    for i, file in enumerate(carousel.files):
+                        input_file = FSInputFile(file.file_path, filename=file.filename)
+                        caption = CAPTION if i == 0 else None  # Подпись только к первому
 
-                # Отправляем альбом
-                await message.answer_media_group(media=media_group)
+                        if file.is_photo:
+                            media_group.append(InputMediaPhoto(media=input_file, caption=caption))
+                        else:
+                            media_group.append(InputMediaVideo(
+                                media=input_file,
+                                caption=caption,
+                                supports_streaming=True
+                            ))
 
-                # Рассчитываем метрики производительности
-                download_time_ms = int((time.time() - download_start) * 1000)
-                total_size = sum(f.file_size or 0 for f in carousel.files)
-                download_speed = int(total_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
+                    # Отправляем альбом
+                    await message.answer_media_group(media=media_group)
 
-                logger.info(f"Sent carousel: user={user_id}, files={len(carousel.files)}, time={download_time_ms}ms, size={total_size}")
-                await log_action(
-                    user_id, "download_success", f"carousel:{platform}:{len(carousel.files)}",
-                    download_time_ms=download_time_ms,
-                    file_size_bytes=total_size,
-                    download_speed_kbps=download_speed,
-                    api_source=api_source
+                    # Рассчитываем метрики производительности
+                    download_time_ms = int((time.time() - download_start) * 1000)
+                    total_size = sum(f.file_size or 0 for f in carousel.files)
+                    download_speed = int(total_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
+
+                    logger.info(f"Sent carousel: user={user_id}, files={len(carousel.files)}, time={download_time_ms}ms, size={total_size}")
+                    await log_action(
+                        user_id, "download_success", f"carousel:{platform}:{len(carousel.files)}",
+                        download_time_ms=download_time_ms,
+                        file_size_bytes=total_size,
+                        download_speed_kbps=download_speed,
+                        api_source=api_source
+                    )
+
+                    # Извлекаем аудио из первого видео (если есть)
+                    if carousel.has_video:
+                        await status_msg.edit_text(get_extracting_audio_message())
+                        video_file = next((f for f in carousel.files if not f.is_photo), None)
+                        if video_file:
+                            audio_result = await downloader.extract_audio(video_file.file_path)
+                            if audio_result.success:
+                                audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
+                                await message.answer_audio(
+                                    audio=audio_file,
+                                    caption=CAPTION,
+                                    title=carousel.title[:60] if carousel.title else "audio",
+                                    performer=carousel.author if carousel.author else None,
+                                )
+                                await log_action(user_id, "audio_extracted", f"{platform}")
+                                await downloader.cleanup(audio_result.file_path)
+
+                    # Очистка
+                    for file in carousel.files:
+                        await rapidapi.cleanup(file.file_path)
+                    await status_msg.delete()
+                    return
+
+                # === ОДИН ФАЙЛ (не карусель) ===
+                from ..services.downloader import DownloadResult, MediaInfo
+                single_file = carousel.files[0]
+                result = DownloadResult(
+                    success=True,
+                    file_path=single_file.file_path,
+                    filename=single_file.filename,
+                    file_size=single_file.file_size,
+                    is_photo=single_file.is_photo,
+                    info=MediaInfo(
+                        title=carousel.title or "video",
+                        author=carousel.author or "unknown",
+                        platform="instagram"
+                    )
                 )
-
-                # Извлекаем аудио из первого видео (если есть)
-                if carousel.has_video:
-                    await status_msg.edit_text(get_extracting_audio_message())
-                    video_file = next((f for f in carousel.files if not f.is_photo), None)
-                    if video_file:
-                        audio_result = await downloader.extract_audio(video_file.file_path)
-                        if audio_result.success:
-                            audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
-                            await message.answer_audio(
-                                audio=audio_file,
-                                caption=CAPTION,
-                                title=carousel.title[:60] if carousel.title else "audio",
-                                performer=carousel.author if carousel.author else None,
-                            )
-                            await log_action(user_id, "audio_extracted", f"{platform}")
-                            await downloader.cleanup(audio_result.file_path)
-
-                # Очистка
-                for file in carousel.files:
-                    await rapidapi.cleanup(file.file_path)
-                await status_msg.delete()
-                return
-
-            # === ОДИН ФАЙЛ (не карусель) ===
-            from ..services.downloader import DownloadResult, MediaInfo
-            single_file = carousel.files[0]
-            result = DownloadResult(
-                success=True,
-                file_path=single_file.file_path,
-                filename=single_file.filename,
-                file_size=single_file.file_size,
-                is_photo=single_file.is_photo,
-                info=MediaInfo(
-                    title=carousel.title or "video",
-                    author=carousel.author or "unknown",
-                    platform="instagram"
-                )
-            )
         else:
             # TikTok, YouTube, Pinterest -> yt-dlp (первая попытка)
             result = await downloader.download(url, progress_callback=progress_callback)
@@ -442,7 +491,10 @@ async def handle_url(message: types.Message):
 
             # Кэшируем и удаляем
             await cache_file_ids(url, file_id, None)
-            await downloader.cleanup(result.file_path)
+            if api_source == "rapidapi":
+                await rapidapi.cleanup(result.file_path)
+            else:
+                await downloader.cleanup(result.file_path)
             await status_msg.delete()
 
         else:
@@ -508,7 +560,10 @@ async def handle_url(message: types.Message):
 
             # Кэшируем и удаляем
             await cache_file_ids(url, file_id, audio_file_id)
-            await downloader.cleanup(result.file_path)
+            if api_source == "rapidapi":
+                await rapidapi.cleanup(result.file_path)
+            else:
+                await downloader.cleanup(result.file_path)
             await status_msg.delete()
 
             # Логируем успешное завершение

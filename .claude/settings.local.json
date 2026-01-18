@@ -61,7 +61,10 @@
       "Bash(ssh root@185.96.80.254 \"free -h && echo ''---'' && df -h && echo ''---'' && top -bn1 | head -20\")",
       "Bash(python3:*)",
       "Bash(python:*)",
-      "Bash(npm run build:*)"
+      "Bash(npm run build:*)",
+      "Bash(echo:*)",
+      "WebFetch(domain:github.com)",
+      "WebSearch"
     ]
   }
 }

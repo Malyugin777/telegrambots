@@ -146,6 +146,11 @@ class ActionLog(Base):
     details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
+    # Performance metrics
+    download_time_ms: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    file_size_bytes: Mapped[Optional[int]] = mapped_column(BigInteger, nullable=True)
+    download_speed_kbps: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
 
 class Segment(Base):
     """User segments for targeted broadcasts."""

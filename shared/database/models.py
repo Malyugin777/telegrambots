@@ -89,6 +89,11 @@ class ActionLog(Base):
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
 
+    # Performance metrics
+    download_time_ms = Column(Integer, nullable=True)
+    file_size_bytes = Column(BigInteger, nullable=True)
+    download_speed_kbps = Column(Integer, nullable=True)
+
     user = relationship("User", back_populates="action_logs")
     bot = relationship("Bot", back_populates="action_logs")
 

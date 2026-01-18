@@ -6,6 +6,8 @@
 - yt-dlp для TikTok, YouTube Shorts, Pinterest (работает хорошо)
 """
 import re
+import os
+import time
 import logging
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo
@@ -101,6 +103,9 @@ async def handle_url(message: types.Message):
     status_msg = await message.answer(get_downloading_message())
 
     try:
+        # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
+        download_start = time.time()
+
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
         # Instagram -> RapidAPI (yt-dlp требует авторизации)
         # Остальные -> yt-dlp (работает хорошо)
@@ -146,8 +151,19 @@ async def handle_url(message: types.Message):
 
                 # Отправляем альбом
                 await message.answer_media_group(media=media_group)
-                logger.info(f"Sent carousel: user={user_id}, files={len(carousel.files)}")
-                await log_action(user_id, "download_success", f"carousel:{platform}:{len(carousel.files)}")
+
+                # Рассчитываем метрики производительности
+                download_time_ms = int((time.time() - download_start) * 1000)
+                total_size = sum(f.file_size or 0 for f in carousel.files)
+                download_speed = int(total_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
+
+                logger.info(f"Sent carousel: user={user_id}, files={len(carousel.files)}, time={download_time_ms}ms, size={total_size}")
+                await log_action(
+                    user_id, "download_success", f"carousel:{platform}:{len(carousel.files)}",
+                    download_time_ms=download_time_ms,
+                    file_size_bytes=total_size,
+                    download_speed_kbps=download_speed
+                )
 
                 # Извлекаем аудио из первого видео (если есть)
                 if carousel.has_video:
@@ -218,8 +234,19 @@ async def handle_url(message: types.Message):
                 caption=CAPTION,
             )
             file_id = photo_msg.photo[-1].file_id if photo_msg.photo else None
-            logger.info(f"Sent photo: user={user_id}, size={result.file_size}")
-            await log_action(user_id, "download_success", f"photo:{platform}")
+
+            # Рассчитываем метрики производительности
+            download_time_ms = int((time.time() - download_start) * 1000)
+            file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
+            download_speed = int(file_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
+
+            logger.info(f"Sent photo: user={user_id}, size={file_size}, time={download_time_ms}ms")
+            await log_action(
+                user_id, "download_success", f"photo:{platform}",
+                download_time_ms=download_time_ms,
+                file_size_bytes=file_size,
+                download_speed_kbps=download_speed
+            )
 
             # Кэшируем и удаляем
             await cache_file_ids(url, file_id, None)
@@ -234,8 +261,19 @@ async def handle_url(message: types.Message):
                 supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
             )
             file_id = video_msg.video.file_id if video_msg.video else None
-            logger.info(f"Sent video: user={user_id}, size={result.file_size}")
-            await log_action(user_id, "download_success", f"video:{platform}")
+
+            # Рассчитываем метрики производительности
+            download_time_ms = int((time.time() - download_start) * 1000)
+            file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
+            download_speed = int(file_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
+
+            logger.info(f"Sent video: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s")
+            await log_action(
+                user_id, "download_success", f"video:{platform}",
+                download_time_ms=download_time_ms,
+                file_size_bytes=file_size,
+                download_speed_kbps=download_speed
+            )
 
             # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО ===
             await status_msg.edit_text(get_extracting_audio_message())

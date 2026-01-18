@@ -51,7 +51,10 @@ async def init_bot_record(bot_username: str, bot_id: int, bot_name: str) -> int:
 async def log_action(
     telegram_id: int,
     action: str,
-    details: Optional[str] = None
+    details: Optional[str] = None,
+    download_time_ms: Optional[int] = None,
+    file_size_bytes: Optional[int] = None,
+    download_speed_kbps: Optional[int] = None,
 ) -> None:
     """
     Записывает действие пользователя в action_logs.
@@ -60,6 +63,9 @@ async def log_action(
         telegram_id: Telegram ID пользователя
         action: Тип действия (start, download, audio, etc.)
         details: Дополнительные данные (URL, платформа, etc.)
+        download_time_ms: Время скачивания в миллисекундах
+        file_size_bytes: Размер файла в байтах
+        download_speed_kbps: Скорость скачивания в KB/s
     """
     try:
         async with async_session() as session:
@@ -81,6 +87,9 @@ async def log_action(
                 bot_id=_bot_id,
                 action=action,
                 details=details_dict,
+                download_time_ms=download_time_ms,
+                file_size_bytes=file_size_bytes,
+                download_speed_kbps=download_speed_kbps,
             )
             session.add(log_entry)
             await session.commit()

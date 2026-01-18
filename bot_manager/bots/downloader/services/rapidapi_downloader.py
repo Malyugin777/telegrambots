@@ -67,6 +67,17 @@ class DownloadedFile:
     error: Optional[str] = None
 
 
+@dataclass
+class CarouselResult:
+    """Результат скачивания карусели"""
+    success: bool
+    files: List[DownloadedFile] = None
+    title: str = ""
+    author: str = ""
+    has_video: bool = False  # Есть ли видео для извлечения аудио
+    error: Optional[str] = None
+
+
 class RapidAPIDownloader:
     """
     Загрузчик через RapidAPI Social Download All In One
@@ -226,6 +237,94 @@ class RapidAPIDownloader:
         except Exception as e:
             logger.exception(f"Download error: {e}")
             return DownloadedFile(success=False, error=str(e)[:100])
+
+    async def download_all(self, url: str) -> CarouselResult:
+        """
+        Скачать ВСЕ медиа из карусели Instagram
+
+        Возвращает список файлов для отправки как MediaGroup
+        """
+        info = await self.get_media_info(url)
+
+        if not info.success:
+            return CarouselResult(success=False, error=info.error)
+
+        # Собираем уникальные медиа (убираем дубли по URL)
+        seen_urls = set()
+        unique_medias = []
+
+        for m in info.medias:
+            # Пропускаем аудио и дубликаты
+            if m.type == "audio" or m.url in seen_urls:
+                continue
+            seen_urls.add(m.url)
+            unique_medias.append(m)
+
+        if not unique_medias:
+            return CarouselResult(success=False, error="No media found")
+
+        # Если только 1 медиа - используем обычный download
+        if len(unique_medias) == 1:
+            result = await self.download(url)
+            if result.success:
+                return CarouselResult(
+                    success=True,
+                    files=[result],
+                    title=info.title,
+                    author=info.author,
+                    has_video=not result.is_photo
+                )
+            return CarouselResult(success=False, error=result.error)
+
+        # Скачиваем все файлы параллельно
+        logger.info(f"Downloading carousel: {len(unique_medias)} items")
+
+        loop = asyncio.get_running_loop()
+        tasks = []
+
+        for i, media in enumerate(unique_medias[:10]):  # Максимум 10 файлов
+            is_photo = media.type == "image"
+            tasks.append(
+                loop.run_in_executor(
+                    _executor,
+                    self._download_file,
+                    media.url,
+                    is_photo,
+                    info.title,
+                    info.author
+                )
+            )
+
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*tasks, return_exceptions=True),
+                timeout=DOWNLOAD_TIMEOUT * 2
+            )
+        except asyncio.TimeoutError:
+            return CarouselResult(success=False, error="Carousel download timeout")
+
+        # Фильтруем успешные
+        files = []
+        has_video = False
+
+        for r in results:
+            if isinstance(r, DownloadedFile) and r.success:
+                files.append(r)
+                if not r.is_photo:
+                    has_video = True
+
+        if not files:
+            return CarouselResult(success=False, error="Failed to download carousel items")
+
+        logger.info(f"Carousel downloaded: {len(files)} files")
+
+        return CarouselResult(
+            success=True,
+            files=files,
+            title=info.title,
+            author=info.author,
+            has_video=has_video
+        )
 
     def _download_file(
         self,

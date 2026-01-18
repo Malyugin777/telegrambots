@@ -35,6 +35,52 @@ DOWNLOAD_TIMEOUT = 120  # секунд (Instagram через RapidAPI)
 _executor = ThreadPoolExecutor(max_workers=3)
 
 
+@dataclass
+class RapidAPIMedia:
+    """Медиа из ответа RapidAPI"""
+    url: str
+    type: str  # "video", "image", "audio"
+    quality: str = ""
+    extension: str = ""
+
+
+@dataclass
+class RapidAPIResult:
+    """Результат RapidAPI запроса"""
+    success: bool
+    medias: List[RapidAPIMedia] = None
+    title: str = ""
+    author: str = ""
+    duration: int = 0  # Длительность видео в секундах
+    error: Optional[str] = None
+
+
+@dataclass
+class DownloadedFile:
+    """Скачанный файл"""
+    success: bool
+    file_path: Optional[str] = None
+    filename: Optional[str] = None
+    file_size: int = 0
+    is_photo: bool = False
+    title: str = ""
+    author: str = ""
+    error: Optional[str] = None
+
+
+@dataclass
+class CarouselResult:
+    """Результат скачивания карусели"""
+    success: bool
+    files: List[DownloadedFile] = None
+    title: str = ""
+    author: str = ""
+    has_video: bool = False  # Есть ли видео для извлечения аудио
+    error: Optional[str] = None
+
+
+# === HELPER FUNCTIONS ===
+
 def get_quality_for_duration(duration_seconds: int) -> int:
     """
     Выбор качества видео по длительности для YouTube
@@ -96,49 +142,7 @@ def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: i
     return best_match
 
 
-@dataclass
-class RapidAPIMedia:
-    """Медиа из ответа RapidAPI"""
-    url: str
-    type: str  # "video", "image", "audio"
-    quality: str = ""
-    extension: str = ""
-
-
-@dataclass
-class RapidAPIResult:
-    """Результат RapidAPI запроса"""
-    success: bool
-    medias: List[RapidAPIMedia] = None
-    title: str = ""
-    author: str = ""
-    duration: int = 0  # Длительность видео в секундах
-    error: Optional[str] = None
-
-
-@dataclass
-class DownloadedFile:
-    """Скачанный файл"""
-    success: bool
-    file_path: Optional[str] = None
-    filename: Optional[str] = None
-    file_size: int = 0
-    is_photo: bool = False
-    title: str = ""
-    author: str = ""
-    error: Optional[str] = None
-
-
-@dataclass
-class CarouselResult:
-    """Результат скачивания карусели"""
-    success: bool
-    files: List[DownloadedFile] = None
-    title: str = ""
-    author: str = ""
-    has_video: bool = False  # Есть ли видео для извлечения аудио
-    error: Optional[str] = None
-
+# === DOWNLOADER CLASS ===
 
 class RapidAPIDownloader:
     """

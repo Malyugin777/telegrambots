@@ -80,19 +80,41 @@ async def resolve_short_url(url: str) -> str:
     return url
 
 
-async def update_progress_message(status_msg, done_event: asyncio.Event):
-    """Обновляет статус-сообщение для долгих загрузок с таймером"""
+async def update_progress_message(status_msg, done_event: asyncio.Event, progress_data: dict):
+    """Обновляет статус-сообщение для долгих загрузок с прогрессом раз в минуту"""
     try:
         elapsed = 0
         while not done_event.is_set():
-            await asyncio.sleep(30)
-            elapsed += 30
+            await asyncio.sleep(60)  # Обновляем раз в МИНУТУ
+            elapsed += 60
             if not done_event.is_set():
-                # Форматируем время: "0:30", "1:00", "2:30" и т.д.
-                minutes = elapsed // 60
-                seconds = elapsed % 60
-                time_str = f"{minutes}:{seconds:02d}"
-                await status_msg.edit_text(f"⏳ Скачиваю... {time_str}")
+                # Проверяем есть ли данные о прогрессе
+                downloaded = progress_data.get('downloaded_bytes', 0)
+                total = progress_data.get('total_bytes', 0)
+                speed = progress_data.get('speed', 0)
+
+                if total and downloaded:
+                    # Форматируем размеры в MB
+                    downloaded_mb = downloaded / (1024 * 1024)
+                    total_mb = total / (1024 * 1024)
+
+                    # Оцениваем оставшееся время
+                    if speed and speed > 0:
+                        remaining_bytes = total - downloaded
+                        eta_seconds = int(remaining_bytes / speed)
+                        eta_minutes = eta_seconds // 60
+
+                        # Форматируем сообщение с прогрессом
+                        text = f"⏳ Скачиваю... {downloaded_mb:.0f} MB / {total_mb:.0f} MB — ~{eta_minutes} мин осталось"
+                    else:
+                        # Без оценки времени
+                        text = f"⏳ Скачиваю... {downloaded_mb:.0f} MB / {total_mb:.0f} MB"
+                else:
+                    # Нет данных о прогрессе - показываем только время
+                    minutes = elapsed // 60
+                    text = f"⏳ Скачиваю... {minutes} мин"
+
+                await status_msg.edit_text(text)
     except Exception:
         pass  # Игнорируем ошибки редактирования
 
@@ -161,9 +183,23 @@ async def handle_url(message: types.Message):
     # Статус сообщение
     status_msg = await message.answer(get_downloading_message())
 
+    # Данные о прогрессе скачивания (для обновления сообщения)
+    progress_data = {
+        'downloaded_bytes': 0,
+        'total_bytes': 0,
+        'speed': 0,
+    }
+
+    # Callback для прогресса yt-dlp
+    def progress_callback(d):
+        if d['status'] == 'downloading':
+            progress_data['downloaded_bytes'] = d.get('downloaded_bytes', 0)
+            progress_data['total_bytes'] = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+            progress_data['speed'] = d.get('speed', 0)
+
     # Прогресс для долгих загрузок
     done_event = asyncio.Event()
-    progress_task = asyncio.create_task(update_progress_message(status_msg, done_event))
+    progress_task = asyncio.create_task(update_progress_message(status_msg, done_event, progress_data))
 
     try:
         # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
@@ -268,7 +304,7 @@ async def handle_url(message: types.Message):
             )
         else:
             # TikTok, YouTube, Pinterest -> yt-dlp
-            result = await downloader.download(url)
+            result = await downloader.download(url, progress_callback=progress_callback)
 
         if not result.success:
             logger.warning(f"Download failed: user={user_id}, error={result.error}")

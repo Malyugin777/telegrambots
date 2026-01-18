@@ -86,7 +86,7 @@ class VideoDownloader:
         """Инициализация загрузчика"""
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
-    def _get_video_options(self, output_path: str, url: str = "") -> dict:
+    def _get_video_options(self, output_path: str, url: str = "", progress_hook=None) -> dict:
         """Опции yt-dlp для скачивания видео (оптимизировано для скорости)"""
 
         # Для TikTok предпочитаем H.264 (лучше совместимость с Telegram)
@@ -108,7 +108,7 @@ class VideoDownloader:
         else:
             format_string = 'best[ext=mp4]/best'
 
-        return {
+        opts = {
             # Основные настройки
             'quiet': True,
             'no_warnings': True,
@@ -138,6 +138,12 @@ class VideoDownloader:
                 'youtube': {'player_client': ['ios', 'android']},
             },
         }
+
+        # Добавляем progress_hooks если передан
+        if progress_hook:
+            opts['progress_hooks'] = [progress_hook]
+
+        return opts
 
     def _get_audio_options(self, output_path: str) -> dict:
         """Опции yt-dlp для извлечения аудио (MP3 320kbps)"""
@@ -190,15 +196,29 @@ class VideoDownloader:
         safe = safe[:50] if safe else "video"
         return f"{safe}.{ext}"
 
-    async def download(self, url: str) -> DownloadResult:
+    async def download(self, url: str, progress_callback=None) -> DownloadResult:
         """
         Скачивает видео/фото по URL
+
+        Args:
+            url: URL для скачивания
+            progress_callback: Опциональный callback для прогресса (dict -> None)
 
         Returns:
             DownloadResult с путём к файлу или ошибкой
         """
         output_path = self._generate_filepath("mp4")
-        opts = self._get_video_options(output_path, url)
+
+        # Создаём progress_hook для yt-dlp
+        progress_hook = None
+        if progress_callback:
+            def progress_hook(d):
+                try:
+                    progress_callback(d)
+                except Exception:
+                    pass  # Игнорируем ошибки callback
+
+        opts = self._get_video_options(output_path, url, progress_hook)
 
         try:
             loop = asyncio.get_running_loop()
@@ -599,24 +619,39 @@ class VideoDownloader:
         """Форматирует сообщение об ошибке для пользователя"""
         error_lower = error.lower()
 
-        if "private" in error_lower:
-            return "Видео приватное"
-        elif "login" in error_lower or "sign in" in error_lower or "authentication" in error_lower:
-            return "Instagram требует авторизации для этого контента"
-        elif "rate" in error_lower and "limit" in error_lower:
-            return "Слишком много запросов, попробуй через минуту"
-        elif "unavailable" in error_lower or "not available" in error_lower:
-            return "Видео недоступно"
-        elif "age" in error_lower:
-            return "Видео с ограничением по возрасту"
-        elif "copyright" in error_lower:
-            return "Заблокировано из-за авторских прав"
-        elif "geo" in error_lower or "country" in error_lower:
-            return "Недоступно в вашем регионе"
-        elif "404" in error or "not found" in error_lower:
-            return "Видео не найдено"
-        else:
-            return error[:100] if len(error) > 100 else error
+        # Словарь человеческих ошибок
+        ERROR_MESSAGES = {
+            "removed": "❌ Видео удалено",
+            "terminated": "❌ Видео удалено",
+            "private": "🔒 Это приватное видео",
+            "unavailable": "❌ Видео недоступно",
+            "not_available": "❌ Видео недоступно",
+            "age_restricted": "🔞 Видео 18+",
+            "copyright": "©️ Видео заблокировано по авторским правам",
+            "live": "📺 Это прямая трансляция, не могу скачать",
+            "streaming": "📺 Это прямая трансляция, не могу скачать",
+            "members_only": "💎 Видео недоступно для скачивания",
+            "members-only": "💎 Видео недоступно для скачивания",
+            "subscription": "💎 Видео недоступно для скачивания",
+            "timeout": "⏱ Превышено время ожидания, попробуй позже",
+            "not_found": "❌ Видео не найдено",
+            "network": "🌐 Ошибка сети, попробуй позже",
+            "connection": "🌐 Ошибка сети, попробуй позже",
+            "geo_restricted": "❌ Видео недоступно в вашем регионе",
+            "country": "❌ Видео недоступно в вашем регионе",
+            "rate_limit": "⏱ Слишком много запросов, попробуй через минуту",
+            "login_required": "Instagram требует авторизации для этого контента",
+            "sign_in": "Instagram требует авторизации для этого контента",
+            "authentication": "Instagram требует авторизации для этого контента",
+        }
+
+        # Проверяем каждый ключ ошибки
+        for key, message in ERROR_MESSAGES.items():
+            if key in error_lower.replace(" ", "_"):
+                return message
+
+        # Если ошибка не распознана - возвращаем первые 100 символов
+        return error[:100] if len(error) > 100 else error
 
     async def cleanup(self, *paths: str):
         """Удаляет файлы после отправки"""

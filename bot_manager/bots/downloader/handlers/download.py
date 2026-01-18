@@ -364,23 +364,23 @@ async def handle_url(message: types.Message):
                 logger.info(f"Trying RapidAPI fallback for: {url}")
                 await status_msg.edit_text("⏳ Пробую альтернативный способ...")
 
-                # Пробуем скачать через RapidAPI
+                # Для YouTube/TikTok/Pinterest используем download() - скачивает ОДНО лучшее качество
+                # (download_all() скачивает ВСЕ качества - 19 файлов для YouTube!)
                 from ..services.downloader import DownloadResult, MediaInfo
-                carousel = await rapidapi.download_all(url)
+                file_result = await rapidapi.download(url)
 
-                if carousel.success and len(carousel.files) > 0:
-                    logger.info(f"RapidAPI fallback succeeded: {len(carousel.files)} files")
+                if file_result.success:
+                    logger.info(f"RapidAPI fallback succeeded: {file_result.filename}")
                     api_source = "rapidapi"
-                    single_file = carousel.files[0]
                     result = DownloadResult(
                         success=True,
-                        file_path=single_file.file_path,
-                        filename=single_file.filename,
-                        file_size=single_file.file_size,
-                        is_photo=single_file.is_photo,
+                        file_path=file_result.file_path,
+                        filename=file_result.filename,
+                        file_size=file_result.file_size,
+                        is_photo=file_result.is_photo,
                         info=MediaInfo(
-                            title=carousel.title or "video",
-                            author=carousel.author or "unknown",
+                            title=file_result.title or "video",
+                            author=file_result.author or "unknown",
                             platform=platform
                         )
                     )
@@ -393,7 +393,7 @@ async def handle_url(message: types.Message):
                         platform=platform,
                         url=url,
                         error_type="download_failed",
-                        error_message=f"yt-dlp: {result.error}, RapidAPI: {carousel.error}",
+                        error_message=f"yt-dlp: {result.error}, RapidAPI: {file_result.error}",
                         error_details={"source": "both"}
                     )
                     await status_msg.edit_text(f"❌ {result.error}")

@@ -40,7 +40,7 @@ MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 MAX_YOUTUBE_DOCUMENT_MB = 2048  # 2GB для YouTube полных видео
 MAX_YOUTUBE_DOCUMENT_BYTES = MAX_YOUTUBE_DOCUMENT_MB * 1024 * 1024
 DOWNLOAD_TIMEOUT = 120  # секунд (для обычных видео: Instagram, TikTok, Pinterest, YouTube Shorts)
-YOUTUBE_DOWNLOAD_TIMEOUT = 2400  # секунд (40 минут для полных YouTube видео до 2GB, VPS throttling ~6MB/мин)
+YOUTUBE_DOWNLOAD_TIMEOUT = 3600  # секунд (1 час для полных YouTube видео до 2GB, VPS throttling ~6MB/мин)
 AUDIO_BITRATE = "320"  # kbps
 
 # Пул потоков для синхронных операций yt-dlp
@@ -126,8 +126,8 @@ class VideoDownloader:
 
             # Сеть - оптимизация скорости
             'socket_timeout': socket_timeout,  # 60 для YouTube Full, 30 для остальных
-            'retries': 5,  # Увеличили с 2 до 5
-            'fragment_retries': 10,  # Увеличили с 2 до 10 для фрагментов
+            'retries': 10,  # Увеличено до 10 (для нестабильных VPS)
+            'fragment_retries': 20,  # Увеличено до 20 для фрагментов
             'nocheckcertificate': True,
             'geo_bypass': True,
             'buffersize': 1024 * 64,  # 64KB буфер

@@ -139,12 +139,23 @@ async def update_progress_message(status_msg, done_event: asyncio.Event, progres
         logger.warning(f"[PROGRESS] Update error: {e}")
 
 
-def use_rapidapi(url: str) -> bool:
-    """Проверяет, нужно ли использовать RapidAPI для этого URL"""
+def use_rapidapi_primary(url: str) -> bool:
+    """Проверяет, нужно ли использовать RapidAPI как ОСНОВНОЙ способ"""
     url_lower = url.lower()
     # RapidAPI только для Instagram (yt-dlp требует авторизации)
     return any(domain in url_lower for domain in [
         'instagram.com', 'instagr.am'
+    ])
+
+def supports_rapidapi_fallback(url: str) -> bool:
+    """Проверяет, поддерживает ли RapidAPI этот URL как FALLBACK"""
+    url_lower = url.lower()
+    # RapidAPI поддерживает Instagram, YouTube, TikTok, Pinterest
+    return any(domain in url_lower for domain in [
+        'instagram.com', 'instagr.am',
+        'youtube.com', 'youtu.be',
+        'tiktok.com',
+        'pinterest.', 'pin.it'
     ])
 
 
@@ -239,10 +250,11 @@ async def handle_url(message: types.Message):
 
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
         # Instagram -> RapidAPI (yt-dlp требует авторизации)
-        # Остальные -> yt-dlp (работает хорошо)
+        # YouTube/TikTok/Pinterest -> yt-dlp первым, RapidAPI fallback если упал
+        # Остальные -> yt-dlp
 
-        if use_rapidapi(url):
-            logger.info(f"Using RapidAPI for: {url}")
+        if use_rapidapi_primary(url):
+            logger.info(f"Using RapidAPI (primary) for: {url}")
 
             # Скачиваем ВСЕ медиа (для каруселей)
             carousel = await rapidapi.download_all(url)
@@ -335,22 +347,63 @@ async def handle_url(message: types.Message):
                 )
             )
         else:
-            # TikTok, YouTube, Pinterest -> yt-dlp
+            # TikTok, YouTube, Pinterest -> yt-dlp (первая попытка)
             result = await downloader.download(url, progress_callback=progress_callback)
 
         if not result.success:
-            logger.warning(f"Download failed: user={user_id}, error={result.error}")
-            await error_logger.log_error_by_telegram_id(
-                telegram_id=user_id,
-                bot_username="SaveNinja_bot",
-                platform=platform,
-                url=url,
-                error_type="download_failed",
-                error_message=result.error,
-                error_details={"source": "yt-dlp"}
-            )
-            await status_msg.edit_text(f"❌ {result.error}")
-            return
+            logger.warning(f"yt-dlp failed: user={user_id}, error={result.error}")
+
+            # === FALLBACK: Пробуем RapidAPI если yt-dlp упал ===
+            if supports_rapidapi_fallback(url):
+                logger.info(f"Trying RapidAPI fallback for: {url}")
+                await status_msg.edit_text("⏳ Пробую альтернативный способ...")
+
+                # Пробуем скачать через RapidAPI
+                from ..services.downloader import DownloadResult, MediaInfo
+                carousel = await rapidapi.download_all(url)
+
+                if carousel.success and len(carousel.files) > 0:
+                    logger.info(f"RapidAPI fallback succeeded: {len(carousel.files)} files")
+                    single_file = carousel.files[0]
+                    result = DownloadResult(
+                        success=True,
+                        file_path=single_file.file_path,
+                        filename=single_file.filename,
+                        file_size=single_file.file_size,
+                        is_photo=single_file.is_photo,
+                        info=MediaInfo(
+                            title=carousel.title or "video",
+                            author=carousel.author or "unknown",
+                            platform=platform
+                        )
+                    )
+                else:
+                    # Оба способа упали
+                    logger.error(f"Both yt-dlp and RapidAPI failed for: {url}")
+                    await error_logger.log_error_by_telegram_id(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        url=url,
+                        error_type="download_failed",
+                        error_message=f"yt-dlp: {result.error}, RapidAPI: {carousel.error}",
+                        error_details={"source": "both"}
+                    )
+                    await status_msg.edit_text(f"❌ {result.error}")
+                    return
+            else:
+                # Нет fallback - показываем ошибку yt-dlp
+                await error_logger.log_error_by_telegram_id(
+                    telegram_id=user_id,
+                    bot_username="SaveNinja_bot",
+                    platform=platform,
+                    url=url,
+                    error_type="download_failed",
+                    error_message=result.error,
+                    error_details={"source": "yt-dlp"}
+                )
+                await status_msg.edit_text(f"❌ {result.error}")
+                return
 
         # Отправляем медиа
         await status_msg.edit_text(get_uploading_message())

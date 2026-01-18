@@ -273,20 +273,30 @@ async def handle_url(message: types.Message):
             await status_msg.delete()
 
         else:
-            # === ОТПРАВЛЯЕМ ВИДЕО ===
-            video_msg = await message.answer_video(
-                video=media_file,
-                caption=CAPTION,
-                supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
-            )
-            file_id = video_msg.video.file_id if video_msg.video else None
+            # === ОТПРАВЛЯЕМ ВИДЕО или ДОКУМЕНТ (для больших YouTube) ===
+            if result.send_as_document:
+                # Большой YouTube файл (50MB-2GB) - отправляем как документ
+                await status_msg.edit_text(get_message("downloading_large"))
+                doc_msg = await message.answer_document(
+                    document=media_file,
+                    caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
+                )
+                file_id = doc_msg.document.file_id if doc_msg.document else None
+            else:
+                # Обычное видео - отправляем с превью
+                video_msg = await message.answer_video(
+                    video=media_file,
+                    caption=CAPTION,
+                    supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
+                )
+                file_id = video_msg.video.file_id if video_msg.video else None
 
             # Рассчитываем метрики производительности
             download_time_ms = int((time.time() - download_start) * 1000)
             file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
             download_speed = int(file_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
 
-            logger.info(f"Sent video: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s")
+            logger.info(f"Sent {'document' if result.send_as_document else 'video'}: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s")
             await log_action(
                 user_id, "download_success", f"video:{platform}",
                 download_time_ms=download_time_ms,

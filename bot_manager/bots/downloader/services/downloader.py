@@ -29,6 +29,8 @@ CHROME_TARGET = ImpersonateTarget.from_str('chrome')
 DOWNLOAD_DIR = "/tmp/downloads"
 MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+MAX_YOUTUBE_DOCUMENT_MB = 2048  # 2GB для YouTube полных видео
+MAX_YOUTUBE_DOCUMENT_BYTES = MAX_YOUTUBE_DOCUMENT_MB * 1024 * 1024
 DOWNLOAD_TIMEOUT = 60  # секунд
 AUDIO_BITRATE = "320"  # kbps
 
@@ -56,6 +58,7 @@ class DownloadResult:
     file_size: int = 0
     error: Optional[str] = None
     is_photo: bool = False  # Для фото из Instagram/Pinterest
+    send_as_document: bool = False  # Для больших YouTube видео (50MB-2GB)
 
 
 class VideoDownloader:
@@ -79,9 +82,15 @@ class VideoDownloader:
 
         # Для TikTok предпочитаем H.264 (лучше совместимость с Telegram)
         is_tiktok = 'tiktok' in url.lower()
+        # Для YouTube полных видео ограничиваем качество 720p для меньшего размера
+        is_youtube_full = ('youtube.com' in url.lower() or 'youtu.be' in url.lower()) and '/shorts/' not in url.lower()
+
         if is_tiktok:
             # H.264 форматы для TikTok (без проблем с SAR)
             format_string = 'best[ext=mp4][vcodec^=avc]/best[ext=mp4][vcodec^=h264]/best[ext=mp4]/best'
+        elif is_youtube_full:
+            # YouTube полные видео - макс 720p для уменьшения размера
+            format_string = 'best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best'
         else:
             format_string = 'best[ext=mp4]/best'
 
@@ -207,12 +216,27 @@ class VideoDownloader:
                     result.file_size = os.path.getsize(result.file_path)
 
             # Проверяем размер файла
-            if result.file_size > MAX_FILE_SIZE_BYTES:
-                await self.cleanup(result.file_path)
-                return DownloadResult(
-                    success=False,
-                    error=f"Файл слишком большой ({result.file_size // 1024 // 1024}MB > {MAX_FILE_SIZE_MB}MB)"
-                )
+            is_youtube = 'youtube.com' in url.lower() or 'youtu.be' in url.lower()
+
+            if is_youtube:
+                # Для YouTube разрешаем до 2GB
+                if result.file_size > MAX_YOUTUBE_DOCUMENT_BYTES:
+                    await self.cleanup(result.file_path)
+                    return DownloadResult(
+                        success=False,
+                        error=f"Видео слишком большое ({result.file_size // 1024 // 1024}MB > {MAX_YOUTUBE_DOCUMENT_MB}MB). Telegram ограничивает загрузку файлов до 2GB."
+                    )
+                # Если > 50MB - отправляем как документ
+                if result.file_size > MAX_FILE_SIZE_BYTES:
+                    result.send_as_document = True
+            else:
+                # Для остальных платформ - макс 50MB
+                if result.file_size > MAX_FILE_SIZE_BYTES:
+                    await self.cleanup(result.file_path)
+                    return DownloadResult(
+                        success=False,
+                        error=f"Файл слишком большой ({result.file_size // 1024 // 1024}MB > {MAX_FILE_SIZE_MB}MB)"
+                    )
 
             return result
 

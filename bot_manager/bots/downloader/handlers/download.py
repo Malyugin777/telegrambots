@@ -11,7 +11,6 @@ import time
 import logging
 import asyncio
 import aiohttp
-from aiohttp import ClientTimeout
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile, BufferedInputFile, InputMediaPhoto, InputMediaVideo
 
@@ -45,29 +44,9 @@ logger = logging.getLogger(__name__)
 downloader = VideoDownloader()
 rapidapi = RapidAPIDownloader()
 
-# Таймауты для разных типов файлов (per-request override)
-# Используем ClientTimeout для granular control над sock_read
-# total=None снимает общий лимит, sock_read детектирует dead connections
-TIMEOUT_DOCUMENT = ClientTimeout(
-    total=None,        # Без общего лимита (файлы до 2GB)
-    sock_read=1200,    # 20 минут между чанками (для обработки на сервере)
-    sock_connect=30    # 30 секунд на подключение
-)
-TIMEOUT_VIDEO = ClientTimeout(
-    total=None,        # Без общего лимита
-    sock_read=600,     # 10 минут между чанками
-    sock_connect=30
-)
-TIMEOUT_PHOTO = ClientTimeout(
-    total=None,
-    sock_read=300,     # 5 минут между чанками
-    sock_connect=30
-)
-TIMEOUT_CAROUSEL = ClientTimeout(
-    total=None,
-    sock_read=900,     # 15 минут для каруселей (множество файлов)
-    sock_connect=30
-)
+# NOTE: Таймауты теперь настроены глобально в main.py через ClientTimeout
+# ClientTimeout(total=None, sock_read=1200) в aiohttp session
+# Здесь используем request_timeout только для переопределения если нужно
 
 # Паттерн для поддерживаемых URL
 URL_PATTERN = re.compile(
@@ -352,7 +331,7 @@ async def handle_url(message: types.Message):
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
-                        await message.answer_media_group(media=media_group, request_timeout=TIMEOUT_CAROUSEL)
+                        await message.answer_media_group(media=media_group)  # Используем глобальный timeout из session
                         break  # Success
                     except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
                         error_str = str(e).lower()
@@ -404,7 +383,6 @@ async def handle_url(message: types.Message):
                                 caption=CAPTION,
                                 title=carousel.title[:60] if carousel.title else "audio",
                                 performer=carousel.author if carousel.author else None,
-                                request_timeout=TIMEOUT_PHOTO,  # ClientTimeout: sock_read=300s (аудио обычно маленькие)
                             )
                             await log_action(user_id, "audio_extracted", {"platform": platform})
                             await downloader.cleanup(audio_result.file_path)
@@ -579,7 +557,6 @@ async def handle_url(message: types.Message):
             photo_msg = await message.answer_photo(
                 photo=media_file,
                 caption=CAPTION,
-                request_timeout=TIMEOUT_PHOTO,  # ClientTimeout с sock_read=300s
             )
             file_id = photo_msg.photo[-1].file_id if photo_msg.photo else None
 
@@ -622,7 +599,6 @@ async def handle_url(message: types.Message):
                         doc_msg = await message.answer_document(
                             document=media_file,
                             caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
-                            request_timeout=TIMEOUT_DOCUMENT,  # ClientTimeout: sock_read=1200s
                         )
                         break  # Success
                     except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
@@ -648,7 +624,6 @@ async def handle_url(message: types.Message):
                     video=media_file,
                     caption=CAPTION,
                     supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
-                    request_timeout=TIMEOUT_VIDEO,  # ClientTimeout: sock_read=600s
                 )
                 file_id = video_msg.video.file_id if video_msg.video else None
 
@@ -685,7 +660,6 @@ async def handle_url(message: types.Message):
                     caption=CAPTION,
                     title=title,
                     performer=performer,
-                    request_timeout=TIMEOUT_PHOTO,  # ClientTimeout: sock_read=300s (аудио обычно маленькие)
                 )
 
                 audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None

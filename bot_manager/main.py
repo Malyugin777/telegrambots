@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+from aiohttp import ClientSession, ClientTimeout, TCPConnector
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from shared.database import init_db, AsyncSessionLocal
 from shared.config import settings
@@ -26,8 +28,34 @@ logger = logging.getLogger(__name__)
 
 async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
+
+    # Создаём кастомную aiohttp сессию с ClientTimeout для больших файлов
+    # total=None снимает общий лимит, sock_read=1200 позволяет 20 минут тишины
+    custom_timeout = ClientTimeout(
+        total=None,        # Без общего лимита (файлы до 2GB)
+        sock_read=1200,    # 20 минут между чанками данных
+        sock_connect=30    # 30 секунд на подключение
+    )
+
+    aiohttp_session = ClientSession(
+        timeout=custom_timeout,
+        connector=TCPConnector(limit=100, limit_per_host=30)
+    )
+
+    # Создаём aiogram session wrapper
+    session = AiohttpSession()
+    session._session = aiohttp_session
+
+    # HACK: Устанавливаем timeout как число для Dispatcher
+    # Dispatcher проверяет bot.session.timeout и складывает с polling_timeout
+    # Если это ClientTimeout - будет TypeError, если число - работает
+    session.timeout = 60.0  # Число для Dispatcher polling
+
+    logger.info("Custom aiohttp session created: sock_read=1200s, total=None")
+
     bot = Bot(
         token=token,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()

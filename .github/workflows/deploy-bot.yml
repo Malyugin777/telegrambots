@@ -1,0 +1,27 @@
+name: Deploy Bot Manager
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'bot_manager/**'
+      - 'shared/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Hostkey
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.HOSTKEY_HOST }}
+          username: ${{ secrets.HOSTKEY_USER }}
+          password: ${{ secrets.HOSTKEY_PASSWORD }}
+          script: |
+            cd /root/telegrambots
+            git pull origin main
+            cd infrastructure
+            docker compose restart bot_manager
+            echo "Bot Manager deployed successfully"

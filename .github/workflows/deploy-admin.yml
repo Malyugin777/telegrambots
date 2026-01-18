@@ -1,0 +1,27 @@
+name: Deploy Admin Panel
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'admin_panel/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy to Aeza
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AEZA_HOST }}
+          username: ${{ secrets.AEZA_USER }}
+          password: ${{ secrets.AEZA_PASSWORD }}
+          script: |
+            cd /root/telegrambots
+            git pull origin main
+            cd admin_panel
+            docker compose up -d --build
+            cp -r frontend/dist/* /var/www/shadow-api/
+            echo "Admin Panel deployed successfully"

@@ -21,48 +21,48 @@ interface Subscription {
   id: number;
   name: string;
   description: string | null;
-  provider: 'aeza' | 'hostkey' | 'rapidapi' | 'domain' | 'github' | 'other';
+  provider: string;
   provider_url: string | null;
   amount: number;
   currency: string;
-  billing_cycle: 'monthly' | 'yearly' | 'usage';
+  billing_cycle: string;
   next_payment_date: string | null;
   auto_renew: boolean;
   notify_days: number[];
-  status: 'active' | 'cancelled' | 'expired';
+  status: string;
   created_at: string;
   updated_at: string;
   days_until_payment: number | null;
 }
 
 const statusColors: Record<string, string> = {
-  active: 'green',
-  cancelled: 'orange',
-  expired: 'red',
+  active: 'green', ACTIVE: 'green',
+  cancelled: 'orange', CANCELLED: 'orange',
+  expired: 'red', EXPIRED: 'red',
 };
 
 const providerColors: Record<string, string> = {
-  aeza: '#00a86b',
-  hostkey: '#1890ff',
-  rapidapi: '#0055ff',
-  domain: '#722ed1',
-  github: '#24292e',
-  other: 'default',
+  aeza: '#00a86b', AEZA: '#00a86b',
+  hostkey: '#1890ff', HOSTKEY: '#1890ff',
+  rapidapi: '#0055ff', RAPIDAPI: '#0055ff',
+  domain: '#722ed1', DOMAIN: '#722ed1',
+  github: '#24292e', GITHUB: '#24292e',
+  other: 'default', OTHER: 'default',
 };
 
 const providerLabels: Record<string, string> = {
-  aeza: 'Aeza VPS',
-  hostkey: 'Hostkey VPS',
-  rapidapi: 'RapidAPI',
-  domain: 'Домен',
-  github: 'GitHub',
-  other: 'Другое',
+  aeza: 'Aeza VPS', AEZA: 'Aeza VPS',
+  hostkey: 'Hostkey VPS', HOSTKEY: 'Hostkey VPS',
+  rapidapi: 'RapidAPI', RAPIDAPI: 'RapidAPI',
+  domain: 'Домен', DOMAIN: 'Домен',
+  github: 'GitHub', GITHUB: 'GitHub',
+  other: 'Другое', OTHER: 'Другое',
 };
 
 const cycleLabels: Record<string, string> = {
-  monthly: 'Ежемесячно',
-  yearly: 'Ежегодно',
-  usage: 'По использованию',
+  monthly: 'Ежемесячно', MONTHLY: 'Ежемесячно',
+  yearly: 'Ежегодно', YEARLY: 'Ежегодно',
+  usage: 'По использованию', USAGE: 'По использованию',
 };
 
 export const SubscriptionList = () => {
@@ -80,9 +80,9 @@ export const SubscriptionList = () => {
 
   // Calculate totals
   const data = tableQueryResult.data?.data || [];
-  const activeSubscriptions = data.filter((s: Subscription) => s.status === 'active');
+  const activeSubscriptions = data.filter((s: Subscription) => s.status === 'active' || s.status === 'ACTIVE');
   const monthlyTotal = activeSubscriptions
-    .filter((s: Subscription) => s.billing_cycle === 'monthly')
+    .filter((s: Subscription) => s.billing_cycle === 'monthly' || s.billing_cycle === 'MONTHLY')
     .reduce((sum: number, s: Subscription) => sum + (s.currency === 'RUB' ? s.amount : s.amount * 90), 0);
   const upcomingPayments = activeSubscriptions.filter(
     (s: Subscription) => s.days_until_payment !== null && s.days_until_payment <= 7
@@ -241,12 +241,15 @@ export const SubscriptionList = () => {
         <Table.Column
           dataIndex="status"
           title="Статус"
-          render={(value: string) => (
-            <TagField
-              color={statusColors[value] || 'default'}
-              value={value === 'active' ? 'Активна' : value === 'cancelled' ? 'Отменена' : 'Истекла'}
-            />
-          )}
+          render={(value: string) => {
+            const v = value?.toUpperCase();
+            return (
+              <TagField
+                color={statusColors[value] || 'default'}
+                value={v === 'ACTIVE' ? 'Активна' : v === 'CANCELLED' ? 'Отменена' : 'Истекла'}
+              />
+            );
+          }}
         />
         <Table.Column
           title="Действия"

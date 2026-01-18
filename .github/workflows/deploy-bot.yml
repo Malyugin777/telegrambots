@@ -23,5 +23,5 @@ jobs:
             cd /root/telegrambots
             git pull origin main
             cd infrastructure
-            docker compose restart bot_manager
+            docker compose up -d --build bot_manager
             echo "Bot Manager deployed successfully"

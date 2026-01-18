@@ -237,7 +237,6 @@ def get_unsupported_url_message() -> str:
 # Эти константы будут использовать дефолты, пока кэш не загружен
 
 STATUS_DOWNLOADING = DEFAULTS["downloading"]
-STATUS_SENDING = DEFAULTS["sending"]
 STATUS_EXTRACTING_AUDIO = DEFAULTS["extracting_audio"]
 START_MESSAGE = DEFAULTS["start"]
 HELP_MESSAGE = DEFAULTS["help"]

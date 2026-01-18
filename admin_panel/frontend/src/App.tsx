@@ -14,6 +14,7 @@ import {
   UserOutlined,
   FileTextOutlined,
   WarningOutlined,
+  DollarOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -26,6 +27,7 @@ import { BroadcastList, BroadcastCreate, BroadcastEdit, BroadcastShow } from './
 import { UserList, UserShow } from './pages/users';
 import { LogList } from './pages/activity-logs';
 import { ErrorList } from './pages/errors';
+import { SubscriptionList, SubscriptionCreate, SubscriptionEdit } from './pages/subscriptions';
 import { Login } from './pages/login';
 import { LanguageSwitcher, Footer } from './components';
 
@@ -110,6 +112,16 @@ function App() {
                   icon: <WarningOutlined />,
                 },
               },
+              {
+                name: 'subscriptions',
+                list: '/subscriptions',
+                create: '/subscriptions/create',
+                edit: '/subscriptions/edit/:id',
+                meta: {
+                  label: 'Подписки',
+                  icon: <DollarOutlined />,
+                },
+              },
             ]}
             options={{
               syncWithLocation: true,
@@ -184,6 +196,12 @@ function App() {
 
                 <Route path="/errors">
                   <Route index element={<ErrorList />} />
+                </Route>
+
+                <Route path="/subscriptions">
+                  <Route index element={<SubscriptionList />} />
+                  <Route path="create" element={<SubscriptionCreate />} />
+                  <Route path="edit/:id" element={<SubscriptionEdit />} />
                 </Route>
               </Route>
 

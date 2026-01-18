@@ -1,10 +1,12 @@
 import { Create, useForm, useSelect } from '@refinedev/antd';
-import { Form, Input, Select, DatePicker, Card, Row, Col, Divider, Button, Space } from 'antd';
+import { Form, Input, Select, DatePicker, Card, Row, Col, Divider, Button, Space, InputNumber } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { useState } from 'react';
 
 export const BroadcastCreate = () => {
   const { formProps, saveButtonProps } = useForm();
+  const [targetType, setTargetType] = useState('all');
 
   const { selectProps: botSelectProps } = useSelect({
     resource: 'bots',
@@ -14,41 +16,54 @@ export const BroadcastCreate = () => {
 
   return (
     <Create saveButtonProps={saveButtonProps}>
-      <Form {...formProps} layout="vertical">
+      <Form {...formProps} layout="vertical" initialValues={{ target_type: 'all' }}>
         <Row gutter={24}>
           <Col span={16}>
-            {/* Main Content */}
-            <Card title="Message Content" style={{ marginBottom: 16 }}>
+            <Card title="Содержимое сообщения" style={{ marginBottom: 16 }}>
               <Form.Item
-                label="Broadcast Name"
+                label="Название рассылки"
                 name="name"
-                rules={[{ required: true, message: 'Please enter name' }]}
+                rules={[{ required: true, message: 'Введите название' }]}
               >
-                <Input placeholder="Welcome campaign" />
+                <Input placeholder="Новогодняя акция" />
               </Form.Item>
 
               <Form.Item
-                label="Message Text"
+                label="Текст сообщения"
                 name="text"
-                rules={[{ required: true, message: 'Please enter message text' }]}
-                extra="Supports HTML formatting: <b>bold</b>, <i>italic</i>, <code>code</code>"
+                rules={[{ required: true, message: 'Введите текст сообщения' }]}
+                extra="Поддерживается HTML: <b>жирный</b>, <i>курсив</i>, <a href='...'>ссылка</a>"
               >
                 <Input.TextArea
                   rows={6}
-                  placeholder="Hello! This is your broadcast message..."
+                  placeholder="Привет! Это сообщение рассылки..."
+                  showCount
+                  maxLength={4096}
                 />
               </Form.Item>
 
-              <Form.Item
-                label="Image URL"
-                name="image_url"
-                extra="Optional: URL to an image to attach"
-              >
-                <Input placeholder="https://example.com/image.jpg" />
-              </Form.Item>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="Фото (URL или file_id)"
+                    name="image_url"
+                    extra="Опционально"
+                  >
+                    <Input placeholder="https://example.com/image.jpg" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label="Видео (URL или file_id)"
+                    name="message_video"
+                    extra="Опционально"
+                  >
+                    <Input placeholder="https://example.com/video.mp4" />
+                  </Form.Item>
+                </Col>
+              </Row>
 
-              {/* Inline Buttons */}
-              <Divider>Inline Buttons (Optional)</Divider>
+              <Divider>Inline кнопки (опционально)</Divider>
               <Form.List name="buttons">
                 {(fields, { add, remove }) => (
                   <>
@@ -57,22 +72,22 @@ export const BroadcastCreate = () => {
                         <Form.Item
                           {...restField}
                           name={[name, 'text']}
-                          rules={[{ required: true, message: 'Enter button text' }]}
+                          rules={[{ required: true, message: 'Текст кнопки' }]}
                         >
-                          <Input placeholder="Button text" style={{ width: 150 }} />
+                          <Input placeholder="Текст кнопки" style={{ width: 150 }} />
                         </Form.Item>
                         <Form.Item
                           {...restField}
                           name={[name, 'url']}
                         >
-                          <Input placeholder="https://link.com" style={{ width: 250 }} />
+                          <Input placeholder="https://link.com" style={{ width: 280 }} />
                         </Form.Item>
-                        <MinusCircleOutlined onClick={() => remove(name)} />
+                        <MinusCircleOutlined onClick={() => remove(name)} style={{ marginTop: 8 }} />
                       </Space>
                     ))}
                     <Form.Item>
                       <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
-                        Add Button
+                        Добавить кнопку
                       </Button>
                     </Form.Item>
                   </>
@@ -82,54 +97,83 @@ export const BroadcastCreate = () => {
           </Col>
 
           <Col span={8}>
-            {/* Targeting */}
-            <Card title="Targeting" style={{ marginBottom: 16 }}>
+            <Card title="Аудитория" style={{ marginBottom: 16 }}>
               <Form.Item
-                label="Target Bots"
+                label="Тип аудитории"
+                name="target_type"
+                rules={[{ required: true }]}
+              >
+                <Select onChange={(value) => setTargetType(value)}>
+                  <Select.Option value="all">Все пользователи</Select.Option>
+                  <Select.Option value="list">Список Telegram ID</Select.Option>
+                </Select>
+              </Form.Item>
+
+              {targetType === 'list' && (
+                <Form.Item
+                  label="Telegram ID (через запятую)"
+                  name="target_user_ids"
+                  extra="Введите ID пользователей"
+                  getValueFromEvent={(e) => {
+                    const value = e.target.value;
+                    if (!value) return [];
+                    return value.split(',').map((s: string) => parseInt(s.trim())).filter((n: number) => !isNaN(n));
+                  }}
+                  getValueProps={(value) => ({
+                    value: value?.join(', ') || '',
+                  })}
+                >
+                  <Input.TextArea
+                    rows={3}
+                    placeholder="123456789, 987654321, ..."
+                  />
+                </Form.Item>
+              )}
+
+              <Form.Item
+                label="Боты"
                 name="target_bots"
-                extra="Leave empty to send to all bots"
+                extra="Оставьте пустым для всех ботов"
               >
                 <Select
                   mode="multiple"
-                  placeholder="Select bots..."
+                  placeholder="Выберите ботов..."
                   {...botSelectProps}
                   allowClear
                 />
               </Form.Item>
 
               <Form.Item
-                label="Target Languages"
+                label="Языки"
                 name="target_languages"
-                extra="Leave empty for all languages"
+                extra="Оставьте пустым для всех языков"
               >
                 <Select
                   mode="multiple"
-                  placeholder="Select languages..."
+                  placeholder="Выберите языки..."
                   allowClear
                   options={[
-                    { label: 'Russian (ru)', value: 'ru' },
+                    { label: 'Русский (ru)', value: 'ru' },
                     { label: 'English (en)', value: 'en' },
-                    { label: 'Ukrainian (uk)', value: 'uk' },
-                    { label: 'German (de)', value: 'de' },
-                    { label: 'French (fr)', value: 'fr' },
-                    { label: 'Spanish (es)', value: 'es' },
+                    { label: 'Українська (uk)', value: 'uk' },
+                    { label: 'Deutsch (de)', value: 'de' },
                   ]}
                 />
               </Form.Item>
             </Card>
 
-            {/* Schedule */}
-            <Card title="Schedule">
+            <Card title="Расписание">
               <Form.Item
-                label="Schedule Time"
+                label="Время запуска"
                 name="scheduled_at"
-                extra="Leave empty to save as draft"
+                extra="Оставьте пустым для сохранения как черновик"
               >
                 <DatePicker
                   showTime
-                  format="YYYY-MM-DD HH:mm"
+                  format="DD.MM.YYYY HH:mm"
                   style={{ width: '100%' }}
                   disabledDate={(current) => current && current < dayjs().startOf('day')}
+                  placeholder="Выберите дату и время"
                 />
               </Form.Item>
             </Card>

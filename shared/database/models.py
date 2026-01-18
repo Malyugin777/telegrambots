@@ -33,6 +33,7 @@ class User(Base):
     language_code = Column(String(10), default="ru")
     role = Column(Enum(UserRole), default=UserRole.USER)
     is_banned = Column(Boolean, default=False)
+    is_blocked = Column(Boolean, default=False)  # User blocked the bot
     ban_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

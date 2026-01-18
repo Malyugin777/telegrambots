@@ -123,9 +123,13 @@ class BroadcastBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     text: str = Field(..., min_length=1)
     image_url: Optional[str] = None
-    buttons: Optional[List[List[InlineButton]]] = None  # Rows of buttons
+    message_video: Optional[str] = None
+    buttons: Optional[List[InlineButton]] = None  # List of buttons
+    target_type: str = "all"  # 'all', 'segment', 'list'
     target_bots: Optional[List[int]] = None
     target_languages: Optional[List[str]] = None
+    target_segment_id: Optional[int] = None
+    target_user_ids: Optional[List[int]] = None
 
 
 class BroadcastCreate(BroadcastBase):
@@ -136,9 +140,13 @@ class BroadcastUpdate(BaseModel):
     name: Optional[str] = None
     text: Optional[str] = None
     image_url: Optional[str] = None
-    buttons: Optional[List[List[InlineButton]]] = None
+    message_video: Optional[str] = None
+    buttons: Optional[List[InlineButton]] = None
+    target_type: Optional[str] = None
     target_bots: Optional[List[int]] = None
     target_languages: Optional[List[str]] = None
+    target_segment_id: Optional[int] = None
+    target_user_ids: Optional[List[int]] = None
     scheduled_at: Optional[datetime] = None
 
 
@@ -150,6 +158,7 @@ class BroadcastResponse(BroadcastBase):
     completed_at: Optional[datetime]
     total_recipients: int
     sent_count: int
+    delivered_count: int
     failed_count: int
     created_at: datetime
 
@@ -162,6 +171,50 @@ class BroadcastListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+class BroadcastProgress(BaseModel):
+    status: str
+    total: int
+    sent: int
+    delivered: int
+    failed: int
+    progress_percent: float
+
+
+# ============ Segments ============
+
+class SegmentCondition(BaseModel):
+    field: str
+    op: str  # 'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'in', 'contains'
+    value: Any
+
+
+class SegmentBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = None
+    conditions: dict = Field(default_factory=dict)
+    is_dynamic: bool = True
+
+
+class SegmentCreate(SegmentBase):
+    pass
+
+
+class SegmentResponse(SegmentBase):
+    id: int
+    cached_count: Optional[int]
+    cached_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class SegmentListResponse(BaseModel):
+    data: List[SegmentResponse]
+    total: int
 
 
 # ============ Auth ============

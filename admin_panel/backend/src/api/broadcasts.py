@@ -2,21 +2,47 @@
 Broadcasts management API endpoints.
 """
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, BackgroundTasks
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..redis_client import get_redis
-from ..models import Broadcast, BroadcastStatus, AdminUser
+from ..models import Broadcast, BroadcastStatus, AdminUser, User, Segment
 from ..schemas import (
-    BroadcastCreate, BroadcastUpdate, BroadcastResponse, BroadcastListResponse
+    BroadcastCreate, BroadcastUpdate, BroadcastResponse, BroadcastListResponse, BroadcastProgress
 )
 from ..auth import get_current_user
 
 router = APIRouter()
+
+
+async def count_recipients(
+    db: AsyncSession,
+    target_type: str,
+    target_segment_id: Optional[int] = None,
+    target_user_ids: Optional[List[int]] = None,
+) -> int:
+    """Count recipients based on targeting."""
+    if target_type == "all":
+        result = await db.execute(
+            select(func.count(User.id)).where(User.is_blocked == False)
+        )
+        return result.scalar() or 0
+
+    elif target_type == "list" and target_user_ids:
+        return len(target_user_ids)
+
+    elif target_type == "segment" and target_segment_id:
+        segment = await db.get(Segment, target_segment_id)
+        if segment and segment.cached_count:
+            return segment.cached_count
+        # TODO: Calculate from conditions
+        return 0
+
+    return 0
 
 
 @router.get("", response_model=BroadcastListResponse)
@@ -79,15 +105,25 @@ async def create_broadcast(
     current_user: AdminUser = Depends(get_current_user),
 ):
     """Create a new broadcast."""
+    # Count recipients
+    recipients = await count_recipients(
+        db, data.target_type, data.target_segment_id, data.target_user_ids
+    )
+
     broadcast = Broadcast(
         name=data.name,
         text=data.text,
         image_url=data.image_url,
-        buttons=[[btn.model_dump() for btn in row] for row in data.buttons] if data.buttons else None,
+        message_video=data.message_video,
+        buttons=[btn.model_dump() for btn in data.buttons] if data.buttons else None,
+        target_type=data.target_type,
         target_bots=data.target_bots,
         target_languages=data.target_languages,
+        target_segment_id=data.target_segment_id,
+        target_user_ids=data.target_user_ids,
         scheduled_at=data.scheduled_at,
         status=BroadcastStatus.SCHEDULED if data.scheduled_at else BroadcastStatus.DRAFT,
+        total_recipients=recipients,
         created_by=current_user.id,
     )
     db.add(broadcast)
@@ -124,10 +160,19 @@ async def update_broadcast(
 
     # Handle buttons serialization
     if "buttons" in update_data and update_data["buttons"]:
-        update_data["buttons"] = [[btn.model_dump() for btn in row] for row in data.buttons]
+        update_data["buttons"] = [btn.model_dump() for btn in data.buttons]
 
     for key, value in update_data.items():
         setattr(broadcast, key, value)
+
+    # Recalculate recipients if targeting changed
+    if any(k in update_data for k in ["target_type", "target_segment_id", "target_user_ids"]):
+        broadcast.total_recipients = await count_recipients(
+            db,
+            broadcast.target_type,
+            broadcast.target_segment_id,
+            broadcast.target_user_ids,
+        )
 
     # Update status based on scheduled_at
     if data.scheduled_at:
@@ -234,3 +279,33 @@ async def cancel_broadcast(
     await db.refresh(broadcast)
 
     return broadcast
+
+
+@router.get("/{broadcast_id}/progress", response_model=BroadcastProgress)
+async def get_broadcast_progress(
+    broadcast_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Get real-time progress of a broadcast."""
+    result = await db.execute(select(Broadcast).where(Broadcast.id == broadcast_id))
+    broadcast = result.scalar_one_or_none()
+
+    if not broadcast:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Broadcast not found",
+        )
+
+    progress = 0.0
+    if broadcast.total_recipients > 0:
+        progress = round((broadcast.sent_count / broadcast.total_recipients) * 100, 1)
+
+    return BroadcastProgress(
+        status=broadcast.status.value,
+        total=broadcast.total_recipients,
+        sent=broadcast.sent_count,
+        delivered=broadcast.delivered_count,
+        failed=broadcast.failed_count,
+        progress_percent=progress,
+    )

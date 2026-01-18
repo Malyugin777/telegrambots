@@ -48,6 +48,7 @@ class User(Base):
     language_code: Mapped[Optional[str]] = mapped_column(String(10), nullable=True)
     role: Mapped[UserRole] = mapped_column(SQLEnum(UserRole), default=UserRole.USER)
     is_banned: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_blocked: Mapped[bool] = mapped_column(Boolean, default=False)  # Blocked the bot
     ban_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -91,11 +92,15 @@ class Broadcast(Base):
     name: Mapped[str] = mapped_column(String(255))
     text: Mapped[str] = mapped_column(Text)
     image_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    message_video: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     buttons: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)  # Inline keyboard
 
     # Targeting
+    target_type: Mapped[str] = mapped_column(String(50), default="all")  # 'all', 'segment', 'list'
     target_bots: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # Bot IDs
     target_languages: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # ['en', 'ru']
+    target_segment_id: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    target_user_ids: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)  # [telegram_id, ...]
 
     # Status
     status: Mapped[BroadcastStatus] = mapped_column(SQLEnum(BroadcastStatus), default=BroadcastStatus.DRAFT)
@@ -106,10 +111,14 @@ class Broadcast(Base):
     # Stats
     total_recipients: Mapped[int] = mapped_column(Integer, default=0)
     sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    delivered_count: Mapped[int] = mapped_column(Integer, default=0)
     failed_count: Mapped[int] = mapped_column(Integer, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_by: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
+    # Relations
+    logs: Mapped[list["BroadcastLog"]] = relationship("BroadcastLog", back_populates="broadcast")
 
 
 class AdminUser(Base):
@@ -136,3 +145,33 @@ class ActionLog(Base):
     action: Mapped[str] = mapped_column(String(100), index=True)
     details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Segment(Base):
+    """User segments for targeted broadcasts."""
+    __tablename__ = "segments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    conditions: Mapped[dict] = mapped_column(JSON, default=dict)
+    cached_count: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    cached_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    is_dynamic: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BroadcastLog(Base):
+    """Logs for individual message sends in broadcasts."""
+    __tablename__ = "broadcast_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    broadcast_id: Mapped[int] = mapped_column(ForeignKey("broadcasts.id", ondelete="CASCADE"))
+    telegram_id: Mapped[int] = mapped_column(BigInteger)
+    status: Mapped[str] = mapped_column(String(50))  # 'sent', 'delivered', 'failed', 'blocked'
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relations
+    broadcast: Mapped["Broadcast"] = relationship("Broadcast", back_populates="logs")

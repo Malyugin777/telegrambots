@@ -59,6 +59,25 @@ services:
     networks:
       - nexus_network
 
+  broadcast_worker:
+    build:
+      context: ..
+      dockerfile: bot_manager/Dockerfile.broadcast
+    container_name: nexus_broadcast_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_HOST=postgres
+      - REDIS_HOST=redis
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nexus_network
+
   admin_api:
     build:
       context: ..

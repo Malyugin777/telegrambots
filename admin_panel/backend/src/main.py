@@ -33,7 +33,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Nexus Control API",
     description="Admin API for Telegram Bot Network",
-    version="1.0.0",
+    version=settings.version,
     docs_url="/api/docs" if settings.debug else None,
     redoc_url="/api/redoc" if settings.debug else None,
     openapi_url="/api/openapi.json" if settings.debug else None,
@@ -64,6 +64,6 @@ async def root():
     """Root endpoint."""
     return {
         "name": "Nexus Control API",
-        "version": "1.0.0",
+        "version": settings.version,
         "docs": "/api/docs" if settings.debug else "disabled",
     }

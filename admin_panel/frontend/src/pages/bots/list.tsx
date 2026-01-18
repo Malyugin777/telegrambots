@@ -19,7 +19,7 @@ import { useTranslation } from 'react-i18next';
 interface Bot {
   id: number;
   name: string;
-  bot_username: string | null;
+  username: string | null;
   token_hash: string;
   webhook_url: string | null;
   status: 'active' | 'paused' | 'maintenance' | 'disabled';
@@ -97,7 +97,7 @@ export const BotList = () => {
         <Table.Column dataIndex="id" title={t('common.id')} width={80} />
         <Table.Column dataIndex="name" title={t('common.name')} />
         <Table.Column
-          dataIndex="bot_username"
+          dataIndex="username"
           title={t('bots.botUsername')}
           render={(value) => (value ? `@${value}` : '-')}
         />

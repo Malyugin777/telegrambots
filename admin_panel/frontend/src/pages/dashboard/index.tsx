@@ -9,7 +9,7 @@ import {
   ClockCircleOutlined,
   FireOutlined,
 } from '@ant-design/icons';
-import { Line } from '@ant-design/charts';
+import { Line, Pie } from '@ant-design/charts';
 import { useTranslation } from 'react-i18next';
 
 interface Stats {
@@ -34,6 +34,10 @@ interface ChartData {
   users: ChartDataPoint[];
 }
 
+interface PlatformData {
+  platforms: Array<{ name: string; count: number }>;
+}
+
 export const Dashboard = () => {
   const { t } = useTranslation();
 
@@ -50,8 +54,14 @@ export const Dashboard = () => {
     },
   });
 
+  const { data: platformData } = useCustom<PlatformData>({
+    url: '/stats/platforms',
+    method: 'get',
+  });
+
   const stats = statsData?.data;
   const chart = chartData?.data;
+  const platforms = platformData?.data?.platforms || [];
 
   // Prepare chart data
   const lineData = [
@@ -81,6 +91,30 @@ export const Dashboard = () => {
     },
     color: ['#1890ff', '#52c41a'],
     theme: 'dark',
+  };
+
+  const platformColors: Record<string, string> = {
+    instagram: '#E1306C',
+    tiktok: '#00f2ea',
+    youtube: '#FF0000',
+    pinterest: '#E60023',
+  };
+
+  const pieConfig = {
+    data: platforms,
+    angleField: 'count',
+    colorField: 'name',
+    radius: 0.8,
+    innerRadius: 0.6,
+    label: {
+      type: 'outer',
+      content: '{name}: {value}',
+    },
+    color: platforms.map((p: { name: string }) => platformColors[p.name] || '#888'),
+    theme: 'dark',
+    legend: {
+      position: 'bottom' as const,
+    },
   };
 
   if (statsLoading) {
@@ -169,9 +203,9 @@ export const Dashboard = () => {
         </Col>
       </Row>
 
-      {/* Load Chart */}
+      {/* Charts Row */}
       <Row gutter={[16, 16]} style={{ marginTop: '24px' }}>
-        <Col span={24}>
+        <Col xs={24} lg={16}>
           <Card
             title={
               <span>
@@ -185,6 +219,17 @@ export const Dashboard = () => {
               </div>
             ) : (
               <Line {...lineConfig} height={300} />
+            )}
+          </Card>
+        </Col>
+        <Col xs={24} lg={8}>
+          <Card title="По платформам">
+            {platforms.length > 0 ? (
+              <Pie {...pieConfig} height={300} />
+            ) : (
+              <div style={{ textAlign: 'center', padding: '50px', color: '#888' }}>
+                Нет данных
+              </div>
             )}
           </Card>
         </Col>

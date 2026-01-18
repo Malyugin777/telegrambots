@@ -101,7 +101,8 @@ async def get_load_chart(
     downloads_data = []
     users_data = []
 
-    for i in range(days, 0, -1):
+    # Include today (i=0) through (days-1) days ago
+    for i in range(days - 1, -1, -1):
         day_start = (datetime.utcnow() - timedelta(days=i)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
@@ -133,3 +134,40 @@ async def get_load_chart(
         messages=downloads_data,  # Renamed to downloads in frontend
         users=users_data,
     )
+
+
+@router.get("/platforms")
+async def get_platform_stats(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Get download statistics by platform."""
+    # Parse platform from details->info field
+    # Format: {"info": "video:instagram"} or {"info": "instagram:https://..."}
+
+    # Count downloads by parsing the info field
+    result = await db.execute(
+        select(ActionLog.details, func.count(ActionLog.id).label('count'))
+        .where(ActionLog.action == "download_success")
+        .group_by(ActionLog.details)
+    )
+
+    platform_counts: dict[str, int] = {}
+    for row in result:
+        details = row[0]
+        count = row[1]
+        if details and isinstance(details, dict) and 'info' in details:
+            info = details['info']
+            # Parse "video:instagram" -> "instagram"
+            if ':' in info:
+                platform = info.split(':')[-1]  # Get last part after ':'
+            else:
+                platform = info
+            platform_counts[platform] = platform_counts.get(platform, 0) + count
+
+    return {
+        "platforms": [
+            {"name": name, "count": count}
+            for name, count in sorted(platform_counts.items(), key=lambda x: -x[1])
+        ]
+    }

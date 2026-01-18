@@ -22,9 +22,11 @@ interface Bot {
 }
 
 const actionColors: Record<string, string> = {
-  download_video: 'green',
-  download_audio: 'blue',
+  download_request: 'blue',
+  download_success: 'green',
+  audio_extracted: 'cyan',
   start: 'purple',
+  help: 'orange',
   error: 'red',
 };
 
@@ -145,20 +147,36 @@ export const LogList = () => {
         <Table.Column
           dataIndex="details"
           title="Details"
+          ellipsis
           render={(value: Record<string, unknown> | null) => {
             if (!value) return '-';
-            // Show platform and title for downloads
-            const parts = [];
-            if (value.platform) parts.push(String(value.platform));
-            if (value.title) parts.push(String(value.title).substring(0, 40) + '...');
-            if (value.file_size) parts.push(`${Math.round(Number(value.file_size) / 1024 / 1024)}MB`);
-            return parts.length > 0 ? (
+
+            // Parse our format: {"info": "platform:url"} or {"info": "type:platform"}
+            if (value.info && typeof value.info === 'string') {
+              const info = value.info;
+              // Check if it's a URL (download_request)
+              if (info.includes('http')) {
+                const [platform, ...urlParts] = info.split(':');
+                const url = urlParts.join(':'); // Reconstruct URL
+                return (
+                  <Tooltip title={url}>
+                    <span>
+                      <TagField color="blue" value={platform} style={{ marginRight: 4 }} />
+                      <a href={url} target="_blank" rel="noopener noreferrer">
+                        {url.substring(0, 35)}...
+                      </a>
+                    </span>
+                  </Tooltip>
+                );
+              }
+              // Otherwise it's type:platform (e.g., "video:instagram")
+              return <span>{info}</span>;
+            }
+
+            // Fallback for other formats
+            return (
               <Tooltip title={JSON.stringify(value, null, 2)}>
-                <span>{parts.join(' | ')}</span>
-              </Tooltip>
-            ) : (
-              <Tooltip title={JSON.stringify(value, null, 2)}>
-                <span style={{ color: '#888' }}>...</span>
+                <code style={{ fontSize: 11 }}>{JSON.stringify(value).substring(0, 50)}</code>
               </Tooltip>
             );
           }}

@@ -190,3 +190,58 @@ class DownloadError(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     error_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SubscriptionProvider(str, enum.Enum):
+    AEZA = "aeza"
+    HOSTKEY = "hostkey"
+    RAPIDAPI = "rapidapi"
+    DOMAIN = "domain"
+    GITHUB = "github"
+    OTHER = "other"
+
+
+class BillingCycle(str, enum.Enum):
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+    USAGE = "usage"  # Pay-as-you-go
+
+
+class SubscriptionStatus(str, enum.Enum):
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class Subscription(Base):
+    """Billing tracker for services and subscriptions."""
+    __tablename__ = "subscriptions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # Provider info
+    provider: Mapped[SubscriptionProvider] = mapped_column(
+        SQLEnum(SubscriptionProvider), default=SubscriptionProvider.OTHER
+    )
+    provider_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+
+    # Billing
+    amount: Mapped[float] = mapped_column(default=0.0)
+    currency: Mapped[str] = mapped_column(String(3), default="RUB")  # RUB, USD, EUR
+    billing_cycle: Mapped[BillingCycle] = mapped_column(
+        SQLEnum(BillingCycle), default=BillingCycle.MONTHLY
+    )
+    next_payment_date: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Settings
+    auto_renew: Mapped[bool] = mapped_column(Boolean, default=True)
+    notify_days: Mapped[list] = mapped_column(JSON, default=[7, 3, 1])  # Days before to notify
+    status: Mapped[SubscriptionStatus] = mapped_column(
+        SQLEnum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE
+    )
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

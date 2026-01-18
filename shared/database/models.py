@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import (
     Column, Integer, BigInteger, String, DateTime,
-    Boolean, Text, Enum, ForeignKey, Index, JSON
+    Boolean, Text, Enum, ForeignKey, Index, JSON, Float
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -120,3 +120,52 @@ class DownloadError(Base):
 
     user = relationship("User")
     bot = relationship("Bot")
+
+
+class SubscriptionProvider(str, PyEnum):
+    AEZA = "aeza"
+    HOSTKEY = "hostkey"
+    RAPIDAPI = "rapidapi"
+    DOMAIN = "domain"
+    GITHUB = "github"
+    OTHER = "other"
+
+
+class BillingCycle(str, PyEnum):
+    MONTHLY = "monthly"
+    YEARLY = "yearly"
+    USAGE = "usage"
+
+
+class SubscriptionStatus(str, PyEnum):
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
+    EXPIRED = "expired"
+
+
+class Subscription(Base):
+    """Billing tracker for services and subscriptions."""
+    __tablename__ = "subscriptions"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+
+    # Provider info
+    provider = Column(Enum(SubscriptionProvider), default=SubscriptionProvider.OTHER)
+    provider_url = Column(String(500), nullable=True)
+
+    # Billing
+    amount = Column(Float, default=0.0)
+    currency = Column(String(3), default="RUB")
+    billing_cycle = Column(Enum(BillingCycle), default=BillingCycle.MONTHLY)
+    next_payment_date = Column(DateTime, nullable=True)
+
+    # Settings
+    auto_renew = Column(Boolean, default=True)
+    notify_days = Column(JSON, default=[7, 3, 1])
+    status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.ACTIVE)
+
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())

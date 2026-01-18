@@ -5,7 +5,7 @@ from datetime import datetime
 from typing import Optional, List, Any
 from pydantic import BaseModel, Field, EmailStr
 
-from .models import UserRole, BotStatus, BroadcastStatus
+from .models import UserRole, BotStatus, BroadcastStatus, SubscriptionProvider, BillingCycle, SubscriptionStatus
 
 
 # ============ Stats ============
@@ -272,3 +272,62 @@ class LogListResponse(BaseModel):
     total: int
     page: int
     page_size: int
+
+
+# ============ Subscriptions (Billing Tracker) ============
+
+class SubscriptionBase(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: Optional[str] = None
+    provider: SubscriptionProvider = SubscriptionProvider.OTHER
+    provider_url: Optional[str] = None
+    amount: float = 0.0
+    currency: str = Field(default="RUB", max_length=3)
+    billing_cycle: BillingCycle = BillingCycle.MONTHLY
+    next_payment_date: Optional[datetime] = None
+    auto_renew: bool = True
+    notify_days: List[int] = Field(default=[7, 3, 1])
+    status: SubscriptionStatus = SubscriptionStatus.ACTIVE
+
+
+class SubscriptionCreate(SubscriptionBase):
+    pass
+
+
+class SubscriptionUpdate(BaseModel):
+    name: Optional[str] = Field(None, min_length=1, max_length=100)
+    description: Optional[str] = None
+    provider: Optional[SubscriptionProvider] = None
+    provider_url: Optional[str] = None
+    amount: Optional[float] = None
+    currency: Optional[str] = Field(None, max_length=3)
+    billing_cycle: Optional[BillingCycle] = None
+    next_payment_date: Optional[datetime] = None
+    auto_renew: Optional[bool] = None
+    notify_days: Optional[List[int]] = None
+    status: Optional[SubscriptionStatus] = None
+
+
+class SubscriptionResponse(SubscriptionBase):
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    days_until_payment: Optional[int] = None  # Computed field
+
+    class Config:
+        from_attributes = True
+
+
+class SubscriptionListResponse(BaseModel):
+    data: List[SubscriptionResponse]
+    total: int
+
+
+class UpcomingPayment(BaseModel):
+    id: int
+    name: str
+    provider: SubscriptionProvider
+    amount: float
+    currency: str
+    next_payment_date: datetime
+    days_until: int

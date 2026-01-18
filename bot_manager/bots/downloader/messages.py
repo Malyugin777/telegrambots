@@ -1,15 +1,21 @@
 """
 Текстовые сообщения бота SaveNinja
 Загружаются из БД с fallback на дефолтные значения
+Кэш автоматически обновляется каждые 60 секунд
 """
 import logging
+import time
+import asyncio
 from typing import Optional
-from functools import lru_cache
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 # Bot ID для SaveNinja (из таблицы bots)
 BOT_ID = 1
+
+# TTL кэша в секундах
+CACHE_TTL = 60
 
 # Подпись под медиа (не хранится в БД)
 CAPTION = "@SaveNinja_bot"
@@ -95,11 +101,13 @@ DEFAULTS = {
 
 _messages_cache: dict[str, str] = {}
 _cache_loaded: bool = False
+_cache_loaded_at: float = 0  # timestamp последней загрузки
+_refresh_task: Optional[asyncio.Task] = None
 
 
 async def load_messages_from_db(session) -> dict[str, str]:
     """Загрузить сообщения из БД."""
-    global _messages_cache, _cache_loaded
+    global _messages_cache, _cache_loaded, _cache_loaded_at
 
     try:
         from shared.database.models import BotMessage
@@ -115,6 +123,7 @@ async def load_messages_from_db(session) -> dict[str, str]:
 
         _messages_cache = {msg.message_key: msg.text_ru for msg in messages}
         _cache_loaded = True
+        _cache_loaded_at = time.time()
 
         logger.info(f"Loaded {len(_messages_cache)} messages from DB for bot_id={BOT_ID}")
         return _messages_cache
@@ -127,10 +136,41 @@ async def load_messages_from_db(session) -> dict[str, str]:
 
 def reload_messages_cache():
     """Сбросить кэш (вызывать при обновлении через админку)."""
-    global _messages_cache, _cache_loaded
+    global _messages_cache, _cache_loaded, _cache_loaded_at
     _messages_cache = {}
     _cache_loaded = False
+    _cache_loaded_at = 0
     logger.info("Messages cache cleared")
+
+
+async def _refresh_cache_loop():
+    """Фоновая задача: перезагружает кэш каждые CACHE_TTL секунд."""
+    from shared.database import AsyncSessionLocal
+
+    while True:
+        await asyncio.sleep(CACHE_TTL)
+        try:
+            async with AsyncSessionLocal() as session:
+                await load_messages_from_db(session)
+                logger.debug(f"Cache auto-refreshed (TTL={CACHE_TTL}s)")
+        except Exception as e:
+            logger.warning(f"Cache refresh failed: {e}")
+
+
+def start_cache_refresh_task():
+    """Запустить фоновую задачу обновления кэша."""
+    global _refresh_task
+    if _refresh_task is None or _refresh_task.done():
+        _refresh_task = asyncio.create_task(_refresh_cache_loop())
+        logger.info(f"Started cache refresh task (TTL={CACHE_TTL}s)")
+
+
+def stop_cache_refresh_task():
+    """Остановить фоновую задачу обновления кэша."""
+    global _refresh_task
+    if _refresh_task and not _refresh_task.done():
+        _refresh_task.cancel()
+        logger.info("Stopped cache refresh task")
 
 
 def get_message(key: str, lang: str = "ru") -> str:

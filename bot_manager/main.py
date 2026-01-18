@@ -15,7 +15,7 @@ from bot_manager.bots.downloader import router as downloader_router
 from bot_manager.middlewares import UserTrackingMiddleware, init_bot_record
 
 # Import messages loader
-from bot_manager.bots.downloader.messages import load_messages_from_db
+from bot_manager.bots.downloader.messages import load_messages_from_db, start_cache_refresh_task
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,6 +63,9 @@ async def main():
     logger.info("Loading bot messages from database...")
     async with AsyncSessionLocal() as session:
         await load_messages_from_db(session)
+
+    # Запускаем фоновое обновление кэша сообщений
+    start_cache_refresh_task()
 
     # Collect all bots to start
     bots_to_start = []

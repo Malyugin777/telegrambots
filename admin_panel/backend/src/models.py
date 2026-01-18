@@ -59,9 +59,10 @@ class Bot(Base):
     __tablename__ = "bots"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bot_id: Mapped[Optional[int]] = mapped_column(BigInteger, unique=True, nullable=True)
     name: Mapped[str] = mapped_column(String(100), unique=True)
-    token_hash: Mapped[str] = mapped_column(String(64))
-    bot_username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    token_hash: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
+    username: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     webhook_url: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
     status: Mapped[BotStatus] = mapped_column(SQLEnum(BotStatus), default=BotStatus.ACTIVE)

@@ -42,3 +42,6 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
+
+# Claude Code (contains credentials)
+CLAUDE.md

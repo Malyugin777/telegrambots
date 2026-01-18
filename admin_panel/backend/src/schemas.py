@@ -35,7 +35,7 @@ class LoadChartResponse(BaseModel):
 
 class BotBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=100)
-    bot_username: Optional[str] = None
+    username: Optional[str] = None
     description: Optional[str] = None
     webhook_url: Optional[str] = None
     status: BotStatus = BotStatus.ACTIVE
@@ -48,7 +48,7 @@ class BotCreate(BotBase):
 
 class BotUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=100)
-    bot_username: Optional[str] = None
+    username: Optional[str] = None
     description: Optional[str] = None
     webhook_url: Optional[str] = None
     status: Optional[BotStatus] = None

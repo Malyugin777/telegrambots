@@ -61,7 +61,7 @@ async def list_bots(
         query = query.where(Bot.status == status_filter)
     if search:
         query = query.where(
-            Bot.name.ilike(f"%{search}%") | Bot.bot_username.ilike(f"%{search}%")
+            Bot.name.ilike(f"%{search}%") | Bot.username.ilike(f"%{search}%")
         )
 
     # Get total count
@@ -83,7 +83,7 @@ async def list_bots(
         bot_dict = {
             "id": bot.id,
             "name": bot.name,
-            "bot_username": bot.bot_username,
+            "username": bot.username,
             "description": bot.description,
             "webhook_url": bot.webhook_url,
             "status": bot.status,
@@ -124,7 +124,7 @@ async def get_bot(
     return BotResponse(
         id=bot.id,
         name=bot.name,
-        bot_username=bot.bot_username,
+        username=bot.username,
         description=bot.description,
         webhook_url=bot.webhook_url,
         status=bot.status,
@@ -164,7 +164,7 @@ async def create_bot(
     bot = Bot(
         name=data.name,
         token_hash=token_hash,
-        bot_username=data.bot_username,
+        username=data.username,
         description=data.description,
         webhook_url=data.webhook_url,
         status=data.status,

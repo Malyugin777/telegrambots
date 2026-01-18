@@ -11,6 +11,7 @@ import time
 import logging
 import asyncio
 import aiohttp
+from aiohttp import ClientTimeout
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile, BufferedInputFile, InputMediaPhoto, InputMediaVideo
 
@@ -43,6 +44,30 @@ logger = logging.getLogger(__name__)
 # Глобальные экземпляры загрузчиков
 downloader = VideoDownloader()
 rapidapi = RapidAPIDownloader()
+
+# Таймауты для разных типов файлов (per-request override)
+# Используем ClientTimeout для granular control над sock_read
+# total=None снимает общий лимит, sock_read детектирует dead connections
+TIMEOUT_DOCUMENT = ClientTimeout(
+    total=None,        # Без общего лимита (файлы до 2GB)
+    sock_read=1200,    # 20 минут между чанками (для обработки на сервере)
+    sock_connect=30    # 30 секунд на подключение
+)
+TIMEOUT_VIDEO = ClientTimeout(
+    total=None,        # Без общего лимита
+    sock_read=600,     # 10 минут между чанками
+    sock_connect=30
+)
+TIMEOUT_PHOTO = ClientTimeout(
+    total=None,
+    sock_read=300,     # 5 минут между чанками
+    sock_connect=30
+)
+TIMEOUT_CAROUSEL = ClientTimeout(
+    total=None,
+    sock_read=900,     # 15 минут для каруселей (множество файлов)
+    sock_connect=30
+)
 
 # Паттерн для поддерживаемых URL
 URL_PATTERN = re.compile(
@@ -322,12 +347,12 @@ async def handle_url(message: types.Message):
                             supports_streaming=True
                         ))
 
-                # Отправляем альбом (увеличенный таймаут для больших каруселей)
-                # Retry logic для каруселей
+                # Отправляем альбом с ClientTimeout для sock_read
+                # Retry logic для каруселей (fallback на случай реальных network issues)
                 max_retries = 3
                 for attempt in range(max_retries):
                     try:
-                        await message.answer_media_group(media=media_group, request_timeout=600)  # 10 минут для каруселей
+                        await message.answer_media_group(media=media_group, request_timeout=TIMEOUT_CAROUSEL)
                         break  # Success
                     except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
                         error_str = str(e).lower()
@@ -379,6 +404,7 @@ async def handle_url(message: types.Message):
                                 caption=CAPTION,
                                 title=carousel.title[:60] if carousel.title else "audio",
                                 performer=carousel.author if carousel.author else None,
+                                request_timeout=TIMEOUT_PHOTO,  # ClientTimeout: sock_read=300s (аудио обычно маленькие)
                             )
                             await log_action(user_id, "audio_extracted", {"platform": platform})
                             await downloader.cleanup(audio_result.file_path)
@@ -553,7 +579,7 @@ async def handle_url(message: types.Message):
             photo_msg = await message.answer_photo(
                 photo=media_file,
                 caption=CAPTION,
-                request_timeout=60,  # 1 минута для фото
+                request_timeout=TIMEOUT_PHOTO,  # ClientTimeout с sock_read=300s
             )
             file_id = photo_msg.photo[-1].file_id if photo_msg.photo else None
 
@@ -584,11 +610,11 @@ async def handle_url(message: types.Message):
             # === ОТПРАВЛЯЕМ ВИДЕО или ДОКУМЕНТ (для больших YouTube) ===
             if result.send_as_document:
                 # Большой YouTube файл (50MB-2GB) - отправляем как документ
-                # Увеличиваем таймаут до 30 минут для файлов до 2GB
-                # Скорость загрузки в Telegram: 1-5 MB/s, 2GB = 7-35 минут
+                # Используем ClientTimeout с sock_read=1200s (20 минут между чанками)
+                # total=None снимает общий лимит, полагаясь на sock_read для детекции
                 await status_msg.edit_text(get_message("downloading_large"))
 
-                # Retry logic для больших файлов (сеть может быть нестабильной)
+                # Retry logic для больших файлов (fallback на случай реальных network issues)
                 doc_msg = None
                 max_retries = 3
                 for attempt in range(max_retries):
@@ -596,7 +622,7 @@ async def handle_url(message: types.Message):
                         doc_msg = await message.answer_document(
                             document=media_file,
                             caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
-                            request_timeout=1800,  # 30 минут для файлов до 2GB
+                            request_timeout=TIMEOUT_DOCUMENT,  # ClientTimeout: sock_read=1200s
                         )
                         break  # Success
                     except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
@@ -617,12 +643,12 @@ async def handle_url(message: types.Message):
                 file_id = doc_msg.document.file_id if doc_msg and doc_msg.document else None
             else:
                 # Обычное видео - отправляем с превью
-                # Увеличиваем таймаут до 5 минут для видео
+                # Используем ClientTimeout с sock_read=600s (10 минут между чанками)
                 video_msg = await message.answer_video(
                     video=media_file,
                     caption=CAPTION,
                     supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
-                    request_timeout=300,  # 5 минут для видео до 50MB
+                    request_timeout=TIMEOUT_VIDEO,  # ClientTimeout: sock_read=600s
                 )
                 file_id = video_msg.video.file_id if video_msg.video else None
 
@@ -659,6 +685,7 @@ async def handle_url(message: types.Message):
                     caption=CAPTION,
                     title=title,
                     performer=performer,
+                    request_timeout=TIMEOUT_PHOTO,  # ClientTimeout: sock_read=300s (аудио обычно маленькие)
                 )
 
                 audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None

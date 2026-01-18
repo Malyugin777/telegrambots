@@ -163,33 +163,33 @@ def supports_rapidapi_fallback(url: str) -> bool:
 def make_user_friendly_error(error: str) -> str:
     """Преобразует техническую ошибку в человекочитаемую"""
     if not error:
-        return "Не удалось скачать видео"
+        return get_error_message("unknown")
 
     error_lower = error.lower()
 
-    # Уже человеческие ошибки - возвращаем как есть
-    if error.startswith("Видео слишком большое") or error.startswith("❌"):
-        return error if not error.startswith("❌") else error
+    # Уже человеческие ошибки (начинаются с эмодзи) - возвращаем как есть
+    if error.startswith(("❌", "⏱", "📦", "🔒", "🌍", "⚠️", "📡", "⚙️", "📤", "🔗")):
+        return error
 
-    # Технические ошибки -> человеческие
+    # Технические ошибки -> человеческие (используем messages.py)
     if "too large" in error_lower or "слишком большое" in error_lower:
-        return "Видео слишком большое, не могу отправить в Telegram"
-    elif "no media" in error_lower or "no suitable" in error_lower:
-        return "Не удалось найти видео по этой ссылке"
+        return get_error_message("too_large")
+    elif "no media" in error_lower or "no suitable" in error_lower or "not found" in error_lower:
+        return get_error_message("not_found")
     elif "timeout" in error_lower or "timed out" in error_lower:
-        return "Превышено время ожидания, видео слишком долго скачивается"
+        return get_error_message("timeout")
     elif "unavailable" in error_lower or "not available" in error_lower:
-        return "Видео недоступно (удалено или приватное)"
+        return get_error_message("unavailable")
     elif "private" in error_lower or "login" in error_lower:
-        return "Видео приватное, требуется авторизация"
+        return get_error_message("private")
     elif "region" in error_lower or "country" in error_lower:
-        return "Видео недоступно в этом регионе"
+        return get_error_message("region")
     elif "api error" in error_lower or "api" in error_lower:
-        return "Ошибка API сервиса, попробуйте позже"
+        return get_error_message("api")
     elif "connection" in error_lower or "network" in error_lower:
-        return "Проблема с соединением, попробуйте позже"
+        return get_error_message("connection")
     else:
-        return "Не удалось скачать видео, попробуйте другую ссылку"
+        return get_error_message("unknown")
 
 
 @router.message(F.text)
@@ -648,20 +648,19 @@ async def handle_url(message: types.Message):
             error_details={"exception_type": type(e).__name__}
         )
 
-        # Человеческие сообщения об ошибках
-        error_text = "❌ "
+        # Человеческие сообщения об ошибках (используем messages.py)
         error_str = str(e).lower()
 
         if "closing transport" in error_str or "connection reset" in error_str:
-            error_text += "Видео слишком большое, не успел отправить в Telegram. Попробуйте короче или меньшего качества."
+            error_text = get_error_message("transport")
         elif "timeout" in error_str or "timed out" in error_str:
-            error_text += "Превышено время ожидания. Видео слишком долго скачивается."
+            error_text = get_error_message("timeout")
         elif "too large" in error_str:
-            error_text += "Файл слишком большой для отправки."
+            error_text = get_error_message("too_large")
         elif "no space" in error_str or "disk" in error_str:
-            error_text += "Не хватает места на сервере."
+            error_text = get_error_message("processing")
         else:
-            error_text += "Не удалось обработать видео. Попробуйте другую ссылку."
+            error_text = get_error_message("unknown")
 
         try:
             await status_msg.edit_text(error_text)

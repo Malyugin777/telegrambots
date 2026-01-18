@@ -30,7 +30,7 @@ RAPIDAPI_URL = "https://social-download-all-in-one.p.rapidapi.com/v1/social/auto
 DOWNLOAD_DIR = "/tmp/downloads"
 MAX_FILE_SIZE_MB = 2000  # 2GB - лимит Telegram
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-DOWNLOAD_TIMEOUT = 600  # 10 минут для больших YouTube видео
+DOWNLOAD_TIMEOUT = 1200  # 20 минут для больших YouTube видео (8-часовое видео = 2-4GB)
 
 _executor = ThreadPoolExecutor(max_workers=3)
 

@@ -117,9 +117,6 @@ class VideoDownloader:
             'no_warnings': True,
             'noprogress': True,
 
-            # Имитация браузера (критично для TikTok)
-            'impersonate': CHROME_TARGET,
-
             # Формат: быстрое скачивание - берём готовый mp4, не merge
             'format': format_string,
             'merge_output_format': 'mp4',
@@ -129,11 +126,10 @@ class VideoDownloader:
 
             # Сеть - оптимизация скорости
             'socket_timeout': socket_timeout,  # 60 для YouTube Full, 30 для остальных
-            'retries': 2,
-            'fragment_retries': 2,
+            'retries': 5,  # Увеличили с 2 до 5
+            'fragment_retries': 10,  # Увеличили с 2 до 10 для фрагментов
             'nocheckcertificate': True,
             'geo_bypass': True,
-            'concurrent_fragment_downloads': 5,  # Параллельное скачивание
             'buffersize': 1024 * 64,  # 64KB буфер
 
             # YouTube: ios клиент быстрее отдаёт готовые mp4
@@ -142,21 +138,30 @@ class VideoDownloader:
             },
         }
 
+        # Имитация браузера (критично для TikTok, но НЕ для YouTube - вызывает curl timeout)
+        if is_tiktok:
+            opts['impersonate'] = CHROME_TARGET
+            opts['concurrent_fragment_downloads'] = 5
+
+        # Для YouTube НЕ используем concurrent downloads - это вызывает curl timeouts
+        # Скачиваем последовательно для стабильности
+        if not is_youtube_full and not is_tiktok:
+            opts['concurrent_fragment_downloads'] = 3
+
         # Добавляем progress_hooks если передан
         if progress_hook:
             opts['progress_hooks'] = [progress_hook]
 
         return opts
 
-    def _get_audio_options(self, output_path: str) -> dict:
+    def _get_audio_options(self, output_path: str, url: str = "") -> dict:
         """Опции yt-dlp для извлечения аудио (MP3 320kbps)"""
-        return {
+        is_tiktok = 'tiktok' in url.lower()
+
+        opts = {
             'quiet': True,
             'no_warnings': True,
             'noprogress': True,
-
-            # Имитация браузера (критично для TikTok)
-            'impersonate': CHROME_TARGET,
 
             'format': 'bestaudio/best',
             'outtmpl': output_path,
@@ -168,8 +173,9 @@ class VideoDownloader:
                 'preferredquality': AUDIO_BITRATE,
             }],
 
-            'socket_timeout': 30,
+            'socket_timeout': 60,  # Увеличено с 30 до 60
             'retries': 5,
+            'fragment_retries': 10,
             'nocheckcertificate': True,
             'geo_bypass': True,
 
@@ -177,6 +183,12 @@ class VideoDownloader:
                 'youtube': {'player_client': ['android', 'web']},
             },
         }
+
+        # Имитация браузера только для TikTok
+        if is_tiktok:
+            opts['impersonate'] = CHROME_TARGET
+
+        return opts
 
     def _generate_filepath(self, ext: str = "mp4") -> str:
         """Генерирует уникальный путь к файлу"""
@@ -315,7 +327,7 @@ class VideoDownloader:
         """
         base_path = self._generate_filepath("temp")
         output_template = base_path.rsplit('.', 1)[0]
-        opts = self._get_audio_options(output_template)
+        opts = self._get_audio_options(output_template, url)
 
         try:
             loop = asyncio.get_running_loop()

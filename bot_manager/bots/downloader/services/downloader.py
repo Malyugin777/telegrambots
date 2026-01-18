@@ -125,7 +125,7 @@ class VideoDownloader:
             'outtmpl': output_path,
 
             # Сеть - оптимизация скорости
-            'socket_timeout': 10,
+            'socket_timeout': 30,
             'retries': 2,
             'fragment_retries': 2,
             'nocheckcertificate': True,

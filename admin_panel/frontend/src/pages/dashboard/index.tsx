@@ -12,7 +12,7 @@ import {
   FileOutlined,
   DashboardOutlined,
 } from '@ant-design/icons';
-import { Line, Pie } from '@ant-design/charts';
+import { Area, Pie } from '@ant-design/charts';
 import { useTranslation } from 'react-i18next';
 
 interface Stats {
@@ -99,7 +99,7 @@ export const Dashboard = () => {
     })) || []),
   ];
 
-  const lineConfig = {
+  const areaConfig = {
     data: lineData,
     xField: 'date',
     yField: 'value',
@@ -113,6 +113,44 @@ export const Dashboard = () => {
     },
     color: ['#1890ff', '#52c41a'],
     theme: 'dark',
+    areaStyle: () => {
+      return {
+        fillOpacity: 0.6,
+      };
+    },
+    legend: {
+      position: 'top' as const,
+    },
+    tooltip: {
+      showMarkers: true,
+      showTitle: true,
+      shared: true,
+    },
+    xAxis: {
+      label: {
+        autoRotate: false,
+        autoHide: true,
+        style: {
+          fill: '#999',
+        },
+      },
+    },
+    yAxis: {
+      label: {
+        style: {
+          fill: '#999',
+        },
+      },
+      grid: {
+        line: {
+          style: {
+            stroke: '#333',
+            lineWidth: 1,
+            lineDash: [4, 4],
+          },
+        },
+      },
+    },
   };
 
   const platformColors: Record<string, string> = {
@@ -123,20 +161,53 @@ export const Dashboard = () => {
   };
 
   const pieConfig = {
-    data: platforms,
+    data: platforms.filter((p: { name: string }) => p.name !== '10'), // Filter out invalid data
     angleField: 'count',
     colorField: 'name',
-    radius: 0.8,
+    radius: 0.9,
     innerRadius: 0.6,
     label: {
-      type: 'outer',
-      content: '{name}: {value}',
+      type: 'spider',
+      labelHeight: 28,
+      content: '{name}\n{percentage}',
+      style: {
+        fill: '#fff',
+      },
     },
-    color: platforms.map((p: { name: string }) => platformColors[p.name] || '#888'),
+    color: (datum: { name: string }) => platformColors[datum.name] || '#888',
     theme: 'dark',
     legend: {
-      position: 'bottom' as const,
+      position: 'right' as const,
+      itemName: {
+        style: {
+          fill: '#999',
+        },
+      },
     },
+    statistic: {
+      title: {
+        offsetY: -4,
+        style: {
+          fontSize: '14px',
+          fill: '#999',
+        },
+        content: 'Всего',
+      },
+      content: {
+        style: {
+          fontSize: '24px',
+          fill: '#fff',
+        },
+        customHtml: () => {
+          const total = platforms.reduce((sum: number, p: { count: number }) => sum + p.count, 0);
+          return `${total}`;
+        },
+      },
+    },
+    interactions: [
+      { type: 'element-selected' },
+      { type: 'element-active' },
+    ],
   };
 
   if (statsLoading) {
@@ -281,7 +352,7 @@ export const Dashboard = () => {
                 <Spin />
               </div>
             ) : (
-              <Line {...lineConfig} height={300} />
+              <Area {...areaConfig} height={300} />
             )}
           </Card>
         </Col>

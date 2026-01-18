@@ -424,28 +424,39 @@ class VideoDownloader:
         import subprocess
 
         try:
-            # Получаем width, height, codec, SAR
+            # Получаем width, height, codec, SAR используя JSON для надёжного парсинга
             probe_cmd = [
                 'ffprobe', '-v', 'error', '-select_streams', 'v:0',
                 '-show_entries', 'stream=width,height,codec_name,sample_aspect_ratio',
-                '-of', 'csv=p=0', video_path
+                '-of', 'json', video_path
             ]
             result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
             probe_output = result.stdout.strip()
 
-            # Парсим width,height,codec,sar
-            parts = probe_output.split(',')
-            if len(parts) < 3:
-                logger.warning(f"Cannot parse video info: {probe_output}")
+            # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"[FIX_TIKTOK] Probe output: {probe_output[:200]}")
+
+            # Парсим JSON
+            import json
+            try:
+                data = json.loads(probe_output)
+                streams = data.get('streams', [])
+                if not streams:
+                    logger.warning(f"[FIX_TIKTOK] No streams in probe output")
+                    return None
+                stream = streams[0]
+                width = stream.get('width', 0)
+                height = stream.get('height', 0)
+                codec = stream.get('codec_name', '')
+                sar = stream.get('sample_aspect_ratio', '1:1') or '1:1'
+            except json.JSONDecodeError as e:
+                logger.warning(f"[FIX_TIKTOK] Cannot parse JSON: {e}")
                 return None
 
-            width = int(parts[0]) if parts[0].isdigit() else 0
-            height = int(parts[1]) if parts[1].isdigit() else 0
-            codec = parts[2] if len(parts) > 2 else ''
-            sar = parts[3].strip() if len(parts) > 3 else '1:1'
+            logger.info(f"[FIX_TIKTOK] Parsed: {width}x{height}, codec={codec}, SAR={sar}")
 
             if not width or not height:
-                logger.warning(f"Invalid video dimensions: {width}x{height}")
+                logger.warning(f"[FIX_TIKTOK] Invalid video dimensions: {width}x{height}")
                 return None
 
             # Нормализуем SAR (1/1 -> 1:1)
@@ -456,14 +467,14 @@ class VideoDownloader:
 
             # Если уже H.264 с правильным SAR - ничего не делаем
             if codec == 'h264' and sar_is_ok:
-                logger.info(f"TikTok video OK: {width}x{height}, codec={codec}, sar={sar}")
+                logger.info(f"[FIX_TIKTOK] SKIP - already OK: {width}x{height}, codec={codec}, sar={sar}")
                 return None
 
             output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
 
             if sar_is_ok:
                 # SAR правильный, но кодек не H.264 — перекодируем в H.264
-                logger.info(f"TikTok video recode: {width}x{height}, codec {codec} -> h264")
+                logger.info(f"[FIX_TIKTOK] RECODE: {width}x{height}, codec {codec} -> h264")
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
                     '-c:v', 'libx264',
@@ -496,7 +507,7 @@ class VideoDownloader:
                     new_width = width + (width % 2)
                     new_height = height + (height % 2)
 
-                logger.info(f"TikTok video scale fix: {width}x{height} SAR={sar} -> {new_width}x{new_height} SAR=1:1")
+                logger.info(f"[FIX_TIKTOK] SCALE: {width}x{height} SAR={sar} -> {new_width}x{new_height} SAR=1:1")
 
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
@@ -517,18 +528,18 @@ class VideoDownloader:
                 os.remove(video_path)
                 os.rename(output_path, video_path)
                 new_size = os.path.getsize(video_path)
-                logger.info(f"TikTok video fixed: {new_size} bytes")
+                logger.info(f"[FIX_TIKTOK] SUCCESS: {new_size} bytes")
                 return video_path
             else:
                 # Не удалось исправить - возвращаем оригинал
                 if os.path.exists(output_path):
                     os.remove(output_path)
                 stderr = result.stderr.decode() if result.stderr else 'unknown'
-                logger.warning(f"TikTok fix failed: {stderr[:200]}")
+                logger.warning(f"[FIX_TIKTOK] FAILED: {stderr[:200]}")
                 return None
 
         except Exception as e:
-            logger.warning(f"TikTok SAR fix error: {e}")
+            logger.warning(f"[FIX_TIKTOK] ERROR: {e}")
             return None
 
     def _format_error(self, error: str) -> str:

@@ -472,28 +472,34 @@ class RapidAPIDownloader:
         import subprocess
 
         try:
-            # Получаем width, height, codec, SAR
+            # Получаем width, height, codec, SAR используя JSON для надёжного парсинга
             probe_cmd = [
                 'ffprobe', '-v', 'error', '-select_streams', 'v:0',
                 '-show_entries', 'stream=width,height,codec_name,sample_aspect_ratio',
-                '-of', 'csv=p=0', video_path
+                '-of', 'json', video_path
             ]
             result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
             probe_output = result.stdout.strip()
 
             # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
-            logger.info(f"[FIX_VIDEO] Probe output: {probe_output}")
+            logger.info(f"[FIX_VIDEO] Probe output: {probe_output[:200]}")
 
-            # Парсим width,height,codec,sar
-            parts = probe_output.split(',')
-            if len(parts) < 3:
-                logger.warning(f"[FIX_VIDEO] Cannot parse video info: {probe_output}")
+            # Парсим JSON
+            import json
+            try:
+                data = json.loads(probe_output)
+                streams = data.get('streams', [])
+                if not streams:
+                    logger.warning(f"[FIX_VIDEO] No streams in probe output")
+                    return
+                stream = streams[0]
+                width = stream.get('width', 0)
+                height = stream.get('height', 0)
+                codec = stream.get('codec_name', '')
+                sar = stream.get('sample_aspect_ratio', '1:1') or '1:1'
+            except json.JSONDecodeError as e:
+                logger.warning(f"[FIX_VIDEO] Cannot parse JSON: {e}")
                 return
-
-            width = int(parts[0]) if parts[0].isdigit() else 0
-            height = int(parts[1]) if parts[1].isdigit() else 0
-            codec = parts[2] if len(parts) > 2 else ''
-            sar = parts[3].strip() if len(parts) > 3 else '1:1'
 
             logger.info(f"[FIX_VIDEO] Parsed: {width}x{height}, codec={codec}, SAR={sar}")
 

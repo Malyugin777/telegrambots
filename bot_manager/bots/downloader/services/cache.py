@@ -96,3 +96,110 @@ async def close_redis():
     if _redis:
         await _redis.close()
         _redis = None
+
+
+# === RATE LIMITING ===
+
+MAX_USER_DOWNLOADS = 2  # Макс одновременных скачиваний на юзера
+MAX_GLOBAL_FFMPEG = 5   # Макс одновременных ffmpeg процессов
+
+
+async def check_user_limit(user_id: int) -> bool:
+    """
+    Проверяет, может ли юзер начать скачивание
+
+    Returns:
+        True если можно начать, False если лимит превышен
+    """
+    try:
+        r = await get_redis()
+        user_downloads = await r.get(f"downloads:user:{user_id}")
+        count = int(user_downloads) if user_downloads else 0
+        return count < MAX_USER_DOWNLOADS
+    except Exception as e:
+        logger.warning(f"Rate limit check error: {e}")
+        return True  # При ошибке разрешаем
+
+
+async def acquire_user_slot(user_id: int) -> bool:
+    """
+    Занять слот скачивания для юзера
+
+    Returns:
+        True если слот получен, False если лимит превышен
+    """
+    try:
+        r = await get_redis()
+        key = f"downloads:user:{user_id}"
+
+        # Increment и проверяем
+        count = await r.incr(key)
+        await r.expire(key, 300)  # TTL 5 минут на случай сбоя
+
+        if count > MAX_USER_DOWNLOADS:
+            await r.decr(key)
+            return False
+
+        return True
+    except Exception as e:
+        logger.warning(f"Acquire user slot error: {e}")
+        return True
+
+
+async def release_user_slot(user_id: int):
+    """Освободить слот скачивания юзера"""
+    try:
+        r = await get_redis()
+        await r.decr(f"downloads:user:{user_id}")
+    except Exception as e:
+        logger.warning(f"Release user slot error: {e}")
+
+
+async def check_ffmpeg_limit() -> bool:
+    """
+    Проверяет глобальный лимит ffmpeg процессов
+
+    Returns:
+        True если можно запустить ffmpeg, False если лимит превышен
+    """
+    try:
+        r = await get_redis()
+        ffmpeg_count = await r.get("ffmpeg:active")
+        count = int(ffmpeg_count) if ffmpeg_count else 0
+        return count < MAX_GLOBAL_FFMPEG
+    except Exception as e:
+        logger.warning(f"FFmpeg limit check error: {e}")
+        return True
+
+
+async def acquire_ffmpeg_slot() -> bool:
+    """
+    Занять слот ffmpeg процесса
+
+    Returns:
+        True если слот получен, False если лимит превышен
+    """
+    try:
+        r = await get_redis()
+        key = "ffmpeg:active"
+
+        count = await r.incr(key)
+        await r.expire(key, 600)  # TTL 10 минут
+
+        if count > MAX_GLOBAL_FFMPEG:
+            await r.decr(key)
+            return False
+
+        return True
+    except Exception as e:
+        logger.warning(f"Acquire ffmpeg slot error: {e}")
+        return True
+
+
+async def release_ffmpeg_slot():
+    """Освободить слот ffmpeg процесса"""
+    try:
+        r = await get_redis()
+        await r.decr("ffmpeg:active")
+    except Exception as e:
+        logger.warning(f"Release ffmpeg slot error: {e}")

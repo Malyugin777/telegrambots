@@ -16,13 +16,21 @@ from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo
 
 from ..services.downloader import VideoDownloader
 from ..services.rapidapi_downloader import RapidAPIDownloader
-from ..services.cache import get_cached_file_ids, cache_file_ids
+from ..services.cache import (
+    get_cached_file_ids,
+    cache_file_ids,
+    acquire_user_slot,
+    release_user_slot,
+)
 from ..messages import (
     CAPTION,
     get_downloading_message,
-    get_sending_message,
+    get_processing_message,
+    get_compressing_message,
+    get_uploading_message,
     get_extracting_audio_message,
     get_unsupported_url_message,
+    get_rate_limit_message,
     get_message,
 )
 from bot_manager.middlewares import log_action
@@ -142,6 +150,11 @@ async def handle_url(message: types.Message):
             logger.warning(f"Cache send failed, re-downloading: {e}")
             # Кэш протух, скачиваем заново
 
+    # === ПРОВЕРЯЕМ RATE LIMIT ===
+    if not await acquire_user_slot(user_id):
+        await message.answer(get_rate_limit_message())
+        return
+
     # Статус сообщение
     status_msg = await message.answer(get_downloading_message())
 
@@ -179,7 +192,7 @@ async def handle_url(message: types.Message):
 
             # === КАРУСЕЛЬ (несколько файлов) ===
             if len(carousel.files) > 1:
-                await status_msg.edit_text(get_sending_message())
+                await status_msg.edit_text(get_uploading_message())
 
                 # Формируем MediaGroup
                 media_group = []
@@ -269,7 +282,7 @@ async def handle_url(message: types.Message):
             return
 
         # Отправляем медиа
-        await status_msg.edit_text(get_sending_message())
+        await status_msg.edit_text(get_uploading_message())
 
         media_file = FSInputFile(result.file_path, filename=result.filename)
         file_id = None
@@ -384,6 +397,8 @@ async def handle_url(message: types.Message):
         # Останавливаем фоновую задачу обновления прогресса
         done_event.set()
         progress_task.cancel()
+        # Освобождаем слот юзера
+        await release_user_slot(user_id)
 
 
 @router.message(F.text)

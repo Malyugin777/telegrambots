@@ -69,10 +69,15 @@ DEFAULTS = {
 • Приватный контент не поддерживается
 """.strip(),
 
-    "downloading": "⏳ Скачиваю...",
-    "sending": "📤 Отправляю...",
+    "downloading": "⏳ Скачиваю видео...",
+    "processing": "🎬 Обрабатываю видео...",
+    "compressing": "📦 Сжимаю под формат Telegram...",
+    "uploading": "📤 Отправляю...",
     "extracting_audio": "🎵 Извлекаю аудио...",
     "success": "✅ Готово!",
+    "rate_limit_user": "⏳ Подожди, у тебя уже качается видео...",
+    "downloading_large": "⏳ Скачиваю большое видео...",
+    "sent_as_document": "Видео слишком большое для автопроигрывания, отправлено как файл",
     "error_not_found": "❌ Видео не найдено. Проверь ссылку.",
     "error_timeout": "⏱ Превышено время ожидания. Попробуй позже.",
     "error_too_large": "📦 Файл слишком большой (>50MB). Telegram не позволяет.",
@@ -197,14 +202,27 @@ def get_help_message() -> str:
 def get_downloading_message() -> str:
     return get_message("downloading")
 
+def get_processing_message() -> str:
+    return get_message("processing")
+
+def get_compressing_message() -> str:
+    return get_message("compressing")
+
+def get_uploading_message() -> str:
+    return get_message("uploading")
+
 def get_sending_message() -> str:
-    return get_message("sending")
+    """Deprecated: используй get_uploading_message()"""
+    return get_message("uploading")
 
 def get_extracting_audio_message() -> str:
     return get_message("extracting_audio")
 
 def get_success_message() -> str:
     return get_message("success")
+
+def get_rate_limit_message() -> str:
+    return get_message("rate_limit_user")
 
 def get_error_message(error_type: str = "unknown") -> str:
     """Получить сообщение об ошибке по типу."""

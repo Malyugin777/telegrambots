@@ -20,6 +20,14 @@ import yt_dlp
 from yt_dlp.networking.impersonate import ImpersonateTarget
 from curl_cffi import requests as curl_requests
 
+# Import rate limiting для ffmpeg
+try:
+    from ..services.cache import acquire_ffmpeg_slot, release_ffmpeg_slot
+    RATE_LIMITING_ENABLED = True
+except ImportError:
+    RATE_LIMITING_ENABLED = False
+    logger.warning("Rate limiting не загружен - ffmpeg будет запускаться без ограничений")
+
 logger = logging.getLogger(__name__)
 
 # Chrome impersonate target для TikTok
@@ -219,11 +227,21 @@ class VideoDownloader:
             # Исправляем SAR для ВСЕХ видео (не только TikTok!)
             # Pinterest, TikTok, YouTube - у всех может быть неправильный SAR/DAR
             if result.file_path and not result.is_photo:
-                loop = asyncio.get_running_loop()
-                await loop.run_in_executor(_executor, self._fix_video, result.file_path)
-                # Обновляем размер после исправления
-                if os.path.exists(result.file_path):
-                    result.file_size = os.path.getsize(result.file_path)
+                # Rate limiting для ffmpeg процессов
+                if RATE_LIMITING_ENABLED:
+                    # Ожидаем освобождения слота (вместо отказа)
+                    while not await acquire_ffmpeg_slot():
+                        await asyncio.sleep(0.5)  # Ждём 500ms и пробуем снова
+
+                try:
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(_executor, self._fix_video, result.file_path)
+                    # Обновляем размер после исправления
+                    if os.path.exists(result.file_path):
+                        result.file_size = os.path.getsize(result.file_path)
+                finally:
+                    if RATE_LIMITING_ENABLED:
+                        await release_ffmpeg_slot()
 
             # Проверяем размер файла
             is_youtube = 'youtube.com' in url.lower() or 'youtu.be' in url.lower()

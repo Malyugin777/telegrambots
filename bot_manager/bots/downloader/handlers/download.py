@@ -459,16 +459,15 @@ async def handle_url(message: types.Message):
                     await status_msg.edit_text(f"❌ {make_user_friendly_error(file_result.error)}")
                     return
 
-                # Проверяем размер файла для выбора способа отправки
+                # Проверяем размер файла
                 file_size = file_result.file_size or 0
-                send_as_document = False
 
                 if file_size > 2_000_000_000:  # > 2GB
                     await status_msg.edit_text("❌ Видео слишком большое (>2GB), не могу отправить в Telegram")
                     await rapidapi.cleanup(file_result.file_path)
                     return
-                elif file_size >= 50_000_000:  # >= 50MB
-                    send_as_document = True
+
+                # Всегда отправляем как видео (Local Bot API поддерживает до 2GB)
 
                 # Создаём DownloadResult
                 result = DownloadResult(
@@ -477,7 +476,7 @@ async def handle_url(message: types.Message):
                     filename=file_result.filename,
                     file_size=file_result.file_size,
                     is_photo=file_result.is_photo,
-                    send_as_document=send_as_document,
+                    send_as_document=False,  # Всегда отправляем как видео
                     info=MediaInfo(
                         title=file_result.title or "video",
                         author=file_result.author or "unknown",
@@ -507,16 +506,12 @@ async def handle_url(message: types.Message):
                     logger.info(f"RapidAPI fallback succeeded: {file_result.filename}")
                     api_source = "rapidapi"
 
-                    # Проверяем размер для YouTube
-                    send_as_document = False
-                    if is_youtube:
-                        file_size = file_result.file_size or 0
-                        if file_size > 2_000_000_000:  # > 2GB
-                            await status_msg.edit_text("❌ Видео слишком большое (>2GB), не могу отправить в Telegram")
-                            await rapidapi.cleanup(file_result.file_path)
-                            return
-                        elif file_size >= 50_000_000:  # >= 50MB
-                            send_as_document = True
+                    # Проверяем размер
+                    file_size = file_result.file_size or 0
+                    if file_size > 2_000_000_000:  # > 2GB
+                        await status_msg.edit_text("❌ Видео слишком большое (>2GB), не могу отправить в Telegram")
+                        await rapidapi.cleanup(file_result.file_path)
+                        return
 
                     result = DownloadResult(
                         success=True,
@@ -524,7 +519,7 @@ async def handle_url(message: types.Message):
                         filename=file_result.filename,
                         file_size=file_result.file_size,
                         is_photo=file_result.is_photo,
-                        send_as_document=send_as_document,
+                        send_as_document=False,  # Всегда отправляем как видео
                         info=MediaInfo(
                             title=file_result.title or "video",
                             author=file_result.author or "unknown",
@@ -612,95 +607,34 @@ async def handle_url(message: types.Message):
                     await downloader.cleanup(result.file_path)
                 return
 
-            # === ОТПРАВЛЯЕМ ВИДЕО или ДОКУМЕНТ (для больших YouTube) ===
-            if result.send_as_document:
-                # Большой YouTube файл (>50MB, до 2GB) - отправляем как документ
-                # Используем увеличенный timeout (30 минут) для загрузки на Local Bot API Server
-                await status_msg.edit_text(get_message("downloading_large"))
+            # === ОТПРАВЛЯЕМ ВИДЕО (до 2GB с Local Bot API Server) ===
+            await status_msg.edit_text(get_uploading_message())
 
-                # Retry logic для больших файлов (fallback на случай реальных network issues)
-                doc_msg = None
-                max_retries = 3
-                for attempt in range(max_retries):
-                    try:
-                        doc_msg = await message.answer_document(
-                            document=media_file,
-                            caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
-                            request_timeout=TIMEOUT_DOCUMENT,  # 30 минут для 2GB файлов
-                        )
-                        break  # Success
-                    except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
-                        error_str = str(e).lower()
-                        if "closing transport" in error_str or "connection reset" in error_str or "timeout" in error_str:
-                            if attempt < max_retries - 1:
-                                wait_time = 5 * (2 ** attempt)  # 5s, 10s, 20s
-                                logger.warning(f"Upload failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time}s...")
-                                await asyncio.sleep(wait_time)
-                                # Recreate FSInputFile (stream might be consumed)
-                                media_file = FSInputFile(result.file_path, filename=result.filename)
-                            else:
-                                logger.error(f"Upload failed after {max_retries} attempts: {e}")
-                                raise
-                        else:
-                            raise  # Other errors - don't retry
-
-                file_id = doc_msg.document.file_id if doc_msg and doc_msg.document else None
-            else:
-                # Обычное видео - отправляем с превью
-                video_msg = await message.answer_video(
-                    video=media_file,
-                    caption=CAPTION,
-                    supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
-                    request_timeout=TIMEOUT_VIDEO,  # 15 минут для видео
-                )
-                file_id = video_msg.video.file_id if video_msg.video else None
+            video_msg = await message.answer_video(
+                video=media_file,
+                caption=CAPTION,
+                supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
+                request_timeout=TIMEOUT_VIDEO,  # 15 минут для видео
+            )
+            file_id = video_msg.video.file_id if video_msg.video else None
 
             # Рассчитываем метрики производительности
             download_time_ms = int((time.time() - download_start) * 1000)
             file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
             download_speed = int(file_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
 
-            logger.info(f"Sent {'document' if result.send_as_document else 'video'}: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s")
+            logger.info(f"Sent video: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s")
             await log_action(
                 user_id, "download_success",
-                {"type": "document" if result.send_as_document else "video", "platform": platform},
+                {"type": "video", "platform": platform},
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
                 download_speed_kbps=download_speed,
                 api_source=api_source
             )
 
-            # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО ===
-            await status_msg.edit_text(get_extracting_audio_message())
-
-            audio_result = await downloader.extract_audio(result.file_path)
-            audio_file_id = None
-
-            if audio_result.success:
-                audio_file = FSInputFile(audio_result.file_path, filename=audio_result.filename)
-
-                # Получаем title и author для аудио
-                title = result.info.title[:60] if result.info.title else "audio"
-                performer = result.info.author if result.info.author != "unknown" else None
-
-                audio_msg = await message.answer_audio(
-                    audio=audio_file,
-                    caption=CAPTION,
-                    title=title,
-                    performer=performer,
-                    request_timeout=TIMEOUT_AUDIO,  # 10 минут для аудио
-                )
-
-                audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None
-                logger.info(f"Sent audio: user={user_id}, size={audio_result.file_size}")
-                await log_action(user_id, "audio_extracted", {"platform": platform})
-
-                await downloader.cleanup(audio_result.file_path)
-            else:
-                logger.warning(f"Audio extraction failed: {audio_result.error}")
-
-            # Кэшируем и удаляем
-            await cache_file_ids(url, file_id, audio_file_id)
+            # Кэшируем и удаляем (без аудио для длинных видео)
+            await cache_file_ids(url, file_id, None)
             if api_source == "rapidapi":
                 await rapidapi.cleanup(result.file_path)
             else:

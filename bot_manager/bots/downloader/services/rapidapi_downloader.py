@@ -28,9 +28,9 @@ logger = logging.getLogger(__name__)
 # Константы
 RAPIDAPI_URL = "https://social-download-all-in-one.p.rapidapi.com/v1/social/autolink"
 DOWNLOAD_DIR = "/tmp/downloads"
-MAX_FILE_SIZE_MB = 50
+MAX_FILE_SIZE_MB = 2000  # 2GB - лимит Telegram
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-DOWNLOAD_TIMEOUT = 120  # секунд (Instagram через RapidAPI)
+DOWNLOAD_TIMEOUT = 600  # 10 минут для больших YouTube видео
 
 _executor = ThreadPoolExecutor(max_workers=3)
 

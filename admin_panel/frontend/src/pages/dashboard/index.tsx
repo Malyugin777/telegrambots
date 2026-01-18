@@ -172,7 +172,7 @@ export const Dashboard = () => {
     innerRadius: 0.6,
     label: {
       type: 'outer' as const,
-      content: '{name}: {value}',
+      content: (data: any) => `${data.name}: ${data.count}`,
       style: {
         fill: '#fff',
         fontSize: 12,

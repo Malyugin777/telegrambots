@@ -216,11 +216,11 @@ class VideoDownloader:
             if not result.success:
                 return result
 
-            # Исправляем TikTok видео (перекодируем в H.264 с правильным SAR)
-            is_tiktok = 'tiktok' in url.lower()
-            if is_tiktok and result.file_path:
+            # Исправляем SAR для ВСЕХ видео (не только TikTok!)
+            # Pinterest, TikTok, YouTube - у всех может быть неправильный SAR/DAR
+            if result.file_path and not result.is_photo:
                 loop = asyncio.get_running_loop()
-                await loop.run_in_executor(_executor, self._fix_tiktok_video, result.file_path)
+                await loop.run_in_executor(_executor, self._fix_video, result.file_path)
                 # Обновляем размер после исправления
                 if os.path.exists(result.file_path):
                     result.file_size = os.path.getsize(result.file_path)
@@ -440,11 +440,12 @@ class VideoDownloader:
                 error=str(e)[:100]
             )
 
-    def _fix_tiktok_video(self, video_path: str) -> Optional[str]:
+    def _fix_video(self, video_path: str) -> Optional[str]:
         """
-        Исправляет TikTok видео — ЯВНО пересчитывает пиксели для правильного отображения.
+        Исправляет SAR/DAR для ВСЕХ видео (TikTok, Pinterest, YouTube, Instagram).
+        ЯВНО пересчитывает пиксели для правильного отображения.
 
-        TikTok часто отдаёт HEVC с неправильными метаданными SAR/DAR.
+        Многие платформы отдают HEVC/H264 с неправильными метаданными SAR/DAR.
         iOS Telegram игнорирует SAR и рендерит пиксели напрямую — поэтому нужно
         РЕАЛЬНО масштабировать видео, а не только менять метаданные.
 
@@ -468,7 +469,7 @@ class VideoDownloader:
             probe_output = result.stdout.strip()
 
             # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
-            logger.info(f"[FIX_TIKTOK] Probe output: {probe_output[:200]}")
+            logger.info(f"[FIX_VIDEO] Probe output: {probe_output[:200]}")
 
             # Парсим JSON
             import json
@@ -476,7 +477,7 @@ class VideoDownloader:
                 data = json.loads(probe_output)
                 streams = data.get('streams', [])
                 if not streams:
-                    logger.warning(f"[FIX_TIKTOK] No streams in probe output")
+                    logger.warning(f"[FIX_VIDEO] No streams in probe output")
                     return None
                 stream = streams[0]
                 width = stream.get('width', 0)
@@ -484,13 +485,13 @@ class VideoDownloader:
                 codec = stream.get('codec_name', '')
                 sar = stream.get('sample_aspect_ratio', '1:1') or '1:1'
             except json.JSONDecodeError as e:
-                logger.warning(f"[FIX_TIKTOK] Cannot parse JSON: {e}")
+                logger.warning(f"[FIX_VIDEO] Cannot parse JSON: {e}")
                 return None
 
-            logger.info(f"[FIX_TIKTOK] Parsed: {width}x{height}, codec={codec}, SAR={sar}")
+            logger.info(f"[FIX_VIDEO] Parsed: {width}x{height}, codec={codec}, SAR={sar}")
 
             if not width or not height:
-                logger.warning(f"[FIX_TIKTOK] Invalid video dimensions: {width}x{height}")
+                logger.warning(f"[FIX_VIDEO] Invalid video dimensions: {width}x{height}")
                 return None
 
             # Нормализуем SAR (1/1 -> 1:1)
@@ -501,14 +502,14 @@ class VideoDownloader:
 
             # Если уже H.264 с правильным SAR - ничего не делаем
             if codec == 'h264' and sar_is_ok:
-                logger.info(f"[FIX_TIKTOK] SKIP - already OK: {width}x{height}, codec={codec}, sar={sar}")
+                logger.info(f"[FIX_VIDEO] SKIP - already OK: {width}x{height}, codec={codec}, sar={sar}")
                 return None
 
             output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
 
             if sar_is_ok:
                 # SAR правильный, но кодек не H.264 — перекодируем в H.264
-                logger.info(f"[FIX_TIKTOK] RECODE: {width}x{height}, codec {codec} -> h264")
+                logger.info(f"[FIX_VIDEO] RECODE: {width}x{height}, codec {codec} -> h264")
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
                     '-c:v', 'libx264',
@@ -541,7 +542,7 @@ class VideoDownloader:
                     new_width = width + (width % 2)
                     new_height = height + (height % 2)
 
-                logger.info(f"[FIX_TIKTOK] SCALE: {width}x{height} SAR={sar} -> {new_width}x{new_height} SAR=1:1")
+                logger.info(f"[FIX_VIDEO] SCALE: {width}x{height} SAR={sar} -> {new_width}x{new_height} SAR=1:1")
 
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
@@ -562,18 +563,18 @@ class VideoDownloader:
                 os.remove(video_path)
                 os.rename(output_path, video_path)
                 new_size = os.path.getsize(video_path)
-                logger.info(f"[FIX_TIKTOK] SUCCESS: {new_size} bytes")
+                logger.info(f"[FIX_VIDEO] SUCCESS: {new_size} bytes")
                 return video_path
             else:
                 # Не удалось исправить - возвращаем оригинал
                 if os.path.exists(output_path):
                     os.remove(output_path)
                 stderr = result.stderr.decode() if result.stderr else 'unknown'
-                logger.warning(f"[FIX_TIKTOK] FAILED: {stderr[:200]}")
+                logger.warning(f"[FIX_VIDEO] FAILED: {stderr[:200]}")
                 return None
 
         except Exception as e:
-            logger.warning(f"[FIX_TIKTOK] ERROR: {e}")
+            logger.warning(f"[FIX_VIDEO] ERROR: {e}")
             return None
 
     def _format_error(self, error: str) -> str:

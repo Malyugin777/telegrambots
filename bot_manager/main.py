@@ -1,9 +1,11 @@
 import asyncio
 import logging
 import os
+from aiohttp import ClientTimeout
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from shared.database import init_db, AsyncSessionLocal
 from shared.config import settings
@@ -26,8 +28,20 @@ logger = logging.getLogger(__name__)
 
 async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
+    # Создаём сессию с увеличенным таймаутом для больших файлов (до 2GB)
+    # Скорость загрузки в Telegram: 1-5 MB/s, 2GB = 7-35 минут
+    session = AiohttpSession(
+        timeout=ClientTimeout(
+            total=1800,      # 30 минут общий таймаут
+            connect=60,      # 1 минута на подключение
+            sock_read=600,   # 10 минут на чтение (между чанками)
+            sock_connect=60  # 1 минута на socket connect
+        )
+    )
+
     bot = Bot(
         token=token,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
     dp = Dispatcher()

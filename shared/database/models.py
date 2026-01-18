@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import (
     Column, Integer, BigInteger, String, DateTime,
-    Boolean, Text, Enum, ForeignKey, Index
+    Boolean, Text, Enum, ForeignKey, Index, JSON
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -83,7 +83,7 @@ class ActionLog(Base):
     user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True)
     action = Column(String(100), nullable=False, index=True)
-    details = Column(Text, nullable=True)
+    details = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
 
     user = relationship("User", back_populates="action_logs")

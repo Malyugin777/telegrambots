@@ -73,11 +73,14 @@ async def log_action(
                 logger.warning(f"User not found for action log: {telegram_id}")
                 return
 
+            # details должен быть dict (JSON), а не строкой
+            details_dict = {"info": details} if details else None
+
             log_entry = ActionLog(
                 user_id=user_id,
                 bot_id=_bot_id,
                 action=action,
-                details=details,
+                details=details_dict,
             )
             session.add(log_entry)
             await session.commit()

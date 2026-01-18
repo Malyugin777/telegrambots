@@ -1,17 +1,23 @@
 """
 Текстовые сообщения бота SaveNinja
+Загружаются из БД с fallback на дефолтные значения
 """
+import logging
+from typing import Optional
+from functools import lru_cache
 
-# Подпись под медиа
+logger = logging.getLogger(__name__)
+
+# Bot ID для SaveNinja (из таблицы bots)
+BOT_ID = 1
+
+# Подпись под медиа (не хранится в БД)
 CAPTION = "@SaveNinja_bot"
 
-# Статусы загрузки
-STATUS_DOWNLOADING = "\u23f3 Скачиваю..."
-STATUS_SENDING = "\U0001f4e4 Отправляю..."
-STATUS_EXTRACTING_AUDIO = "\U0001f3b5 Извлекаю аудио..."
+# ============ Дефолтные сообщения (fallback) ============
 
-# Приветствие
-START_MESSAGE = """
+DEFAULTS = {
+    "start": """
 <b>👋 Привет! Я SaveNinja</b>
 
 Отправь мне ссылку и я скачаю для тебя:
@@ -33,29 +39,9 @@ START_MESSAGE = """
 Короткие видео
 
 Просто отправь ссылку!
-""".strip()
+""".strip(),
 
-# Сообщение об ошибке - неподдерживаемая ссылка
-UNSUPPORTED_URL_MESSAGE = """
-⛔️ <b>Ссылка не поддерживается!</b>
-
-<b>Что поддерживается?</b>
-
-📸 <b>Instagram</b>
-Фото, видео, карусели, истории, актуальное
-
-📌 <b>Pinterest</b>
-Фото и видео
-
-🎵 <b>TikTok</b>
-Видео без водяного знака
-
-▶️ <b>YouTube Shorts</b>
-Короткие видео
-""".strip()
-
-# Помощь
-HELP_MESSAGE = """
+    "help": """
 <b>❓ Помощь</b>
 
 <b>Как пользоваться:</b>
@@ -75,4 +61,126 @@ HELP_MESSAGE = """
 <b>Ограничения:</b>
 • Максимальный размер: 50MB
 • Приватный контент не поддерживается
-""".strip()
+""".strip(),
+
+    "downloading": "⏳ Скачиваю...",
+    "sending": "📤 Отправляю...",
+    "extracting_audio": "🎵 Извлекаю аудио...",
+    "success": "✅ Готово!",
+    "error_not_found": "❌ Видео не найдено. Проверь ссылку.",
+    "error_timeout": "⏱ Превышено время ожидания. Попробуй позже.",
+    "error_too_large": "📦 Файл слишком большой (>50MB). Telegram не позволяет.",
+    "error_unknown": "❌ Произошла ошибка. Попробуй позже.",
+    "error_invalid_url": """
+⛔️ <b>Ссылка не поддерживается!</b>
+
+<b>Что поддерживается?</b>
+
+📸 <b>Instagram</b>
+Фото, видео, карусели, истории, актуальное
+
+📌 <b>Pinterest</b>
+Фото и видео
+
+🎵 <b>TikTok</b>
+Видео без водяного знака
+
+▶️ <b>YouTube Shorts</b>
+Короткие видео
+""".strip(),
+    "error_private": "🔒 Это приватный контент. Доступ ограничен.",
+}
+
+# ============ Кэш сообщений из БД ============
+
+_messages_cache: dict[str, str] = {}
+_cache_loaded: bool = False
+
+
+async def load_messages_from_db(session) -> dict[str, str]:
+    """Загрузить сообщения из БД."""
+    global _messages_cache, _cache_loaded
+
+    try:
+        from shared.database.models import BotMessage
+        from sqlalchemy import select
+
+        result = await session.execute(
+            select(BotMessage).where(
+                BotMessage.bot_id == BOT_ID,
+                BotMessage.is_active == True
+            )
+        )
+        messages = result.scalars().all()
+
+        _messages_cache = {msg.message_key: msg.text_ru for msg in messages}
+        _cache_loaded = True
+
+        logger.info(f"Loaded {len(_messages_cache)} messages from DB for bot_id={BOT_ID}")
+        return _messages_cache
+
+    except Exception as e:
+        logger.warning(f"Failed to load messages from DB: {e}, using defaults")
+        _cache_loaded = False
+        return {}
+
+
+def reload_messages_cache():
+    """Сбросить кэш (вызывать при обновлении через админку)."""
+    global _messages_cache, _cache_loaded
+    _messages_cache = {}
+    _cache_loaded = False
+    logger.info("Messages cache cleared")
+
+
+def get_message(key: str, lang: str = "ru") -> str:
+    """
+    Получить сообщение по ключу.
+    Сначала ищет в кэше БД, потом в дефолтах.
+    """
+    # Сначала из кэша БД
+    if _cache_loaded and key in _messages_cache:
+        return _messages_cache[key]
+
+    # Fallback на дефолты
+    return DEFAULTS.get(key, f"[Message '{key}' not found]")
+
+
+# ============ Функции для использования в хендлерах ============
+
+def get_start_message() -> str:
+    return get_message("start")
+
+def get_help_message() -> str:
+    return get_message("help")
+
+def get_downloading_message() -> str:
+    return get_message("downloading")
+
+def get_sending_message() -> str:
+    return get_message("sending")
+
+def get_extracting_audio_message() -> str:
+    return get_message("extracting_audio")
+
+def get_success_message() -> str:
+    return get_message("success")
+
+def get_error_message(error_type: str = "unknown") -> str:
+    """Получить сообщение об ошибке по типу."""
+    key = f"error_{error_type}"
+    return get_message(key)
+
+def get_unsupported_url_message() -> str:
+    return get_message("error_invalid_url")
+
+
+# ============ Алиасы для обратной совместимости (deprecated) ============
+# Эти константы будут использовать дефолты, пока кэш не загружен
+
+STATUS_DOWNLOADING = DEFAULTS["downloading"]
+STATUS_SENDING = DEFAULTS["sending"]
+STATUS_EXTRACTING_AUDIO = DEFAULTS["extracting_audio"]
+START_MESSAGE = DEFAULTS["start"]
+HELP_MESSAGE = DEFAULTS["help"]
+UNSUPPORTED_URL_MESSAGE = DEFAULTS["error_invalid_url"]

@@ -15,10 +15,10 @@ from ..services.rapidapi_downloader import RapidAPIDownloader
 from ..services.cache import get_cached_file_ids, cache_file_ids
 from ..messages import (
     CAPTION,
-    STATUS_DOWNLOADING,
-    STATUS_SENDING,
-    STATUS_EXTRACTING_AUDIO,
-    UNSUPPORTED_URL_MESSAGE,
+    get_downloading_message,
+    get_sending_message,
+    get_extracting_audio_message,
+    get_unsupported_url_message,
 )
 from bot_manager.middlewares import log_action
 from bot_manager.services.error_logger import error_logger
@@ -98,7 +98,7 @@ async def handle_url(message: types.Message):
             # Кэш протух, скачиваем заново
 
     # Статус сообщение
-    status_msg = await message.answer(STATUS_DOWNLOADING)
+    status_msg = await message.answer(get_downloading_message())
 
     try:
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
@@ -127,7 +127,7 @@ async def handle_url(message: types.Message):
 
             # === КАРУСЕЛЬ (несколько файлов) ===
             if len(carousel.files) > 1:
-                await status_msg.edit_text(STATUS_SENDING)
+                await status_msg.edit_text(get_sending_message())
 
                 # Формируем MediaGroup
                 media_group = []
@@ -151,7 +151,7 @@ async def handle_url(message: types.Message):
 
                 # Извлекаем аудио из первого видео (если есть)
                 if carousel.has_video:
-                    await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
+                    await status_msg.edit_text(get_extracting_audio_message())
                     video_file = next((f for f in carousel.files if not f.is_photo), None)
                     if video_file:
                         audio_result = await downloader.extract_audio(video_file.file_path)
@@ -206,7 +206,7 @@ async def handle_url(message: types.Message):
             return
 
         # Отправляем медиа
-        await status_msg.edit_text(STATUS_SENDING)
+        await status_msg.edit_text(get_sending_message())
 
         media_file = FSInputFile(result.file_path, filename=result.filename)
         file_id = None
@@ -238,7 +238,7 @@ async def handle_url(message: types.Message):
             await log_action(user_id, "download_success", f"video:{platform}")
 
             # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО ===
-            await status_msg.edit_text(STATUS_EXTRACTING_AUDIO)
+            await status_msg.edit_text(get_extracting_audio_message())
 
             audio_result = await downloader.extract_audio(result.file_path)
             audio_file_id = None
@@ -297,7 +297,7 @@ async def handle_text(message: types.Message):
     # Проверяем, есть ли вообще ссылка в сообщении
     if "http" in message.text.lower():
         # Есть ссылка, но не поддерживаемая
-        await message.answer(UNSUPPORTED_URL_MESSAGE)
+        await message.answer(get_unsupported_url_message())
     else:
         # Просто текст без ссылки
         await message.answer(

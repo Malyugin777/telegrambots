@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 
-from shared.database import init_db
+from shared.database import init_db, AsyncSessionLocal
 from shared.config import settings
 
 # Import bot routers
@@ -13,6 +13,9 @@ from bot_manager.bots.downloader import router as downloader_router
 
 # Import middlewares
 from bot_manager.middlewares import UserTrackingMiddleware, init_bot_record
+
+# Import messages loader
+from bot_manager.bots.downloader.messages import load_messages_from_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +58,11 @@ async def start_bot(token: str, name: str, router):
 async def main():
     logger.info("Initializing database...")
     await init_db()
+
+    # Загружаем сообщения бота из БД
+    logger.info("Loading bot messages from database...")
+    async with AsyncSessionLocal() as session:
+        await load_messages_from_db(session)
 
     # Collect all bots to start
     bots_to_start = []

@@ -248,6 +248,9 @@ async def handle_url(message: types.Message):
         download_start = time.time()
         logger.info(f"[HANDLER_START] user={user_id}, platform={platform}, url={url[:100]}")
 
+        # Переменная для отслеживания используемого API
+        api_source = None
+
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
         # Instagram -> RapidAPI (yt-dlp требует авторизации)
         # YouTube/TikTok/Pinterest -> yt-dlp первым, RapidAPI fallback если упал
@@ -255,6 +258,7 @@ async def handle_url(message: types.Message):
 
         if use_rapidapi_primary(url):
             logger.info(f"Using RapidAPI (primary) for: {url}")
+            api_source = "rapidapi"
 
             # Скачиваем ВСЕ медиа (для каруселей)
             carousel = await rapidapi.download_all(url)
@@ -305,7 +309,8 @@ async def handle_url(message: types.Message):
                     user_id, "download_success", f"carousel:{platform}:{len(carousel.files)}",
                     download_time_ms=download_time_ms,
                     file_size_bytes=total_size,
-                    download_speed_kbps=download_speed
+                    download_speed_kbps=download_speed,
+                    api_source=api_source
                 )
 
                 # Извлекаем аудио из первого видео (если есть)
@@ -349,6 +354,7 @@ async def handle_url(message: types.Message):
         else:
             # TikTok, YouTube, Pinterest -> yt-dlp (первая попытка)
             result = await downloader.download(url, progress_callback=progress_callback)
+            api_source = "ytdlp"
 
         if not result.success:
             logger.warning(f"yt-dlp failed: user={user_id}, error={result.error}")
@@ -364,6 +370,7 @@ async def handle_url(message: types.Message):
 
                 if carousel.success and len(carousel.files) > 0:
                     logger.info(f"RapidAPI fallback succeeded: {len(carousel.files)} files")
+                    api_source = "rapidapi"
                     single_file = carousel.files[0]
                     result = DownloadResult(
                         success=True,
@@ -429,7 +436,8 @@ async def handle_url(message: types.Message):
                 user_id, "download_success", f"photo:{platform}",
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
-                download_speed_kbps=download_speed
+                download_speed_kbps=download_speed,
+                api_source=api_source
             )
 
             # Кэшируем и удаляем
@@ -466,7 +474,8 @@ async def handle_url(message: types.Message):
                 user_id, "download_success", f"video:{platform}",
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
-                download_speed_kbps=download_speed
+                download_speed_kbps=download_speed,
+                api_source=api_source
             )
 
             # === ИЗВЛЕКАЕМ АУДИО ИЗ СКАЧАННОГО ВИДЕО ===

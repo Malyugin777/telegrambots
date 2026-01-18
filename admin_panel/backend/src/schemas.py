@@ -45,6 +45,18 @@ class PerformanceResponse(BaseModel):
     platforms: List[PlatformPerformance]
 
 
+class APIUsageStats(BaseModel):
+    today: int
+    month: int
+    limit: Optional[int] = None
+
+
+class APIUsageResponse(BaseModel):
+    rapidapi: APIUsageStats
+    ytdlp: APIUsageStats
+    cobalt: Optional[APIUsageStats] = None
+
+
 # ============ Bots ============
 
 class BotBase(BaseModel):

@@ -11,8 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..database import get_db
 from ..redis_client import get_redis
 from ..config import settings
-from ..models import Bot, User, Broadcast, ActionLog, BotStatus, BroadcastStatus
-from ..schemas import StatsResponse, LoadChartResponse, ChartDataPoint, PerformanceResponse, PlatformPerformance
+from ..models import Bot, User, Broadcast, ActionLog, BotStatus, BroadcastStatus, APISource
+from ..schemas import StatsResponse, LoadChartResponse, ChartDataPoint, PerformanceResponse, PlatformPerformance, APIUsageResponse, APIUsageStats
 from ..auth import get_current_user
 
 router = APIRouter()
@@ -259,4 +259,100 @@ async def get_performance_stats(
     return PerformanceResponse(
         overall=overall,
         platforms=platforms
+    )
+
+
+@router.get("/api-usage", response_model=APIUsageResponse)
+async def get_api_usage(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Get API usage statistics (RapidAPI, yt-dlp, Cobalt)."""
+
+    # Get today's start and month's start
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    # RapidAPI usage
+    # Today
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= today_start,
+            ActionLog.api_source == APISource.RAPIDAPI,
+            ActionLog.action == "download_success"
+        )
+    )
+    rapidapi_today = result.scalar() or 0
+
+    # This month
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= month_start,
+            ActionLog.api_source == APISource.RAPIDAPI,
+            ActionLog.action == "download_success"
+        )
+    )
+    rapidapi_month = result.scalar() or 0
+
+    # yt-dlp usage
+    # Today
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= today_start,
+            ActionLog.api_source == APISource.YTDLP,
+            ActionLog.action == "download_success"
+        )
+    )
+    ytdlp_today = result.scalar() or 0
+
+    # This month
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= month_start,
+            ActionLog.api_source == APISource.YTDLP,
+            ActionLog.action == "download_success"
+        )
+    )
+    ytdlp_month = result.scalar() or 0
+
+    # Cobalt usage (optional)
+    # Today
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= today_start,
+            ActionLog.api_source == APISource.COBALT,
+            ActionLog.action == "download_success"
+        )
+    )
+    cobalt_today = result.scalar() or 0
+
+    # This month
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= month_start,
+            ActionLog.api_source == APISource.COBALT,
+            ActionLog.action == "download_success"
+        )
+    )
+    cobalt_month = result.scalar() or 0
+
+    # RapidAPI limit: 6000 per month (hardcoded for now)
+    rapidapi_limit = 6000
+
+    return APIUsageResponse(
+        rapidapi=APIUsageStats(
+            today=rapidapi_today,
+            month=rapidapi_month,
+            limit=rapidapi_limit
+        ),
+        ytdlp=APIUsageStats(
+            today=ytdlp_today,
+            month=ytdlp_month,
+            limit=None  # No limit for yt-dlp
+        ),
+        cobalt=APIUsageStats(
+            today=cobalt_today,
+            month=cobalt_month,
+            limit=None  # No limit for Cobalt
+        ) if (cobalt_today > 0 or cobalt_month > 0) else None
     )

@@ -55,6 +55,7 @@ async def log_action(
     download_time_ms: Optional[int] = None,
     file_size_bytes: Optional[int] = None,
     download_speed_kbps: Optional[int] = None,
+    api_source: Optional[str] = None,
 ) -> None:
     """
     Записывает действие пользователя в action_logs.
@@ -66,6 +67,7 @@ async def log_action(
         download_time_ms: Время скачивания в миллисекундах
         file_size_bytes: Размер файла в байтах
         download_speed_kbps: Скорость скачивания в KB/s
+        api_source: Источник API ('rapidapi', 'ytdlp', 'cobalt')
     """
     try:
         async with async_session() as session:
@@ -90,11 +92,12 @@ async def log_action(
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size_bytes,
                 download_speed_kbps=download_speed_kbps,
+                api_source=api_source,
             )
             session.add(log_entry)
             await session.commit()
 
-            logger.debug(f"Action logged: user={telegram_id}, action={action}")
+            logger.debug(f"Action logged: user={telegram_id}, action={action}, api_source={api_source}")
 
     except Exception as e:
         logger.error(f"Action log error: {e}")

@@ -25,6 +25,12 @@ class BotStatus(str, PyEnum):
     DISABLED = "disabled"
 
 
+class APISource(str, PyEnum):
+    YTDLP = "ytdlp"
+    RAPIDAPI = "rapidapi"
+    COBALT = "cobalt"
+
+
 class User(Base):
     __tablename__ = "users"
 
@@ -99,6 +105,9 @@ class ActionLog(Base):
     download_time_ms = Column(Integer, nullable=True)
     file_size_bytes = Column(BigInteger, nullable=True)
     download_speed_kbps = Column(Integer, nullable=True)
+
+    # API tracking
+    api_source = Column(Enum(APISource), nullable=True, index=True)
 
     user = relationship("User", back_populates="action_logs")
     bot = relationship("Bot", back_populates="action_logs")

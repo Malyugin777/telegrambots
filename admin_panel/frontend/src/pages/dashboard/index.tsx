@@ -1,5 +1,5 @@
 import { useCustom } from '@refinedev/core';
-import { Row, Col, Card, Statistic, Spin } from 'antd';
+import { Row, Col, Card, Statistic, Spin, Progress, Alert } from 'antd';
 import {
   RobotOutlined,
   UserOutlined,
@@ -11,6 +11,8 @@ import {
   ThunderboltOutlined,
   FileOutlined,
   DashboardOutlined,
+  ApiOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { Area, Pie } from '@ant-design/charts';
 import { useTranslation } from 'react-i18next';
@@ -54,6 +56,18 @@ interface PerformanceData {
   platforms: PlatformPerformance[];
 }
 
+interface APIUsageStats {
+  today: number;
+  month: number;
+  limit: number | null;
+}
+
+interface APIUsageData {
+  rapidapi: APIUsageStats;
+  ytdlp: APIUsageStats;
+  cobalt?: APIUsageStats;
+}
+
 export const Dashboard = () => {
   const { t } = useTranslation();
 
@@ -80,10 +94,16 @@ export const Dashboard = () => {
     method: 'get',
   });
 
+  const { data: apiUsageData } = useCustom<APIUsageData>({
+    url: '/stats/api-usage',
+    method: 'get',
+  });
+
   const stats = statsData?.data;
   const chart = chartData?.data;
   const platforms = platformData?.data?.platforms || [];
   const performance = performanceData?.data?.overall;
+  const apiUsage = apiUsageData?.data;
 
   // Prepare chart data
   const lineData = [
@@ -333,6 +353,136 @@ export const Dashboard = () => {
                 prefix={<DashboardOutlined />}
                 valueStyle={{ color: '#52c41a' }}
               />
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* API Usage Card */}
+      {apiUsage && (
+        <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+          <Col xs={24}>
+            {/* Alert if RapidAPI > 80% */}
+            {apiUsage.rapidapi.limit &&
+             (apiUsage.rapidapi.month / apiUsage.rapidapi.limit) > 0.8 && (
+              <Alert
+                message="Внимание: Превышен лимит RapidAPI!"
+                description={`Использовано ${Math.round((apiUsage.rapidapi.month / apiUsage.rapidapi.limit) * 100)}% месячного лимита RapidAPI`}
+                type="error"
+                icon={<WarningOutlined />}
+                showIcon
+                style={{ marginBottom: '16px' }}
+                banner
+              />
+            )}
+
+            <Card
+              title={
+                <span>
+                  <ApiOutlined /> Использование API
+                </span>
+              }
+            >
+              <Row gutter={[16, 16]}>
+                {/* RapidAPI */}
+                <Col xs={24} md={12}>
+                  <h4 style={{ marginBottom: '12px' }}>RapidAPI</h4>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span>Сегодня:</span>
+                      <span>{apiUsage.rapidapi.today}{apiUsage.rapidapi.limit ? ` / ${apiUsage.rapidapi.limit}` : ''}</span>
+                    </div>
+                    {apiUsage.rapidapi.limit && (
+                      <Progress
+                        percent={Math.round((apiUsage.rapidapi.today / apiUsage.rapidapi.limit) * 100)}
+                        strokeColor={{
+                          '0%': '#52c41a',
+                          '80%': '#faad14',
+                          '100%': '#ff4d4f',
+                        }}
+                      />
+                    )}
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span>За месяц:</span>
+                      <span>{apiUsage.rapidapi.month}{apiUsage.rapidapi.limit ? ` / ${apiUsage.rapidapi.limit}` : ''}</span>
+                    </div>
+                    {apiUsage.rapidapi.limit && (
+                      <Progress
+                        percent={Math.round((apiUsage.rapidapi.month / apiUsage.rapidapi.limit) * 100)}
+                        strokeColor={{
+                          '0%': '#52c41a',
+                          '80%': '#faad14',
+                          '100%': '#ff4d4f',
+                        }}
+                      />
+                    )}
+                  </div>
+                </Col>
+
+                {/* yt-dlp */}
+                <Col xs={24} md={12}>
+                  <h4 style={{ marginBottom: '12px' }}>yt-dlp</h4>
+
+                  <div style={{ marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span>Сегодня:</span>
+                      <span>{apiUsage.ytdlp.today}</span>
+                    </div>
+                    <Progress
+                      percent={100}
+                      strokeColor="#1890ff"
+                      showInfo={false}
+                    />
+                  </div>
+
+                  <div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                      <span>За месяц:</span>
+                      <span>{apiUsage.ytdlp.month}</span>
+                    </div>
+                    <Progress
+                      percent={100}
+                      strokeColor="#1890ff"
+                      showInfo={false}
+                    />
+                  </div>
+                </Col>
+
+                {/* Cobalt (if available) */}
+                {apiUsage.cobalt && (
+                  <Col xs={24} md={12}>
+                    <h4 style={{ marginBottom: '12px' }}>Cobalt</h4>
+
+                    <div style={{ marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span>Сегодня:</span>
+                        <span>{apiUsage.cobalt.today}</span>
+                      </div>
+                      <Progress
+                        percent={100}
+                        strokeColor="#722ed1"
+                        showInfo={false}
+                      />
+                    </div>
+
+                    <div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                        <span>За месяц:</span>
+                        <span>{apiUsage.cobalt.month}</span>
+                      </div>
+                      <Progress
+                        percent={100}
+                        strokeColor="#722ed1"
+                        showInfo={false}
+                      />
+                    </div>
+                  </Col>
+                )}
+              </Row>
             </Card>
           </Col>
         </Row>

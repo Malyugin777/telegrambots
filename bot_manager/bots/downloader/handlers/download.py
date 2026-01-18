@@ -9,6 +9,7 @@ import re
 import os
 import time
 import logging
+import aiohttp
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo
 
@@ -46,6 +47,21 @@ URL_PATTERN = re.compile(
 )
 
 
+async def resolve_short_url(url: str) -> str:
+    """Разрезолвить короткую ссылку Pinterest (pin.it) в полную"""
+    if 'pin.it' in url.lower():
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    resolved_url = str(resp.url)
+                    logger.info(f"Resolved short URL: {url} -> {resolved_url}")
+                    return resolved_url
+        except Exception as e:
+            logger.warning(f"Failed to resolve short URL {url}: {e}")
+            return url
+    return url
+
+
 def use_rapidapi(url: str) -> bool:
     """Проверяет, нужно ли использовать RapidAPI для этого URL"""
     url_lower = url.lower()
@@ -64,6 +80,9 @@ async def handle_url(message: types.Message):
 
     url = match.group()
     user_id = message.from_user.id
+
+    # Резолвим короткие ссылки Pinterest (pin.it -> pinterest.com)
+    url = await resolve_short_url(url)
 
     logger.info(f"Download request: user={user_id}, url={url}")
 

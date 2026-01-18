@@ -408,15 +408,15 @@ class VideoDownloader:
 
     def _fix_tiktok_video(self, video_path: str) -> Optional[str]:
         """
-        Исправляет TikTok видео — корректирует SAR для правильного отображения.
+        Исправляет TikTok видео — ЯВНО пересчитывает пиксели для правильного отображения.
 
-        TikTok часто отдаёт HEVC с неправильными метаданными SAR/DAR,
-        что приводит к деформации в Telegram.
+        TikTok часто отдаёт HEVC с неправильными метаданными SAR/DAR.
+        iOS Telegram игнорирует SAR и рендерит пиксели напрямую — поэтому нужно
+        РЕАЛЬНО масштабировать видео, а не только менять метаданные.
 
         Логика:
         - SAR = 1:1 и H.264 → ничего не делаем
-        - SAR = 1:1, но не H.264 → копируем без перекодирования
-        - SAR ≠ 1:1 → масштабируем (scale=iw*sar:ih) + перекодируем в H.264
+        - SAR ≠ 1:1 → вычисляем новые размеры и масштабируем пиксели
 
         Returns:
             Путь к исправленному файлу или None если исправление не требовалось
@@ -424,19 +424,29 @@ class VideoDownloader:
         import subprocess
 
         try:
-            # Проверяем кодек и SAR
+            # Получаем width, height, codec, SAR
             probe_cmd = [
                 'ffprobe', '-v', 'error', '-select_streams', 'v:0',
-                '-show_entries', 'stream=codec_name,sample_aspect_ratio',
+                '-show_entries', 'stream=width,height,codec_name,sample_aspect_ratio',
                 '-of', 'csv=p=0', video_path
             ]
             result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
             probe_output = result.stdout.strip()
 
-            # Парсим codec,sar
+            # Парсим width,height,codec,sar
             parts = probe_output.split(',')
-            codec = parts[0] if parts else ''
-            sar = parts[1].strip() if len(parts) > 1 else '1:1'
+            if len(parts) < 3:
+                logger.warning(f"Cannot parse video info: {probe_output}")
+                return None
+
+            width = int(parts[0]) if parts[0].isdigit() else 0
+            height = int(parts[1]) if parts[1].isdigit() else 0
+            codec = parts[2] if len(parts) > 2 else ''
+            sar = parts[3].strip() if len(parts) > 3 else '1:1'
+
+            if not width or not height:
+                logger.warning(f"Invalid video dimensions: {width}x{height}")
+                return None
 
             # Нормализуем SAR (1/1 -> 1:1)
             sar_normalized = sar.replace('/', ':')
@@ -446,26 +456,51 @@ class VideoDownloader:
 
             # Если уже H.264 с правильным SAR - ничего не делаем
             if codec == 'h264' and sar_is_ok:
-                logger.info(f"TikTok video OK: codec={codec}, sar={sar}")
+                logger.info(f"TikTok video OK: {width}x{height}, codec={codec}, sar={sar}")
                 return None
 
             output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
 
             if sar_is_ok:
-                # SAR правильный, но кодек не H.264 — просто копируем (быстро)
-                logger.info(f"TikTok video copy (codec {codec} -> container fix)")
+                # SAR правильный, но кодек не H.264 — перекодируем в H.264
+                logger.info(f"TikTok video recode: {width}x{height}, codec {codec} -> h264")
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
-                    '-c', 'copy',
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '20',
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
                     '-movflags', '+faststart',
                     '-y', output_path
                 ]
             else:
-                # SAR неправильный — масштабируем для исправления пропорций
-                logger.info(f"TikTok video scale fix: codec={codec}, sar={sar} -> h264, 1:1")
+                # SAR неправильный — ЯВНО вычисляем новые размеры
+                try:
+                    # Парсим SAR (например "9:10" или "9/10")
+                    sar_clean = sar_normalized.replace('/', ':')
+                    sar_parts = sar_clean.split(':')
+                    sar_num = int(sar_parts[0])
+                    sar_den = int(sar_parts[1]) if len(sar_parts) > 1 else 1
+
+                    # Вычисляем новую ширину с учётом SAR
+                    new_width = int(width * sar_num / sar_den)
+                    new_height = height
+
+                    # Делаем размеры чётными (требование H.264)
+                    new_width = new_width + (new_width % 2)
+                    new_height = new_height + (new_height % 2)
+
+                except (ValueError, ZeroDivisionError):
+                    # Не удалось распарсить SAR — используем оригинальные размеры
+                    new_width = width + (width % 2)
+                    new_height = height + (height % 2)
+
+                logger.info(f"TikTok video scale fix: {width}x{height} SAR={sar} -> {new_width}x{new_height} SAR=1:1")
+
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
-                    '-vf', 'scale=iw*sar:ih,setsar=1:1',
+                    '-vf', f'scale={new_width}:{new_height},setsar=1:1',
                     '-c:v', 'libx264',
                     '-preset', 'fast',
                     '-crf', '20',

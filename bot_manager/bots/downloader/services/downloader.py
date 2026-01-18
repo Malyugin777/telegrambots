@@ -40,7 +40,7 @@ MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 MAX_YOUTUBE_DOCUMENT_MB = 2048  # 2GB для YouTube полных видео
 MAX_YOUTUBE_DOCUMENT_BYTES = MAX_YOUTUBE_DOCUMENT_MB * 1024 * 1024
 DOWNLOAD_TIMEOUT = 120  # секунд (для обычных видео: Instagram, TikTok, Pinterest, YouTube Shorts)
-YOUTUBE_DOWNLOAD_TIMEOUT = 1200  # секунд (20 минут для полных YouTube видео до 2GB)
+YOUTUBE_DOWNLOAD_TIMEOUT = 2400  # секунд (40 минут для полных YouTube видео до 2GB, VPS throttling ~6MB/мин)
 AUDIO_BITRATE = "320"  # kbps
 
 # Пул потоков для синхронных операций yt-dlp
@@ -142,6 +142,13 @@ class VideoDownloader:
         if is_tiktok:
             opts['impersonate'] = CHROME_TARGET
             opts['concurrent_fragment_downloads'] = 5
+
+        # Для YouTube Full: обход throttling (VPS режет скорость до ~6MB/мин)
+        if is_youtube_full:
+            # Минимальная скорость 100KB/s - помогает обойти throttling
+            opts['throttledratelimit'] = 100 * 1024  # 100KB/s
+            # Альтернатива: ограничение скорости 1MB/s (парадоксально, но может ускорить)
+            # opts['ratelimit'] = 1024 * 1024  # 1MB/s
 
         # Для YouTube НЕ используем concurrent downloads - это вызывает curl timeouts
         # Скачиваем последовательно для стабильности

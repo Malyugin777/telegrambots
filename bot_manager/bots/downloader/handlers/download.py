@@ -160,6 +160,38 @@ def supports_rapidapi_fallback(url: str) -> bool:
     ])
 
 
+def make_user_friendly_error(error: str) -> str:
+    """Преобразует техническую ошибку в человекочитаемую"""
+    if not error:
+        return "Не удалось скачать видео"
+
+    error_lower = error.lower()
+
+    # Уже человеческие ошибки - возвращаем как есть
+    if error.startswith("Видео слишком большое") or error.startswith("❌"):
+        return error if not error.startswith("❌") else error
+
+    # Технические ошибки -> человеческие
+    if "too large" in error_lower or "слишком большое" in error_lower:
+        return "Видео слишком большое, не могу отправить в Telegram"
+    elif "no media" in error_lower or "no suitable" in error_lower:
+        return "Не удалось найти видео по этой ссылке"
+    elif "timeout" in error_lower or "timed out" in error_lower:
+        return "Превышено время ожидания, видео слишком долго скачивается"
+    elif "unavailable" in error_lower or "not available" in error_lower:
+        return "Видео недоступно (удалено или приватное)"
+    elif "private" in error_lower or "login" in error_lower:
+        return "Видео приватное, требуется авторизация"
+    elif "region" in error_lower or "country" in error_lower:
+        return "Видео недоступно в этом регионе"
+    elif "api error" in error_lower or "api" in error_lower:
+        return "Ошибка API сервиса, попробуйте позже"
+    elif "connection" in error_lower or "network" in error_lower:
+        return "Проблема с соединением, попробуйте позже"
+    else:
+        return "Не удалось скачать видео, попробуйте другую ссылку"
+
+
 @router.message(F.text)
 async def handle_url(message: types.Message):
     """Обработка ссылок - скачивание видео/фото + аудио"""
@@ -280,7 +312,7 @@ async def handle_url(message: types.Message):
                     error_message=carousel.error,
                     error_details={"source": "rapidapi"}
                 )
-                await status_msg.edit_text(f"❌ {carousel.error}")
+                await status_msg.edit_text(f"❌ {make_user_friendly_error(carousel.error)}")
                 return
 
             # === КАРУСЕЛЬ (несколько файлов) ===
@@ -392,7 +424,7 @@ async def handle_url(message: types.Message):
                         error_message=file_result.error,
                         error_details={"source": "rapidapi"}
                     )
-                    await status_msg.edit_text(f"❌ {file_result.error}")
+                    await status_msg.edit_text(f"❌ {make_user_friendly_error(file_result.error)}")
                     return
 
                 # Проверяем размер файла для выбора способа отправки
@@ -479,7 +511,7 @@ async def handle_url(message: types.Message):
                         error_message=f"yt-dlp: {result.error}, RapidAPI: {file_result.error}",
                         error_details={"source": "both"}
                     )
-                    await status_msg.edit_text(f"❌ {result.error}")
+                    await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
                     return
             else:
                 # Нет fallback - показываем ошибку yt-dlp
@@ -492,7 +524,7 @@ async def handle_url(message: types.Message):
                     error_message=result.error,
                     error_details={"source": "yt-dlp"}
                 )
-                await status_msg.edit_text(f"❌ {result.error}")
+                await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
                 return
 
         # Отправляем медиа
@@ -615,8 +647,24 @@ async def handle_url(message: types.Message):
             error_message=str(e)[:200],
             error_details={"exception_type": type(e).__name__}
         )
+
+        # Человеческие сообщения об ошибках
+        error_text = "❌ "
+        error_str = str(e).lower()
+
+        if "closing transport" in error_str or "connection reset" in error_str:
+            error_text += "Видео слишком большое, не успел отправить в Telegram. Попробуйте короче или меньшего качества."
+        elif "timeout" in error_str or "timed out" in error_str:
+            error_text += "Превышено время ожидания. Видео слишком долго скачивается."
+        elif "too large" in error_str:
+            error_text += "Файл слишком большой для отправки."
+        elif "no space" in error_str or "disk" in error_str:
+            error_text += "Не хватает места на сервере."
+        else:
+            error_text += "Не удалось обработать видео. Попробуйте другую ссылку."
+
         try:
-            await status_msg.edit_text(f"❌ Ошибка: {str(e)[:50]}")
+            await status_msg.edit_text(error_text)
         except:
             pass
     finally:

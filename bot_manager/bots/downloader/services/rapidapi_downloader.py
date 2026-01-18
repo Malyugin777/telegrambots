@@ -467,9 +467,10 @@ class RapidAPIDownloader:
             # Проверяем размер
             if file_size > MAX_FILE_SIZE_BYTES:
                 os.remove(file_path)
+                file_size_mb = file_size // 1024 // 1024
                 return DownloadedFile(
                     success=False,
-                    error=f"File too large ({file_size // 1024 // 1024}MB > {MAX_FILE_SIZE_MB}MB)"
+                    error=f"Видео слишком большое ({file_size_mb}MB), не могу отправить в Telegram (лимит 2GB)"
                 )
 
             # Формируем имя файла

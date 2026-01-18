@@ -160,24 +160,28 @@ export const Dashboard = () => {
     pinterest: '#E60023',
   };
 
+  const pieData = platforms.filter((p: { name: string; count: number }) =>
+    p.name !== '10' && p.count > 0
+  );
+
   const pieConfig = {
-    data: platforms.filter((p: { name: string }) => p.name !== '10'), // Filter out invalid data
+    data: pieData,
     angleField: 'count',
     colorField: 'name',
-    radius: 0.9,
+    radius: 0.8,
     innerRadius: 0.6,
     label: {
-      type: 'spider',
-      labelHeight: 28,
-      content: '{name}\n{percentage}',
+      type: 'outer' as const,
+      content: '{name}: {value}',
       style: {
         fill: '#fff',
+        fontSize: 12,
       },
     },
     color: (datum: { name: string }) => platformColors[datum.name] || '#888',
     theme: 'dark',
     legend: {
-      position: 'right' as const,
+      position: 'bottom' as const,
       itemName: {
         style: {
           fill: '#999',
@@ -194,13 +198,10 @@ export const Dashboard = () => {
         content: 'Всего',
       },
       content: {
+        offsetY: 4,
         style: {
           fontSize: '24px',
           fill: '#fff',
-        },
-        customHtml: () => {
-          const total = platforms.reduce((sum: number, p: { count: number }) => sum + p.count, 0);
-          return `${total}`;
         },
       },
     },
@@ -358,7 +359,7 @@ export const Dashboard = () => {
         </Col>
         <Col xs={24} lg={8}>
           <Card title="По платформам">
-            {platforms.length > 0 ? (
+            {pieData.length > 0 ? (
               <Pie {...pieConfig} height={300} />
             ) : (
               <div style={{ textAlign: 'center', padding: '50px', color: '#888' }}>

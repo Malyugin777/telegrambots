@@ -323,7 +323,7 @@ async def handle_url(message: types.Message):
                         ))
 
                 # Отправляем альбом (увеличенный таймаут для больших каруселей)
-                await message.answer_media_group(media=media_group, request_timeout=300)
+                await message.answer_media_group(media=media_group, request_timeout=600)  # 10 минут для каруселей
 
                 # Рассчитываем метрики производительности
                 download_time_ms = int((time.time() - download_start) * 1000)
@@ -556,22 +556,23 @@ async def handle_url(message: types.Message):
             # === ОТПРАВЛЯЕМ ВИДЕО или ДОКУМЕНТ (для больших YouTube) ===
             if result.send_as_document:
                 # Большой YouTube файл (50MB-2GB) - отправляем как документ
-                # Увеличиваем таймаут до 10 минут для больших файлов
+                # Увеличиваем таймаут до 30 минут для файлов до 2GB
+                # Скорость загрузки в Telegram: 1-5 MB/s, 2GB = 7-35 минут
                 await status_msg.edit_text(get_message("downloading_large"))
                 doc_msg = await message.answer_document(
                     document=media_file,
                     caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
-                    request_timeout=600,  # 10 минут для файлов до 2GB
+                    request_timeout=1800,  # 30 минут для файлов до 2GB
                 )
                 file_id = doc_msg.document.file_id if doc_msg.document else None
             else:
                 # Обычное видео - отправляем с превью
-                # Увеличиваем таймаут до 3 минут для видео
+                # Увеличиваем таймаут до 5 минут для видео
                 video_msg = await message.answer_video(
                     video=media_file,
                     caption=CAPTION,
                     supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
-                    request_timeout=180,  # 3 минуты для видео до 50MB
+                    request_timeout=300,  # 5 минут для видео до 50MB
                 )
                 file_id = video_msg.video.file_id if video_msg.video else None
 

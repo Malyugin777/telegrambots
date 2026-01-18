@@ -39,12 +39,20 @@ URL_PATTERN = re.compile(
     r"(?:"
     r"tiktok\.com|"                          # TikTok
     r"instagram\.com|instagr\.am|"           # Instagram (все форматы)
-    r"youtube\.com/shorts|youtu\.be|"        # YouTube Shorts
-    r"pinterest\.[a-z.]+|pin\.it"            # Pinterest
+    r"youtube\.com|youtu\.be|"               # YouTube (полные + Shorts)
+    r"pinterest\.[a-z.]+|pin\.it"            # Pinterest + короткие ссылки
     r")"
     r"[^\s]*",
     re.IGNORECASE
 )
+
+
+def extract_url_from_text(text: str) -> str | None:
+    """Извлечь URL из текста (для сообщений типа 'Take a look at https://...')"""
+    if not text:
+        return None
+    match = URL_PATTERN.search(text)
+    return match.group() if match else None
 
 
 async def resolve_short_url(url: str) -> str:
@@ -71,14 +79,14 @@ def use_rapidapi(url: str) -> bool:
     ])
 
 
-@router.message(F.text.regexp(URL_PATTERN))
+@router.message(F.text)
 async def handle_url(message: types.Message):
     """Обработка ссылок - скачивание видео/фото + аудио"""
-    match = URL_PATTERN.search(message.text)
-    if not match:
+    # Извлекаем URL из текста (работает с "Take a look at URL" и пересланными сообщениями)
+    url = extract_url_from_text(message.text)
+    if not url:
         return
 
-    url = match.group()
     user_id = message.from_user.id
 
     # Резолвим короткие ссылки Pinterest (pin.it -> pinterest.com)

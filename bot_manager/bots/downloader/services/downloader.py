@@ -84,6 +84,8 @@ class VideoDownloader:
         is_tiktok = 'tiktok' in url.lower()
         # Для YouTube полных видео ограничиваем качество 720p для меньшего размера
         is_youtube_full = ('youtube.com' in url.lower() or 'youtu.be' in url.lower()) and '/shorts/' not in url.lower()
+        # Для Pinterest пробуем все форматы (HLS, mp4, любые)
+        is_pinterest = 'pinterest' in url.lower() or 'pin.it' in url.lower()
 
         if is_tiktok:
             # H.264 форматы для TikTok (без проблем с SAR)
@@ -91,6 +93,9 @@ class VideoDownloader:
         elif is_youtube_full:
             # YouTube полные видео - макс 720p для уменьшения размера
             format_string = 'best[height<=720][ext=mp4]/best[height<=720]/best[ext=mp4]/best'
+        elif is_pinterest:
+            # Pinterest видео - пробуем все возможные форматы (HLS, mp4, webm)
+            format_string = 'best[ext=mp4]/best[ext=webm]/bestvideo+bestaudio/best'
         else:
             format_string = 'best[ext=mp4]/best'
 

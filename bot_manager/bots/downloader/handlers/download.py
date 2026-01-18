@@ -11,7 +11,6 @@ import time
 import logging
 import asyncio
 import aiohttp
-from aiohttp import ClientTimeout
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile, BufferedInputFile, InputMediaPhoto, InputMediaVideo
 
@@ -41,13 +40,14 @@ from bot_manager.services.error_logger import error_logger
 router = Router()
 logger = logging.getLogger(__name__)
 
-# === Per-Request Timeouts для больших файлов (согласно deep research) ===
-# total=None снимает общий лимит, sock_read дает время на "processing gap"
-TIMEOUT_DOCUMENT = ClientTimeout(total=None, sock_read=1200, sock_connect=30)  # 20 мин на processing
-TIMEOUT_VIDEO = ClientTimeout(total=None, sock_read=600, sock_connect=30)      # 10 мин
-TIMEOUT_PHOTO = ClientTimeout(total=None, sock_read=300, sock_connect=30)      # 5 мин
-TIMEOUT_CAROUSEL = ClientTimeout(total=None, sock_read=900, sock_connect=30)   # 15 мин
-TIMEOUT_AUDIO = ClientTimeout(total=None, sock_read=600, sock_connect=30)      # 10 мин
+# === Per-Request Timeouts для больших файлов ===
+# aiogram 3.24.0 НЕ поддерживает ClientTimeout в request_timeout (баг/ограничение)
+# Используем числовые таймауты (в секундах) вместо ClientTimeout
+TIMEOUT_DOCUMENT = 1800  # 30 минут для 2GB файлов
+TIMEOUT_VIDEO = 900      # 15 минут для видео
+TIMEOUT_PHOTO = 300      # 5 минут для фото
+TIMEOUT_CAROUSEL = 1200  # 20 минут для каруселей
+TIMEOUT_AUDIO = 600      # 10 минут для аудио
 
 # Глобальные экземпляры загрузчиков
 downloader = VideoDownloader()
@@ -342,7 +342,7 @@ async def handle_url(message: types.Message):
                     try:
                         await message.answer_media_group(
                             media=media_group,
-                            request_timeout=TIMEOUT_CAROUSEL,  # ClientTimeout для каруселей
+                            request_timeout=TIMEOUT_CAROUSEL,  # 20 минут для каруселей
                         )
                         break  # Success
                     except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
@@ -395,7 +395,7 @@ async def handle_url(message: types.Message):
                                 caption=CAPTION,
                                 title=carousel.title[:60] if carousel.title else "audio",
                                 performer=carousel.author if carousel.author else None,
-                                request_timeout=TIMEOUT_AUDIO,  # ClientTimeout для аудио
+                                request_timeout=TIMEOUT_AUDIO,  # 10 минут для аудио
                             )
                             await log_action(user_id, "audio_extracted", {"platform": platform})
                             await downloader.cleanup(audio_result.file_path)
@@ -570,7 +570,7 @@ async def handle_url(message: types.Message):
             photo_msg = await message.answer_photo(
                 photo=media_file,
                 caption=CAPTION,
-                request_timeout=TIMEOUT_PHOTO,  # ClientTimeout для фото
+                request_timeout=TIMEOUT_PHOTO,  # 5 минут для фото
             )
             file_id = photo_msg.photo[-1].file_id if photo_msg.photo else None
 
@@ -601,8 +601,7 @@ async def handle_url(message: types.Message):
             # === ОТПРАВЛЯЕМ ВИДЕО или ДОКУМЕНТ (для больших YouTube) ===
             if result.send_as_document:
                 # Большой YouTube файл (50MB-2GB) - отправляем как документ
-                # Используем ClientTimeout с sock_read=1200s (20 минут между чанками)
-                # total=None снимает общий лимит, полагаясь на sock_read для детекции
+                # Используем увеличенный timeout (30 минут) для загрузки и обработки
                 await status_msg.edit_text(get_message("downloading_large"))
 
                 # Retry logic для больших файлов (fallback на случай реальных network issues)
@@ -613,7 +612,7 @@ async def handle_url(message: types.Message):
                         doc_msg = await message.answer_document(
                             document=media_file,
                             caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
-                            request_timeout=TIMEOUT_DOCUMENT,  # ClientTimeout для 2GB файлов
+                            request_timeout=TIMEOUT_DOCUMENT,  # 30 минут для 2GB файлов
                         )
                         break  # Success
                     except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
@@ -634,12 +633,11 @@ async def handle_url(message: types.Message):
                 file_id = doc_msg.document.file_id if doc_msg and doc_msg.document else None
             else:
                 # Обычное видео - отправляем с превью
-                # Используем ClientTimeout с sock_read=600s (10 минут между чанками)
                 video_msg = await message.answer_video(
                     video=media_file,
                     caption=CAPTION,
                     supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
-                    request_timeout=TIMEOUT_VIDEO,  # ClientTimeout для видео
+                    request_timeout=TIMEOUT_VIDEO,  # 15 минут для видео
                 )
                 file_id = video_msg.video.file_id if video_msg.video else None
 
@@ -676,7 +674,7 @@ async def handle_url(message: types.Message):
                     caption=CAPTION,
                     title=title,
                     performer=performer,
-                    request_timeout=TIMEOUT_AUDIO,  # ClientTimeout для аудио
+                    request_timeout=TIMEOUT_AUDIO,  # 10 минут для аудио
                 )
 
                 audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None

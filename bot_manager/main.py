@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import os
-from aiohttp import ClientTimeout
+from aiohttp import ClientSession, ClientTimeout, TCPConnector
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -29,25 +29,39 @@ logger = logging.getLogger(__name__)
 async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
 
-    # Создаём кастомную AiohttpSession с ClientTimeout для больших файлов
-    # total=1800 (30 минут общий лимит), sock_read=1200 (20 минут между чанками)
-    # Используем большое число total вместо None для совместимости
+    # Создаём кастомную aiohttp.ClientSession с максимальными таймаутами для 2GB файлов
+    # total=None снимает общий лимит, sock_read=3600 (1 час) дает время на обработку
     custom_timeout = ClientTimeout(
-        total=1800,        # 30 минут общий лимит
-        sock_read=1200,    # 20 минут между чанками данных
-        sock_connect=60    # 1 минута на подключение
+        total=None,        # Без общего лимита (файлы до 2GB)
+        sock_read=3600,    # 1 час между чанками данных (для processing gap)
+        sock_connect=120   # 2 минуты на подключение
     )
 
-    session = AiohttpSession(timeout=custom_timeout)
+    # TCPConnector с агрессивным keepalive и без force_close
+    connector = TCPConnector(
+        limit=100,
+        limit_per_host=30,
+        force_close=False,  # НЕ закрывать соединение после запроса
+        enable_cleanup_closed=True,
+        ttl_dns_cache=300,
+    )
 
-    # ПРОВЕРКА: Dispatcher может вызвать TypeError если bot.session.timeout это ClientTimeout
-    # Патчим timeout как число для обхода: int(bot.session.timeout + polling_timeout)
-    if isinstance(session.timeout, ClientTimeout):
-        logger.warning("Patching session.timeout from ClientTimeout to number for Dispatcher compatibility")
-        session.timeout = 60.0  # Число для Dispatcher polling
-        logger.info("Custom session: ClientTimeout in _session, timeout=60.0 for Dispatcher")
-    else:
-        logger.info(f"Custom session timeout: {session.timeout}")
+    # Создаём aiohttp.ClientSession вручную с нашими настройками
+    aiohttp_session = ClientSession(
+        timeout=custom_timeout,
+        connector=connector
+    )
+
+    # Оборачиваем в AiohttpSession для aiogram
+    session = AiohttpSession()
+    session._session = aiohttp_session
+
+    # HACK: Устанавливаем timeout как число для Dispatcher
+    # Dispatcher проверяет bot.session.timeout и складывает с polling_timeout
+    # Если это ClientTimeout - будет TypeError
+    session.timeout = 60.0  # Число для Dispatcher polling
+
+    logger.info("Custom aiohttp session: sock_read=3600s, total=None, force_close=False")
 
     bot = Bot(
         token=token,

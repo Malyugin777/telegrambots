@@ -215,26 +215,25 @@ async def get_user_stats(
     total_downloads = result.scalar() or 0
 
     # Downloads by platform
+    # Не используем GROUP BY на JSON - получаем все записи и группируем в Python
     result = await db.execute(
-        select(ActionLog.details, func.count(ActionLog.id).label('count'))
+        select(ActionLog.details)
         .where(
             ActionLog.user_id == user_id,
             ActionLog.action == "download_success"
         )
-        .group_by(ActionLog.details)
     )
 
     platform_counts: dict[str, int] = {}
     for row in result:
         details = row[0]
-        count = row[1]
         if details and isinstance(details, dict) and 'info' in details:
             info = details['info']
             if ':' in info:
                 platform = info.split(':')[-1]
             else:
                 platform = info
-            platform_counts[platform] = platform_counts.get(platform, 0) + count
+            platform_counts[platform] = platform_counts.get(platform, 0) + 1
 
     # Recent activity (last 10 actions)
     result = await db.execute(

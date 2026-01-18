@@ -146,16 +146,15 @@ async def get_platform_stats(
     # Format: {"info": "video:instagram"} or {"info": "instagram:https://..."}
 
     # Count downloads by parsing the info field
+    # Не используем GROUP BY на JSON - получаем все записи и группируем в Python
     result = await db.execute(
-        select(ActionLog.details, func.count(ActionLog.id).label('count'))
+        select(ActionLog.details)
         .where(ActionLog.action == "download_success")
-        .group_by(ActionLog.details)
     )
 
     platform_counts: dict[str, int] = {}
     for row in result:
         details = row[0]
-        count = row[1]
         if details and isinstance(details, dict) and 'info' in details:
             info = details['info']
             # Parse "video:instagram" -> "instagram"
@@ -163,7 +162,7 @@ async def get_platform_stats(
                 platform = info.split(':')[-1]  # Get last part after ':'
             else:
                 platform = info
-            platform_counts[platform] = platform_counts.get(platform, 0) + count
+            platform_counts[platform] = platform_counts.get(platform, 0) + 1
 
     return {
         "platforms": [
@@ -204,17 +203,17 @@ async def get_performance_stats(
 
     # Per-platform metrics
     # Parse platform from details->info field
+    # Не используем GROUP BY на JSON - получаем все записи и группируем в Python
     result = await db.execute(
         select(
             ActionLog.details,
-            func.avg(ActionLog.download_time_ms).label('avg_time'),
-            func.avg(ActionLog.file_size_bytes).label('avg_size'),
-            func.avg(ActionLog.download_speed_kbps).label('avg_speed'),
-            func.count(ActionLog.id).label('total')
+            ActionLog.download_time_ms,
+            ActionLog.file_size_bytes,
+            ActionLog.download_speed_kbps
         ).where(
             ActionLog.action == "download_success",
             ActionLog.download_time_ms.isnot(None)
-        ).group_by(ActionLog.details)
+        )
     )
 
     platform_metrics: dict[str, dict] = {}
@@ -238,10 +237,10 @@ async def get_performance_stats(
                     'total': 0
                 }
 
-            platform_metrics[platform]['time'].append(row.avg_time or 0)
-            platform_metrics[platform]['size'].append(row.avg_size or 0)
-            platform_metrics[platform]['speed'].append(row.avg_speed or 0)
-            platform_metrics[platform]['total'] += row.total or 0
+            platform_metrics[platform]['time'].append(row.download_time_ms or 0)
+            platform_metrics[platform]['size'].append(row.file_size_bytes or 0)
+            platform_metrics[platform]['speed'].append(row.download_speed_kbps or 0)
+            platform_metrics[platform]['total'] += 1
 
     platforms = []
     for name, metrics in sorted(platform_metrics.items(), key=lambda x: -x[1]['total']):

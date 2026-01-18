@@ -57,7 +57,9 @@
       "Bash(git restore:*)",
       "Bash(git diff:*)",
       "Bash(ssh root@66.151.33.167 \"PGPASSWORD=nexus_secure_pwd_2024 psql -U nexus -d nexus -c \"\"ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS download_time_ms INTEGER; ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT; ALTER TABLE action_logs ADD COLUMN IF NOT EXISTS download_speed_kbps INTEGER;\"\"\")",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(ssh root@185.96.80.254 \"free -h && echo ''---'' && df -h && echo ''---'' && top -bn1 | head -20\")",
+      "Bash(python3:*)"
     ]
   }
 }

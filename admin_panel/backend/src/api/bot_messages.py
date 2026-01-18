@@ -145,7 +145,7 @@ async def create_bot_message(
     )
 
 
-@router.put("/{message_id}", response_model=BotMessageResponse)
+@router.patch("/{message_id}", response_model=BotMessageResponse)
 async def update_bot_message(
     message_id: int,
     data: BotMessageUpdate,

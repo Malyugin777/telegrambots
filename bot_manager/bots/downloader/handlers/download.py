@@ -206,7 +206,7 @@ async def handle_url(message: types.Message):
         platform = "pinterest"
 
     # Логируем запрос на скачивание
-    await log_action(user_id, "download_request", f"{platform}:{url[:100]}")
+    await log_action(user_id, "download_request", {"platform": platform, "url": url[:200]})
 
     # === ПРОВЕРЯЕМ КЭШ (мгновенная отправка) ===
     cached_video, cached_audio = await get_cached_file_ids(url)
@@ -358,7 +358,8 @@ async def handle_url(message: types.Message):
 
                 logger.info(f"Sent carousel: user={user_id}, files={len(carousel.files)}, time={download_time_ms}ms, size={total_size}")
                 await log_action(
-                    user_id, "download_success", f"carousel:{platform}:{len(carousel.files)}",
+                    user_id, "download_success",
+                    {"type": "carousel", "platform": platform, "files_count": len(carousel.files)},
                     download_time_ms=download_time_ms,
                     file_size_bytes=total_size,
                     download_speed_kbps=download_speed,
@@ -379,7 +380,7 @@ async def handle_url(message: types.Message):
                                 title=carousel.title[:60] if carousel.title else "audio",
                                 performer=carousel.author if carousel.author else None,
                             )
-                            await log_action(user_id, "audio_extracted", f"{platform}")
+                            await log_action(user_id, "audio_extracted", {"platform": platform})
                             await downloader.cleanup(audio_result.file_path)
 
                 # Очистка
@@ -563,7 +564,8 @@ async def handle_url(message: types.Message):
 
             logger.info(f"Sent photo: user={user_id}, size={file_size}, time={download_time_ms}ms")
             await log_action(
-                user_id, "download_success", f"photo:{platform}",
+                user_id, "download_success",
+                {"type": "photo", "platform": platform},
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
                 download_speed_kbps=download_speed,
@@ -631,7 +633,8 @@ async def handle_url(message: types.Message):
 
             logger.info(f"Sent {'document' if result.send_as_document else 'video'}: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s")
             await log_action(
-                user_id, "download_success", f"video:{platform}",
+                user_id, "download_success",
+                {"type": "document" if result.send_as_document else "video", "platform": platform},
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
                 download_speed_kbps=download_speed,
@@ -660,7 +663,7 @@ async def handle_url(message: types.Message):
 
                 audio_file_id = audio_msg.audio.file_id if audio_msg.audio else None
                 logger.info(f"Sent audio: user={user_id}, size={audio_result.file_size}")
-                await log_action(user_id, "audio_extracted", f"{platform}")
+                await log_action(user_id, "audio_extracted", {"platform": platform})
 
                 await downloader.cleanup(audio_result.file_path)
             else:

@@ -189,9 +189,17 @@ def get_message(key: str, lang: str = "ru") -> str:
     """
     Получить сообщение по ключу.
     Сначала ищет в кэше БД, потом в дефолтах.
+    Проверяет TTL кэша - если протух, использует дефолты.
     """
-    # Сначала из кэша БД
-    if _cache_loaded and key in _messages_cache:
+    # Проверяем что кэш загружен и не протух
+    cache_age = time.time() - _cache_loaded_at if _cache_loaded_at > 0 else float('inf')
+    cache_is_valid = _cache_loaded and cache_age < CACHE_TTL * 2  # 2x TTL для запаса
+
+    if not cache_is_valid and _cache_loaded:
+        logger.warning(f"Messages cache expired (age={cache_age:.0f}s, TTL={CACHE_TTL}s), using defaults")
+
+    # Сначала из кэша БД (если не протух)
+    if cache_is_valid and key in _messages_cache:
         return _messages_cache[key]
 
     # Fallback на дефолты

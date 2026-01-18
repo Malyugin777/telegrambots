@@ -51,7 +51,7 @@ async def init_bot_record(bot_username: str, bot_id: int, bot_name: str) -> int:
 async def log_action(
     telegram_id: int,
     action: str,
-    details: Optional[str] = None,
+    details: Optional[dict] = None,
     download_time_ms: Optional[int] = None,
     file_size_bytes: Optional[int] = None,
     download_speed_kbps: Optional[int] = None,
@@ -63,7 +63,7 @@ async def log_action(
     Args:
         telegram_id: Telegram ID пользователя
         action: Тип действия (start, download, audio, etc.)
-        details: Дополнительные данные (URL, платформа, etc.)
+        details: Дополнительные данные как dict (platform, url, etc.)
         download_time_ms: Время скачивания в миллисекундах
         file_size_bytes: Размер файла в байтах
         download_speed_kbps: Скорость скачивания в KB/s
@@ -81,14 +81,11 @@ async def log_action(
                 logger.warning(f"User not found for action log: {telegram_id}")
                 return
 
-            # details должен быть dict (JSON), а не строкой
-            details_dict = {"info": details} if details else None
-
             log_entry = ActionLog(
                 user_id=user_id,
                 bot_id=_bot_id,
                 action=action,
-                details=details_dict,
+                details=details,
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size_bytes,
                 download_speed_kbps=download_speed_kbps,

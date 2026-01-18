@@ -21,7 +21,10 @@ jobs:
           script: |
             cd /root/telegrambots
             git pull origin main
-            cd admin_panel
-            docker compose up -d --build
-            cp -r frontend/dist/* /var/www/shadow-api/
+            cd infrastructure
+            docker compose up -d --build admin_api
+            cd ../admin_panel/frontend
+            npm ci
+            npm run build
+            cp -r dist/* /var/www/shadow-api/
             echo "Admin Panel deployed successfully"

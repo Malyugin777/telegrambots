@@ -1,16 +1,17 @@
 # NEXUS PROJECT - ПРАВИЛА
 
-**Версия:** 1.2.1
-**Последнее обновление:** 2026-01-18
+**Версия:** 1.4.0
+**Последнее обновление:** 2026-01-19
 
 ## РЕАЛИЗОВАННЫЕ ФИЧИ
 
 ### Боты (SaveNinja_bot)
 - ✅ Instagram (фото, видео, карусели, истории, актуальное) - RapidAPI
 - ✅ TikTok (видео без водяного знака) - yt-dlp
-- ✅ YouTube Shorts - yt-dlp
-- ✅ YouTube полные видео (до 2GB) - yt-dlp с отправкой как документ
-- ✅ Pinterest (фото и видео, включая pin.it короткие ссылки) - yt-dlp
+- ✅ YouTube Shorts (<5 мин) - yt-dlp с RapidAPI fallback
+- ✅ YouTube Full (≥5 мин, до 2GB) - RapidAPI с адаптивным качеством (720p для <60 мин, 480p для >60 мин)
+- ✅ Pinterest (фото и видео, включая pin.it короткие ссылки) - yt-dlp с RapidAPI fallback
+- ✅ RapidAPI fallback для TikTok/Pinterest/YouTube при сбое yt-dlp
 - ✅ Извлечение аудио из видео (MP3 320kbps)
 - ✅ Redis кэширование file_id для мгновенной переотправки
 - ✅ Авто-обновление сообщений бота из БД (60s TTL)
@@ -25,6 +26,7 @@
 - ✅ Billing Tracker (Фаза 3)
 - ✅ Bot Messages Editor (Фаза 5) - редактирование текстов бота
 - ✅ Performance Monitor (Фаза 6) - метрики производительности
+- ✅ API Usage Tracking - статистика использования yt-dlp/RapidAPI по платформам
 
 ## КРИТИЧЕСКИ ВАЖНО
 
@@ -90,8 +92,10 @@ RAPIDAPI_HOST=social-download-all-in-one.p.rapidapi.com
 ```
 
 **Загрузчики:**
-- Instagram → RapidAPI (yt-dlp требует авторизации)
-- TikTok, YouTube Shorts, Pinterest → yt-dlp (работает без API)
+- Instagram → RapidAPI primary (yt-dlp требует авторизации)
+- YouTube Shorts (<5 мин) → yt-dlp → RapidAPI fallback
+- YouTube Full (≥5 мин) → RapidAPI с адаптивным качеством (720p/<60 мин, 480p/>60 мин)
+- TikTok, Pinterest → yt-dlp → RapidAPI fallback
 
 ## Поддерживаемые платформы
 
@@ -101,7 +105,7 @@ RAPIDAPI_HOST=social-download-all-in-one.p.rapidapi.com
 | Pinterest | Фото и видео (включая pin.it) | yt-dlp | до 50MB |
 | TikTok | Видео без водяного знака | yt-dlp | до 50MB |
 | YouTube Shorts | Короткие видео | yt-dlp | до 50MB |
-| YouTube Full | Полные видео (720p макс) | yt-dlp | до 2GB (как документ если >50MB) |
+| YouTube Full | Полные видео (адаптивное 720p/480p по длительности) | RapidAPI | до 2GB (как документ если >50MB) |
 
 ## Трекинг пользователей
 

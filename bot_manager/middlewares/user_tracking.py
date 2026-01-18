@@ -13,7 +13,8 @@ from aiogram.types import Message, CallbackQuery, TelegramObject
 from sqlalchemy import select
 
 from shared.database.connection import async_session
-from shared.database.models import User
+from shared.database.models import User, BotUser
+from bot_manager.middlewares.action_logger import _bot_id
 
 logger = logging.getLogger(__name__)
 
@@ -86,5 +87,24 @@ class UserTrackingMiddleware(BaseMiddleware):
                 await session.refresh(db_user)
 
                 logger.info(f"New user: {tg_user.id} (@{tg_user.username})")
+
+            # Создаём связь user-bot если ещё нет
+            if _bot_id:
+                result = await session.execute(
+                    select(BotUser).where(
+                        BotUser.user_id == db_user.id,
+                        BotUser.bot_id == _bot_id
+                    )
+                )
+                bot_user = result.scalar_one_or_none()
+
+                if not bot_user:
+                    bot_user = BotUser(
+                        user_id=db_user.id,
+                        bot_id=_bot_id,
+                    )
+                    session.add(bot_user)
+                    await session.commit()
+                    logger.info(f"User {tg_user.id} linked to bot {_bot_id}")
 
             return db_user

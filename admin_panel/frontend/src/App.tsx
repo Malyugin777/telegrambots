@@ -13,6 +13,7 @@ import {
   NotificationOutlined,
   UserOutlined,
   FileTextOutlined,
+  WarningOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -24,6 +25,7 @@ import { BotList, BotCreate, BotEdit, BotShow } from './pages/bots';
 import { BroadcastList, BroadcastCreate, BroadcastEdit, BroadcastShow } from './pages/broadcasts';
 import { UserList, UserShow } from './pages/users';
 import { LogList } from './pages/activity-logs';
+import { ErrorList } from './pages/errors';
 import { Login } from './pages/login';
 import { LanguageSwitcher } from './components';
 
@@ -100,6 +102,14 @@ function App() {
                   icon: <FileTextOutlined />,
                 },
               },
+              {
+                name: 'errors',
+                list: '/errors',
+                meta: {
+                  label: 'Ошибки',
+                  icon: <WarningOutlined />,
+                },
+              },
             ]}
             options={{
               syncWithLocation: true,
@@ -167,6 +177,10 @@ function App() {
 
                 <Route path="/logs">
                   <Route index element={<LogList />} />
+                </Route>
+
+                <Route path="/errors">
+                  <Route index element={<ErrorList />} />
                 </Route>
               </Route>
 

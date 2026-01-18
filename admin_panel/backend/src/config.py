@@ -6,6 +6,9 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
+    # Version
+    version: str = "1.2.0"
+
     # Database
     postgres_host: str = "postgres"
     postgres_port: int = 5432

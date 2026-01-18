@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..redis_client import get_redis
+from ..config import settings
 from ..models import Bot, User, Broadcast, ActionLog, BotStatus, BroadcastStatus
 from ..schemas import StatsResponse, LoadChartResponse, ChartDataPoint
 from ..auth import get_current_user
@@ -75,6 +76,7 @@ async def get_stats(
     broadcasts_running = result.scalar() or 0
 
     return StatsResponse(
+        version=settings.version,
         total_bots=total_bots,
         active_bots=active_bots,
         total_users=total_users,

@@ -13,6 +13,7 @@ import { Line } from '@ant-design/charts';
 import { useTranslation } from 'react-i18next';
 
 interface Stats {
+  version: string;
   total_bots: number;
   active_bots: number;
   total_users: number;
@@ -92,7 +93,12 @@ export const Dashboard = () => {
 
   return (
     <div style={{ padding: '24px' }}>
-      <h1 style={{ marginBottom: '24px' }}>{t('dashboard.title')}</h1>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+        <h1 style={{ margin: 0 }}>{t('dashboard.title')}</h1>
+        {stats?.version && (
+          <span style={{ color: '#888', fontSize: '14px' }}>v{stats.version}</span>
+        )}
+      </div>
 
       {/* Stats Cards */}
       <Row gutter={[16, 16]}>

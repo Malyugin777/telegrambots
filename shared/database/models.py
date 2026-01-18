@@ -66,8 +66,10 @@ class BotUser(Base):
     id = Column(Integer, primary_key=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     bot_id = Column(Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False)
+    is_subscribed = Column(Boolean, default=True)
     joined_at = Column(DateTime, server_default=func.now())
-    is_active = Column(Boolean, default=True)
+    last_interaction = Column(DateTime, nullable=True)
+    bot_data = Column(JSON, nullable=True)
 
     user = relationship("User", back_populates="bot_users")
     bot = relationship("Bot", back_populates="bot_users")

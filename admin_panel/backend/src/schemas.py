@@ -11,6 +11,7 @@ from .models import UserRole, BotStatus, BroadcastStatus
 # ============ Stats ============
 
 class StatsResponse(BaseModel):
+    version: str
     total_bots: int
     active_bots: int
     total_users: int

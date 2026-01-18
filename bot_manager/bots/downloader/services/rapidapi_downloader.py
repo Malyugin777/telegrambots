@@ -481,10 +481,13 @@ class RapidAPIDownloader:
             result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
             probe_output = result.stdout.strip()
 
+            # ДЕТАЛЬНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"[FIX_VIDEO] Probe output: {probe_output}")
+
             # Парсим width,height,codec,sar
             parts = probe_output.split(',')
             if len(parts) < 3:
-                logger.warning(f"Cannot parse video info: {probe_output}")
+                logger.warning(f"[FIX_VIDEO] Cannot parse video info: {probe_output}")
                 return
 
             width = int(parts[0]) if parts[0].isdigit() else 0
@@ -492,8 +495,10 @@ class RapidAPIDownloader:
             codec = parts[2] if len(parts) > 2 else ''
             sar = parts[3].strip() if len(parts) > 3 else '1:1'
 
+            logger.info(f"[FIX_VIDEO] Parsed: {width}x{height}, codec={codec}, SAR={sar}")
+
             if not width or not height:
-                logger.warning(f"Invalid video dimensions: {width}x{height}")
+                logger.warning(f"[FIX_VIDEO] Invalid video dimensions: {width}x{height}")
                 return
 
             # Нормализуем SAR (1/1 -> 1:1)
@@ -504,14 +509,14 @@ class RapidAPIDownloader:
 
             # Если уже H.264 с правильным SAR - ничего не делаем
             if codec == 'h264' and sar_is_ok:
-                logger.debug(f"Video OK: {width}x{height}, codec={codec}, sar={sar}")
+                logger.info(f"[FIX_VIDEO] SKIP - already OK: {width}x{height}, codec={codec}, sar={sar}")
                 return
 
             output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
 
             if sar_is_ok:
                 # SAR правильный, но кодек не H.264 — перекодируем в H.264
-                logger.info(f"Video recode: {width}x{height}, codec {codec} -> h264")
+                logger.info(f"[FIX_VIDEO] RECODE: {width}x{height}, codec {codec} -> h264")
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
                     '-c:v', 'libx264',
@@ -544,7 +549,7 @@ class RapidAPIDownloader:
                     new_width = width + (width % 2)
                     new_height = height + (height % 2)
 
-                logger.info(f"Video scale fix: {width}x{height} SAR={sar} -> {new_width}x{new_height} SAR=1:1")
+                logger.info(f"[FIX_VIDEO] SCALE: {width}x{height} SAR={sar} -> {new_width}x{new_height} SAR=1:1")
 
                 fix_cmd = [
                     'ffmpeg', '-i', video_path,
@@ -564,16 +569,16 @@ class RapidAPIDownloader:
                 # Заменяем оригинал
                 os.remove(video_path)
                 os.rename(output_path, video_path)
-                logger.info(f"Video fixed: {os.path.getsize(video_path)} bytes")
+                logger.info(f"[FIX_VIDEO] SUCCESS: {os.path.getsize(video_path)} bytes")
             else:
                 # Не удалось — оставляем оригинал
                 if os.path.exists(output_path):
                     os.remove(output_path)
                 stderr = result.stderr.decode() if result.stderr else 'unknown'
-                logger.warning(f"Video fix failed: {stderr[:200]}")
+                logger.warning(f"[FIX_VIDEO] FAILED: {stderr[:200]}")
 
         except Exception as e:
-            logger.warning(f"Video fix error: {e}")
+            logger.warning(f"[FIX_VIDEO] ERROR: {e}")
 
     async def cleanup(self, *paths: str):
         """Удалить файлы"""

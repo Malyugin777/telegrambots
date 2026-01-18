@@ -598,18 +598,14 @@ async def handle_url(message: types.Message):
             await status_msg.delete()
 
         else:
-            # Проверяем размер файла (лимит обычного Telegram API - 50MB)
+            # Проверяем размер файла (лимит Local Bot API Server - 2GB)
             file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
-            MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB (без Local Bot API Server)
+            MAX_FILE_SIZE = 2_000_000_000  # 2GB (Local Bot API Server)
 
             if file_size > MAX_FILE_SIZE:
                 size_mb = file_size / 1024 / 1024
-                await status_msg.edit_text(
-                    f"❌ Видео слишком большое ({size_mb:.1f} MB).\n\n"
-                    f"Telegram API лимит: 50 MB\n"
-                    f"Попробуй более короткое видео или другую платформу."
-                )
-                logger.warning(f"File too large: {size_mb:.1f}MB > 50MB limit")
+                await status_msg.edit_text(get_error_message("too_large"))
+                logger.warning(f"File too large: {size_mb:.1f}MB > 2GB limit")
                 if api_source == "rapidapi":
                     await rapidapi.cleanup(result.file_path)
                 else:
@@ -618,8 +614,8 @@ async def handle_url(message: types.Message):
 
             # === ОТПРАВЛЯЕМ ВИДЕО или ДОКУМЕНТ (для больших YouTube) ===
             if result.send_as_document:
-                # Большой YouTube файл (50MB-2GB) - отправляем как документ
-                # Используем увеличенный timeout (30 минут) для загрузки и обработки
+                # Большой YouTube файл (>50MB, до 2GB) - отправляем как документ
+                # Используем увеличенный timeout (30 минут) для загрузки на Local Bot API Server
                 await status_msg.edit_text(get_message("downloading_large"))
 
                 # Retry logic для больших файлов (fallback на случай реальных network issues)

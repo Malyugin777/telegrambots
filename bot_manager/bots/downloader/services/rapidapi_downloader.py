@@ -87,17 +87,14 @@ def get_quality_for_duration(duration_seconds: int) -> int:
     """
     Выбор качества видео по длительности для YouTube
 
-    БЕЗ Local Bot API Server лимит Telegram - 50MB:
-    < 10 мин → 720p (~15-30MB, безопасно)
-    10-30 мин → 480p (~25-60MB, может выйти за лимит)
-    > 30 мин → 360p (~20-50MB, обычно влезает)
+    С Local Bot API Server (лимит 2GB):
+    < 60 мин → 720p (отличное качество, ~100-300MB)
+    ≥ 60 мин → 480p (экономия трафика, влезает в 2GB)
     """
-    if duration_seconds < 600:       # < 10 мин
+    if duration_seconds < 3600:      # < 60 мин
         return 720
-    elif duration_seconds < 1800:    # 10-30 мин
+    else:                            # ≥ 60 мин
         return 480
-    else:                            # > 30 мин
-        return 360
 
 
 def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: int) -> Optional[RapidAPIMedia]:

@@ -5,6 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.client.telegram import TelegramAPIServer
 
 from shared.database import init_db, AsyncSessionLocal
 from shared.config import settings
@@ -24,15 +25,20 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Local Bot API Server URL (для файлов до 2GB)
+LOCAL_BOT_API_SERVER = "http://localhost:8081"
+
 
 async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
 
-    # Используем простую числовую сессию для Dispatcher (polling совместимость)
-    # Тяжелые таймауты будут применяться per-request в handlers
-    session = AiohttpSession(timeout=60.0)
+    # Настраиваем сессию для использования Local Bot API Server
+    session = AiohttpSession(
+        api=TelegramAPIServer.from_base(LOCAL_BOT_API_SERVER),
+        timeout=60.0
+    )
 
-    logger.info("Simple session with timeout=60s (per-request overrides in handlers)")
+    logger.info(f"Using Local Bot API Server: {LOCAL_BOT_API_SERVER} (2GB file limit)")
 
     bot = Bot(
         token=token,

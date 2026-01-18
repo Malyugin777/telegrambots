@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-from aiohttp import ClientSession, ClientTimeout, TCPConnector
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -29,39 +28,11 @@ logger = logging.getLogger(__name__)
 async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
 
-    # Создаём кастомную aiohttp.ClientSession с максимальными таймаутами для 2GB файлов
-    # total=None снимает общий лимит, sock_read=3600 (1 час) дает время на обработку
-    custom_timeout = ClientTimeout(
-        total=None,        # Без общего лимита (файлы до 2GB)
-        sock_read=3600,    # 1 час между чанками данных (для processing gap)
-        sock_connect=120   # 2 минуты на подключение
-    )
+    # Используем простую числовую сессию для Dispatcher (polling совместимость)
+    # Тяжелые таймауты будут применяться per-request в handlers
+    session = AiohttpSession(timeout=60.0)
 
-    # TCPConnector с агрессивным keepalive и без force_close
-    connector = TCPConnector(
-        limit=100,
-        limit_per_host=30,
-        force_close=False,  # НЕ закрывать соединение после запроса
-        enable_cleanup_closed=True,
-        ttl_dns_cache=300,
-    )
-
-    # Создаём aiohttp.ClientSession вручную с нашими настройками
-    aiohttp_session = ClientSession(
-        timeout=custom_timeout,
-        connector=connector
-    )
-
-    # Оборачиваем в AiohttpSession для aiogram
-    session = AiohttpSession()
-    session._session = aiohttp_session
-
-    # HACK: Устанавливаем timeout как число для Dispatcher
-    # Dispatcher проверяет bot.session.timeout и складывает с polling_timeout
-    # Если это ClientTimeout - будет TypeError
-    session.timeout = 60.0  # Число для Dispatcher polling
-
-    logger.info("Custom aiohttp session: sock_read=3600s, total=None, force_close=False")
+    logger.info("Simple session with timeout=60s (per-request overrides in handlers)")
 
     bot = Bot(
         token=token,

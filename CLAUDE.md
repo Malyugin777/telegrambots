@@ -76,6 +76,16 @@ RAPIDAPI_HOST=social-download-all-in-one.p.rapidapi.com
 | TikTok | Видео без водяного знака | yt-dlp |
 | YouTube Shorts | Короткие видео | yt-dlp |
 
+## Трекинг пользователей
+
+Бот автоматически:
+- Сохраняет пользователей в `users` при первом сообщении
+- Обновляет `last_active_at` при каждом сообщении
+- Логирует действия в `action_logs`: start, help, download_request, download_success, audio_extracted
+- Регистрирует себя в `bots` при запуске
+
+Middleware: `bot_manager/middlewares/`
+
 ## Частые команды
 
 ```bash
@@ -120,6 +130,12 @@ ssh root@66.151.33.167 "cd /root/telegrambots && git pull && cd infrastructure &
 ├── index.html
 └── assets/
 ```
+
+## ОБЯЗАТЕЛЬНО ДЕЛАТЬ
+
+- **После значимых изменений обновлять:**
+  - `CLAUDE.md` - если изменилась архитектура, креды, команды
+  - `README.md` - если изменился функционал, поддерживаемые платформы
 
 ## НЕ ДЕЛАТЬ
 

@@ -26,7 +26,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Local Bot API Server URL (для файлов до 2GB)
-LOCAL_BOT_API_SERVER = "http://localhost:8081"
+# Используем имя Docker контейнера для связи между контейнерами
+LOCAL_BOT_API_SERVER = "http://telegram_bot_api:8081"
 
 
 async def start_bot(token: str, name: str, router):

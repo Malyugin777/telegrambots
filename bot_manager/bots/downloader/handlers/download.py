@@ -21,6 +21,7 @@ from ..messages import (
     UNSUPPORTED_URL_MESSAGE,
 )
 from bot_manager.middlewares import log_action
+from bot_manager.services.error_logger import error_logger
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -112,6 +113,15 @@ async def handle_url(message: types.Message):
 
             if not carousel.success:
                 logger.warning(f"Download failed: user={user_id}, error={carousel.error}")
+                await error_logger.log_error_by_telegram_id(
+                    telegram_id=user_id,
+                    bot_username="SaveNinja_bot",
+                    platform=platform,
+                    url=url,
+                    error_type="download_failed",
+                    error_message=carousel.error,
+                    error_details={"source": "rapidapi"}
+                )
                 await status_msg.edit_text(f"❌ {carousel.error}")
                 return
 
@@ -183,6 +193,15 @@ async def handle_url(message: types.Message):
 
         if not result.success:
             logger.warning(f"Download failed: user={user_id}, error={result.error}")
+            await error_logger.log_error_by_telegram_id(
+                telegram_id=user_id,
+                bot_username="SaveNinja_bot",
+                platform=platform,
+                url=url,
+                error_type="download_failed",
+                error_message=result.error,
+                error_details={"source": "yt-dlp"}
+            )
             await status_msg.edit_text(f"❌ {result.error}")
             return
 
@@ -253,6 +272,15 @@ async def handle_url(message: types.Message):
 
     except Exception as e:
         logger.exception(f"Handler error: {e}")
+        await error_logger.log_error_by_telegram_id(
+            telegram_id=user_id,
+            bot_username="SaveNinja_bot",
+            platform=platform,
+            url=url,
+            error_type="exception",
+            error_message=str(e)[:200],
+            error_details={"exception_type": type(e).__name__}
+        )
         try:
             await status_msg.edit_text(f"❌ Ошибка: {str(e)[:50]}")
         except:

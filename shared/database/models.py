@@ -100,3 +100,21 @@ class AdminUser(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
     last_login = Column(DateTime, nullable=True)
+
+
+class DownloadError(Base):
+    """Tracks download errors for monitoring and debugging."""
+    __tablename__ = "download_errors"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True)
+    platform = Column(String(50), nullable=False, index=True)
+    url = Column(Text, nullable=False)
+    error_type = Column(String(100), nullable=False, index=True)
+    error_message = Column(Text, nullable=True)
+    error_details = Column(JSON, nullable=True)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+
+    user = relationship("User")
+    bot = relationship("Bot")

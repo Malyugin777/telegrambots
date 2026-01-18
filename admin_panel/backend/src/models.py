@@ -175,3 +175,18 @@ class BroadcastLog(Base):
 
     # Relations
     broadcast: Mapped["Broadcast"] = relationship("Broadcast", back_populates="logs")
+
+
+class DownloadError(Base):
+    """Tracks download errors for monitoring and debugging."""
+    __tablename__ = "download_errors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    user_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    bot_id: Mapped[Optional[int]] = mapped_column(ForeignKey("bots.id", ondelete="SET NULL"), nullable=True)
+    platform: Mapped[str] = mapped_column(String(50), index=True)
+    url: Mapped[str] = mapped_column(Text)
+    error_type: Mapped[str] = mapped_column(String(100), index=True)
+    error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    error_details: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

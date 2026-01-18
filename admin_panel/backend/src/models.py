@@ -10,6 +10,7 @@ from shared.database.models import (
     SubscriptionProvider,
     BillingCycle,
     SubscriptionStatus,
+    APISource,
 
     # Models
     Base,
@@ -34,6 +35,7 @@ __all__ = [
     'SubscriptionProvider',
     'BillingCycle',
     'SubscriptionStatus',
+    'APISource',
 
     # Models
     'Base',

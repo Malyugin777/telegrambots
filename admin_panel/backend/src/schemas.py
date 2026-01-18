@@ -331,3 +331,38 @@ class UpcomingPayment(BaseModel):
     currency: str
     next_payment_date: datetime
     days_until: int
+
+
+# ============ Bot Messages ============
+
+class BotMessageBase(BaseModel):
+    message_key: str = Field(..., min_length=1, max_length=50)
+    text_ru: str
+    text_en: Optional[str] = None
+    is_active: bool = True
+
+
+class BotMessageCreate(BotMessageBase):
+    bot_id: int
+
+
+class BotMessageUpdate(BaseModel):
+    text_ru: Optional[str] = None
+    text_en: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class BotMessageResponse(BotMessageBase):
+    id: int
+    bot_id: int
+    updated_at: datetime
+    # Joined fields
+    bot_name: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class BotMessageListResponse(BaseModel):
+    data: List[BotMessageResponse]
+    total: int

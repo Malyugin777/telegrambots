@@ -10,6 +10,7 @@ from .logs import router as logs_router
 from .errors import router as errors_router
 from .uploads import router as uploads_router
 from .subscriptions import router as subscriptions_router
+from .bot_messages import router as bot_messages_router
 
 api_router = APIRouter()
 
@@ -22,3 +23,4 @@ api_router.include_router(logs_router, prefix="/logs", tags=["logs"])
 api_router.include_router(errors_router, prefix="/errors", tags=["errors"])
 api_router.include_router(uploads_router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(subscriptions_router, prefix="/subscriptions", tags=["subscriptions"])
+api_router.include_router(bot_messages_router, prefix="/bot-messages", tags=["bot-messages"])

@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum as PyEnum
 from sqlalchemy import (
     Column, Integer, BigInteger, String, DateTime,
-    Boolean, Text, Enum, ForeignKey, Index, JSON, Float
+    Boolean, Text, Enum, ForeignKey, Index, JSON, Float, UniqueConstraint
 )
 from sqlalchemy.orm import declarative_base, relationship
 from sqlalchemy.sql import func
@@ -169,3 +169,24 @@ class Subscription(Base):
     # Timestamps
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class BotMessage(Base):
+    """Editable bot messages/texts."""
+    __tablename__ = "bot_messages"
+
+    id = Column(Integer, primary_key=True)
+    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    message_key = Column(String(50), nullable=False)  # 'start', 'help', etc.
+    text_ru = Column(Text, nullable=False)
+    text_en = Column(Text, nullable=True)
+    is_active = Column(Boolean, default=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    # Unique constraint
+    __table_args__ = (
+        UniqueConstraint('bot_id', 'message_key', name='uq_bot_message_key'),
+    )
+
+    # Relationship
+    bot = relationship("Bot", backref="messages")

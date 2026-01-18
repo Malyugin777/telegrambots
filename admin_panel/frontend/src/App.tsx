@@ -15,6 +15,7 @@ import {
   FileTextOutlined,
   WarningOutlined,
   DollarOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -28,6 +29,7 @@ import { UserList, UserShow } from './pages/users';
 import { LogList } from './pages/activity-logs';
 import { ErrorList } from './pages/errors';
 import { SubscriptionList, SubscriptionCreate, SubscriptionEdit } from './pages/subscriptions';
+import { BotMessageList } from './pages/bot-messages';
 import { Login } from './pages/login';
 import { LanguageSwitcher, Footer } from './components';
 
@@ -122,6 +124,14 @@ function App() {
                   icon: <DollarOutlined />,
                 },
               },
+              {
+                name: 'bot-messages',
+                list: '/bot-messages',
+                meta: {
+                  label: 'Тексты бота',
+                  icon: <MessageOutlined />,
+                },
+              },
             ]}
             options={{
               syncWithLocation: true,
@@ -202,6 +212,10 @@ function App() {
                   <Route index element={<SubscriptionList />} />
                   <Route path="create" element={<SubscriptionCreate />} />
                   <Route path="edit/:id" element={<SubscriptionEdit />} />
+                </Route>
+
+                <Route path="/bot-messages">
+                  <Route index element={<BotMessageList />} />
                 </Route>
               </Route>
 

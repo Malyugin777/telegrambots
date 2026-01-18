@@ -8,7 +8,7 @@ import enum
 
 from sqlalchemy import (
     BigInteger, Boolean, DateTime, ForeignKey,
-    Integer, String, Text, JSON, Enum as SQLEnum
+    Integer, String, Text, JSON, Enum as SQLEnum, UniqueConstraint
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -245,3 +245,24 @@ class Subscription(Base):
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class BotMessage(Base):
+    """Editable bot messages/texts."""
+    __tablename__ = "bot_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    bot_id: Mapped[int] = mapped_column(Integer, ForeignKey("bots.id"), nullable=False)
+    message_key: Mapped[str] = mapped_column(String(50), nullable=False)  # 'start', 'help', etc.
+    text_ru: Mapped[str] = mapped_column(Text, nullable=False)
+    text_en: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Unique constraint
+    __table_args__ = (
+        UniqueConstraint('bot_id', 'message_key', name='uq_bot_message_key'),
+    )
+
+    # Relationship
+    bot: Mapped["Bot"] = relationship("Bot", backref="messages")

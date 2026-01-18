@@ -1,5 +1,6 @@
 """
 Database connection for Admin API.
+Uses shared database models for consistency.
 """
 from typing import AsyncGenerator
 from sqlalchemy.ext.asyncio import (
@@ -8,13 +9,8 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.orm import DeclarativeBase
 
 from .config import settings
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 engine: AsyncEngine = create_async_engine(

@@ -12,6 +12,7 @@ Base = declarative_base()
 
 class UserRole(str, PyEnum):
     USER = "user"
+    MODERATOR = "moderator"
     ADMIN = "admin"
     OWNER = "owner"
 
@@ -19,7 +20,9 @@ class UserRole(str, PyEnum):
 class BotStatus(str, PyEnum):
     ACTIVE = "active"
     INACTIVE = "inactive"
+    PAUSED = "paused"
     MAINTENANCE = "maintenance"
+    DISABLED = "disabled"
 
 
 class User(Base):
@@ -38,6 +41,7 @@ class User(Base):
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
     last_active_at = Column(DateTime, server_default=func.now())
+    extra_data = Column(JSON, nullable=True)
 
     bot_users = relationship("BotUser", back_populates="user")
     action_logs = relationship("ActionLog", back_populates="user")
@@ -53,6 +57,8 @@ class Bot(Base):
     token_hash = Column(String(64), nullable=True)
     status = Column(Enum(BotStatus), default=BotStatus.ACTIVE)
     description = Column(Text, nullable=True)
+    webhook_url = Column(String(500), nullable=True)
+    settings = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -103,8 +109,10 @@ class AdminUser(Base):
 
     id = Column(Integer, primary_key=True)
     username = Column(String(255), unique=True, nullable=False)
+    email = Column(String(255), unique=True, nullable=True)
     password_hash = Column(String(255), nullable=False)
     is_active = Column(Boolean, default=True)
+    is_superuser = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
     last_login = Column(DateTime, nullable=True)
 
@@ -176,12 +184,87 @@ class Subscription(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
+class BroadcastStatus(str, PyEnum):
+    DRAFT = "draft"
+    SCHEDULED = "scheduled"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+
+class Broadcast(Base):
+    """Broadcast/mailing model."""
+    __tablename__ = "broadcasts"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    text = Column(Text, nullable=False)
+    image_url = Column(String(500), nullable=True)
+    message_video = Column(String(500), nullable=True)
+    buttons = Column(JSON, nullable=True)  # Inline keyboard
+
+    # Targeting
+    target_type = Column(String(50), default="all")  # 'all', 'segment', 'list'
+    target_bots = Column(JSON, nullable=True)  # Bot IDs
+    target_languages = Column(JSON, nullable=True)  # ['en', 'ru']
+    target_segment_id = Column(Integer, nullable=True)
+    target_user_ids = Column(JSON, nullable=True)  # [telegram_id, ...]
+
+    # Status
+    status = Column(Enum(BroadcastStatus), default=BroadcastStatus.DRAFT)
+    scheduled_at = Column(DateTime, nullable=True)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+
+    # Stats
+    total_recipients = Column(Integer, default=0)
+    sent_count = Column(Integer, default=0)
+    delivered_count = Column(Integer, default=0)
+    failed_count = Column(Integer, default=0)
+
+    created_at = Column(DateTime, server_default=func.now())
+    created_by = Column(Integer, nullable=True)
+
+    # Relations
+    logs = relationship("BroadcastLog", back_populates="broadcast")
+
+
+class BroadcastLog(Base):
+    """Logs for individual message sends in broadcasts."""
+    __tablename__ = "broadcast_logs"
+
+    id = Column(Integer, primary_key=True)
+    broadcast_id = Column(Integer, ForeignKey("broadcasts.id", ondelete="CASCADE"), nullable=False)
+    telegram_id = Column(BigInteger, nullable=False)
+    status = Column(String(50), nullable=False)  # 'sent', 'delivered', 'failed', 'blocked'
+    error_message = Column(Text, nullable=True)
+    sent_at = Column(DateTime, server_default=func.now())
+
+    # Relations
+    broadcast = relationship("Broadcast", back_populates="logs")
+
+
+class Segment(Base):
+    """User segments for targeted broadcasts."""
+    __tablename__ = "segments"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, nullable=True)
+    conditions = Column(JSON, default=dict)
+    cached_count = Column(Integer, nullable=True)
+    cached_at = Column(DateTime, nullable=True)
+    is_dynamic = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
 class BotMessage(Base):
     """Editable bot messages/texts."""
     __tablename__ = "bot_messages"
 
     id = Column(Integer, primary_key=True)
-    bot_id = Column(Integer, ForeignKey("bots.id"), nullable=False)
+    bot_id = Column(Integer, ForeignKey("bots.id", ondelete="CASCADE"), nullable=False)
     message_key = Column(String(50), nullable=False)  # 'start', 'help', etc.
     text_ru = Column(Text, nullable=False)
     text_en = Column(Text, nullable=True)

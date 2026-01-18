@@ -187,3 +187,77 @@ async def update_user_role(
     await db.refresh(user)
 
     return user
+
+
+@router.get("/{user_id}/stats")
+async def get_user_stats(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Get detailed user statistics including downloads by platform."""
+    result = await db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found",
+        )
+
+    # Total downloads
+    result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.user_id == user_id,
+            ActionLog.action == "download_success"
+        )
+    )
+    total_downloads = result.scalar() or 0
+
+    # Downloads by platform
+    result = await db.execute(
+        select(ActionLog.details, func.count(ActionLog.id).label('count'))
+        .where(
+            ActionLog.user_id == user_id,
+            ActionLog.action == "download_success"
+        )
+        .group_by(ActionLog.details)
+    )
+
+    platform_counts: dict[str, int] = {}
+    for row in result:
+        details = row[0]
+        count = row[1]
+        if details and isinstance(details, dict) and 'info' in details:
+            info = details['info']
+            if ':' in info:
+                platform = info.split(':')[-1]
+            else:
+                platform = info
+            platform_counts[platform] = platform_counts.get(platform, 0) + count
+
+    # Recent activity (last 10 actions)
+    result = await db.execute(
+        select(ActionLog)
+        .where(ActionLog.user_id == user_id)
+        .order_by(ActionLog.created_at.desc())
+        .limit(10)
+    )
+    recent_logs = result.scalars().all()
+
+    return {
+        "total_downloads": total_downloads,
+        "platforms": [
+            {"name": name, "count": count}
+            for name, count in sorted(platform_counts.items(), key=lambda x: -x[1])
+        ],
+        "recent_activity": [
+            {
+                "id": log.id,
+                "action": log.action,
+                "details": log.details,
+                "created_at": log.created_at.isoformat(),
+            }
+            for log in recent_logs
+        ],
+    }

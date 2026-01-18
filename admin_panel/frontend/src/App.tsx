@@ -27,7 +27,7 @@ import { UserList, UserShow } from './pages/users';
 import { LogList } from './pages/activity-logs';
 import { ErrorList } from './pages/errors';
 import { Login } from './pages/login';
-import { LanguageSwitcher } from './components';
+import { LanguageSwitcher, Footer } from './components';
 
 import './i18n';
 import '@refinedev/antd/dist/reset.css';
@@ -147,8 +147,11 @@ function App() {
                           <LanguageSwitcher />
                         </div>
                       )}
+                      Footer={() => <Footer />}
                     >
-                      <Outlet />
+                      <div style={{ paddingBottom: '40px' }}>
+                        <Outlet />
+                      </div>
                     </ThemedLayoutV2>
                   </Authenticated>
                 }

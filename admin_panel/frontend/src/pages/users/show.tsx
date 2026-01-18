@@ -1,8 +1,8 @@
 import { Show, TagField } from '@refinedev/antd';
 import { useShow, useCustom } from '@refinedev/core';
-import { Typography, Descriptions, Card, Space, Button, Select, Input, message, Modal } from 'antd';
-import { StopOutlined, CheckOutlined } from '@ant-design/icons';
-import { useState } from 'react';
+import { Typography, Descriptions, Card, Space, Button, Select, Input, message, Modal, Table, Row, Col, Statistic, Timeline } from 'antd';
+import { StopOutlined, CheckOutlined, DownloadOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { useState, useEffect } from 'react';
 import dayjs from 'dayjs';
 import axios from 'axios';
 
@@ -30,6 +30,33 @@ const roleColors: Record<string, string> = {
   owner: 'gold',
 };
 
+interface UserStats {
+  total_downloads: number;
+  platforms: Array<{ name: string; count: number }>;
+  recent_activity: Array<{
+    id: number;
+    action: string;
+    details: Record<string, unknown> | null;
+    created_at: string;
+  }>;
+}
+
+const platformColors: Record<string, string> = {
+  instagram: '#E1306C',
+  tiktok: '#00f2ea',
+  youtube: '#FF0000',
+  pinterest: '#E60023',
+};
+
+const actionLabels: Record<string, string> = {
+  download_request: 'Запрос скачивания',
+  download_success: 'Успешное скачивание',
+  audio_extracted: 'Извлечение аудио',
+  start: 'Запуск бота',
+  help: 'Справка',
+  error: 'Ошибка',
+};
+
 export const UserShow = () => {
   const { queryResult } = useShow<User>();
   const { data, isLoading, refetch } = queryResult;
@@ -38,6 +65,29 @@ export const UserShow = () => {
   const [banModalVisible, setBanModalVisible] = useState(false);
   const [banReason, setBanReason] = useState('');
   const [selectedRole, setSelectedRole] = useState<string | undefined>();
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [statsLoading, setStatsLoading] = useState(false);
+
+  useEffect(() => {
+    if (record?.id) {
+      fetchUserStats(record.id);
+    }
+  }, [record?.id]);
+
+  const fetchUserStats = async (userId: number) => {
+    setStatsLoading(true);
+    try {
+      const token = localStorage.getItem('access_token');
+      const response = await axios.get(`/api/v1/users/${userId}/stats`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setUserStats(response.data);
+    } catch {
+      // Stats loading failed, ignore
+    } finally {
+      setStatsLoading(false);
+    }
+  };
 
   const handleBan = async () => {
     try {
@@ -167,17 +217,75 @@ export const UserShow = () => {
         </Space>
       </Card>
 
+      {/* Stats Row */}
+      <Row gutter={16} style={{ marginTop: 16 }}>
+        <Col span={8}>
+          <Card>
+            <Statistic
+              title="Всего скачиваний"
+              value={userStats?.total_downloads || 0}
+              prefix={<DownloadOutlined />}
+              valueStyle={{ color: '#52c41a' }}
+            />
+          </Card>
+        </Col>
+        <Col span={16}>
+          <Card title="По платформам" loading={statsLoading}>
+            {userStats?.platforms && userStats.platforms.length > 0 ? (
+              <Space wrap>
+                {userStats.platforms.map((p) => (
+                  <TagField
+                    key={p.name}
+                    color={platformColors[p.name] || 'default'}
+                    value={`${p.name}: ${p.count}`}
+                  />
+                ))}
+              </Space>
+            ) : (
+              <span style={{ color: '#888' }}>Нет данных</span>
+            )}
+          </Card>
+        </Col>
+      </Row>
+
+      {/* Recent Activity */}
+      <Card title="Последняя активность" style={{ marginTop: 16 }} loading={statsLoading}>
+        {userStats?.recent_activity && userStats.recent_activity.length > 0 ? (
+          <Timeline
+            items={userStats.recent_activity.map((log) => ({
+              color: log.action === 'download_success' ? 'green' :
+                     log.action === 'error' ? 'red' : 'blue',
+              children: (
+                <div>
+                  <strong>{actionLabels[log.action] || log.action}</strong>
+                  <span style={{ marginLeft: 8, color: '#888' }}>
+                    {dayjs(log.created_at).format('DD.MM.YYYY HH:mm')}
+                  </span>
+                  {log.details && 'info' in log.details && (
+                    <div style={{ fontSize: 12, color: '#aaa' }}>
+                      {String(log.details.info)}
+                    </div>
+                  )}
+                </div>
+              ),
+            }))}
+          />
+        ) : (
+          <span style={{ color: '#888' }}>Нет активности</span>
+        )}
+      </Card>
+
       {/* Ban Modal */}
       <Modal
-        title="Ban User"
+        title="Заблокировать пользователя"
         open={banModalVisible}
         onOk={handleBan}
         onCancel={() => setBanModalVisible(false)}
-        okText="Ban"
+        okText="Заблокировать"
         okButtonProps={{ danger: true }}
       >
         <Input.TextArea
-          placeholder="Ban reason (optional)"
+          placeholder="Причина блокировки (опционально)"
           value={banReason}
           onChange={(e) => setBanReason(e.target.value)}
           rows={3}

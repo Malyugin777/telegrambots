@@ -2,6 +2,7 @@ import { Edit, useForm, useSelect } from '@refinedev/antd';
 import { Form, Input, Select, DatePicker, Card, Row, Col, Divider, Button, Space } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
+import { ImageUpload } from '../../components';
 
 export const BroadcastEdit = () => {
   const { formProps, saveButtonProps, queryResult } = useForm();
@@ -39,11 +40,11 @@ export const BroadcastEdit = () => {
               </Form.Item>
 
               <Form.Item
-                label="Image URL"
+                label="Фото"
                 name="image_url"
-                extra="Optional: URL to an image to attach"
+                extra="Загрузите изображение или вставьте URL"
               >
-                <Input placeholder="https://example.com/image.jpg" />
+                <ImageUpload />
               </Form.Item>
 
               <Divider>Inline Buttons (Optional)</Divider>

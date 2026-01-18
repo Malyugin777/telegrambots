@@ -1,8 +1,9 @@
 import { Create, useForm, useSelect } from '@refinedev/antd';
-import { Form, Input, Select, DatePicker, Card, Row, Col, Divider, Button, Space, InputNumber } from 'antd';
+import { Form, Input, Select, DatePicker, Card, Row, Col, Divider, Button, Space } from 'antd';
 import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useState } from 'react';
+import { ImageUpload } from '../../components';
 
 export const BroadcastCreate = () => {
   const { formProps, saveButtonProps } = useForm();
@@ -42,26 +43,21 @@ export const BroadcastCreate = () => {
                 />
               </Form.Item>
 
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item
-                    label="Фото (URL или file_id)"
-                    name="image_url"
-                    extra="Опционально"
-                  >
-                    <Input placeholder="https://example.com/image.jpg" />
-                  </Form.Item>
-                </Col>
-                <Col span={12}>
-                  <Form.Item
-                    label="Видео (URL или file_id)"
-                    name="message_video"
-                    extra="Опционально"
-                  >
-                    <Input placeholder="https://example.com/video.mp4" />
-                  </Form.Item>
-                </Col>
-              </Row>
+              <Form.Item
+                label="Фото"
+                name="image_url"
+                extra="Загрузите изображение или вставьте URL"
+              >
+                <ImageUpload />
+              </Form.Item>
+
+              <Form.Item
+                label="Видео (URL или file_id)"
+                name="message_video"
+                extra="Опционально"
+              >
+                <Input placeholder="https://example.com/video.mp4" />
+              </Form.Item>
 
               <Divider>Inline кнопки (опционально)</Divider>
               <Form.List name="buttons">

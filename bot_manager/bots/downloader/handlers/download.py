@@ -12,7 +12,7 @@ import logging
 import asyncio
 import aiohttp
 from aiogram import Router, types, F
-from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo
+from aiogram.types import FSInputFile, BufferedInputFile, InputMediaPhoto, InputMediaVideo
 
 from ..services.downloader import VideoDownloader
 from ..services.rapidapi_downloader import RapidAPIDownloader
@@ -323,7 +323,33 @@ async def handle_url(message: types.Message):
                         ))
 
                 # Отправляем альбом (увеличенный таймаут для больших каруселей)
-                await message.answer_media_group(media=media_group, request_timeout=600)  # 10 минут для каруселей
+                # Retry logic для каруселей
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        await message.answer_media_group(media=media_group, request_timeout=600)  # 10 минут для каруселей
+                        break  # Success
+                    except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
+                        error_str = str(e).lower()
+                        if "closing transport" in error_str or "connection reset" in error_str or "timeout" in error_str:
+                            if attempt < max_retries - 1:
+                                wait_time = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                                logger.warning(f"Carousel upload failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time}s...")
+                                await asyncio.sleep(wait_time)
+                                # Recreate media group (streams might be consumed)
+                                media_group = []
+                                for i, file in enumerate(carousel.files):
+                                    input_file = FSInputFile(file.file_path, filename=file.filename)
+                                    caption = CAPTION if i == 0 else None
+                                    if file.is_photo:
+                                        media_group.append(InputMediaPhoto(media=input_file, caption=caption))
+                                    else:
+                                        media_group.append(InputMediaVideo(media=input_file, caption=caption, supports_streaming=True))
+                            else:
+                                logger.error(f"Carousel upload failed after {max_retries} attempts: {e}")
+                                raise
+                        else:
+                            raise  # Other errors - don't retry
 
                 # Рассчитываем метрики производительности
                 download_time_ms = int((time.time() - download_start) * 1000)
@@ -559,12 +585,34 @@ async def handle_url(message: types.Message):
                 # Увеличиваем таймаут до 30 минут для файлов до 2GB
                 # Скорость загрузки в Telegram: 1-5 MB/s, 2GB = 7-35 минут
                 await status_msg.edit_text(get_message("downloading_large"))
-                doc_msg = await message.answer_document(
-                    document=media_file,
-                    caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
-                    request_timeout=1800,  # 30 минут для файлов до 2GB
-                )
-                file_id = doc_msg.document.file_id if doc_msg.document else None
+
+                # Retry logic для больших файлов (сеть может быть нестабильной)
+                doc_msg = None
+                max_retries = 3
+                for attempt in range(max_retries):
+                    try:
+                        doc_msg = await message.answer_document(
+                            document=media_file,
+                            caption=CAPTION + "\n\n📁 " + get_message("sent_as_document"),
+                            request_timeout=1800,  # 30 минут для файлов до 2GB
+                        )
+                        break  # Success
+                    except (ConnectionResetError, ConnectionError, TimeoutError, Exception) as e:
+                        error_str = str(e).lower()
+                        if "closing transport" in error_str or "connection reset" in error_str or "timeout" in error_str:
+                            if attempt < max_retries - 1:
+                                wait_time = 5 * (2 ** attempt)  # 5s, 10s, 20s
+                                logger.warning(f"Upload failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {wait_time}s...")
+                                await asyncio.sleep(wait_time)
+                                # Recreate FSInputFile (stream might be consumed)
+                                media_file = FSInputFile(result.file_path, filename=result.filename)
+                            else:
+                                logger.error(f"Upload failed after {max_retries} attempts: {e}")
+                                raise
+                        else:
+                            raise  # Other errors - don't retry
+
+                file_id = doc_msg.document.file_id if doc_msg and doc_msg.document else None
             else:
                 # Обычное видео - отправляем с превью
                 # Увеличиваем таймаут до 5 минут для видео

@@ -39,19 +39,13 @@ def get_quality_for_duration(duration_seconds: int) -> int:
     """
     Выбор качества видео по длительности для YouTube
 
-    < 3 мин (Shorts) → 720p (маленький файл, макс качество)
-    3-15 мин → 720p (нормальный размер)
-    15-60 мин → 480p (экономия трафика)
-    > 60 мин → 360p (чтобы влезло в 2GB)
+    5-60 мин → 720p (отличное качество, ~100-200MB)
+    > 60 мин → 480p (экономия трафика, влезает в 2GB)
     """
-    if duration_seconds < 180:       # < 3 мин
+    if duration_seconds < 3600:      # < 60 мин
         return 720
-    elif duration_seconds < 900:     # < 15 мин
-        return 720
-    elif duration_seconds < 3600:    # < 60 мин
-        return 480
     else:                            # > 60 мин
-        return 360
+        return 480
 
 
 def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: int) -> Optional[RapidAPIMedia]:

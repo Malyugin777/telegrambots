@@ -31,7 +31,8 @@ MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 MAX_YOUTUBE_DOCUMENT_MB = 2048  # 2GB для YouTube полных видео
 MAX_YOUTUBE_DOCUMENT_BYTES = MAX_YOUTUBE_DOCUMENT_MB * 1024 * 1024
-DOWNLOAD_TIMEOUT = 60  # секунд
+DOWNLOAD_TIMEOUT = 120  # секунд (для обычных видео)
+YOUTUBE_DOWNLOAD_TIMEOUT = 300  # секунд (5 минут для полных YouTube видео)
 AUDIO_BITRATE = "320"  # kbps
 
 # Пул потоков для синхронных операций yt-dlp
@@ -194,9 +195,13 @@ class VideoDownloader:
         try:
             loop = asyncio.get_running_loop()
 
+            # Выбираем таймаут в зависимости от платформы
+            is_youtube_full = ('youtube.com' in url.lower() or 'youtu.be' in url.lower()) and '/shorts/' not in url.lower()
+            timeout = YOUTUBE_DOWNLOAD_TIMEOUT if is_youtube_full else DOWNLOAD_TIMEOUT
+
             result = await asyncio.wait_for(
                 loop.run_in_executor(_executor, self._download_sync, url, opts, False),
-                timeout=DOWNLOAD_TIMEOUT
+                timeout=timeout
             )
 
             # Если ошибка "No video formats" для Pinterest - пробуем как фото
@@ -401,12 +406,12 @@ class VideoDownloader:
                     '-y',  # Перезаписать
                     output_path
                 ]
-                result = subprocess.run(cmd, capture_output=True, timeout=60)
+                result = subprocess.run(cmd, capture_output=True, timeout=180)
                 return result.returncode == 0
 
             success = await asyncio.wait_for(
                 loop.run_in_executor(_executor, _extract),
-                timeout=60
+                timeout=180
             )
 
             if success and os.path.exists(output_path):

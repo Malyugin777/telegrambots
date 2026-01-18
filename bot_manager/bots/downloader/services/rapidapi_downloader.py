@@ -30,7 +30,7 @@ RAPIDAPI_URL = "https://social-download-all-in-one.p.rapidapi.com/v1/social/auto
 DOWNLOAD_DIR = "/tmp/downloads"
 MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-DOWNLOAD_TIMEOUT = 60
+DOWNLOAD_TIMEOUT = 120  # секунд (Instagram через RapidAPI)
 
 _executor = ThreadPoolExecutor(max_workers=3)
 

@@ -9,6 +9,7 @@ import re
 import os
 import time
 import logging
+import asyncio
 import aiohttp
 from aiogram import Router, types, F
 from aiogram.types import FSInputFile, InputMediaPhoto, InputMediaVideo
@@ -22,6 +23,7 @@ from ..messages import (
     get_sending_message,
     get_extracting_audio_message,
     get_unsupported_url_message,
+    get_message,
 )
 from bot_manager.middlewares import log_action
 from bot_manager.services.error_logger import error_logger
@@ -68,6 +70,20 @@ async def resolve_short_url(url: str) -> str:
             logger.warning(f"Failed to resolve short URL {url}: {e}")
             return url
     return url
+
+
+async def update_progress_message(status_msg, done_event: asyncio.Event):
+    """Обновляет статус-сообщение для долгих загрузок"""
+    try:
+        await asyncio.sleep(30)
+        if not done_event.is_set():
+            await status_msg.edit_text("⏳ Ещё немного, файл большой...")
+
+        await asyncio.sleep(30)  # Ещё 30 сек (итого 60)
+        if not done_event.is_set():
+            await status_msg.edit_text("⏳ Почти готово...")
+    except Exception:
+        pass  # Игнорируем ошибки редактирования
 
 
 def use_rapidapi(url: str) -> bool:
@@ -128,6 +144,10 @@ async def handle_url(message: types.Message):
 
     # Статус сообщение
     status_msg = await message.answer(get_downloading_message())
+
+    # Прогресс для долгих загрузок
+    done_event = asyncio.Event()
+    progress_task = asyncio.create_task(update_progress_message(status_msg, done_event))
 
     try:
         # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
@@ -360,6 +380,10 @@ async def handle_url(message: types.Message):
             await status_msg.edit_text(f"❌ Ошибка: {str(e)[:50]}")
         except:
             pass
+    finally:
+        # Останавливаем фоновую задачу обновления прогресса
+        done_event.set()
+        progress_task.cancel()
 
 
 @router.message(F.text)

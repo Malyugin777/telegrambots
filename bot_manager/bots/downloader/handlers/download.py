@@ -598,6 +598,24 @@ async def handle_url(message: types.Message):
             await status_msg.delete()
 
         else:
+            # Проверяем размер файла (лимит обычного Telegram API - 50MB)
+            file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
+            MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB (без Local Bot API Server)
+
+            if file_size > MAX_FILE_SIZE:
+                size_mb = file_size / 1024 / 1024
+                await status_msg.edit_text(
+                    f"❌ Видео слишком большое ({size_mb:.1f} MB).\n\n"
+                    f"Telegram API лимит: 50 MB\n"
+                    f"Попробуй более короткое видео или другую платформу."
+                )
+                logger.warning(f"File too large: {size_mb:.1f}MB > 50MB limit")
+                if api_source == "rapidapi":
+                    await rapidapi.cleanup(result.file_path)
+                else:
+                    await downloader.cleanup(result.file_path)
+                return
+
             # === ОТПРАВЛЯЕМ ВИДЕО или ДОКУМЕНТ (для больших YouTube) ===
             if result.send_as_document:
                 # Большой YouTube файл (50MB-2GB) - отправляем как документ

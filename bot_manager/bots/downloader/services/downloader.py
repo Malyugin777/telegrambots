@@ -408,13 +408,18 @@ class VideoDownloader:
 
     def _fix_tiktok_video(self, video_path: str) -> Optional[str]:
         """
-        Исправляет TikTok видео — перекодирует в H.264 с правильным SAR
+        Исправляет TikTok видео — корректирует SAR для правильного отображения.
 
         TikTok часто отдаёт HEVC с неправильными метаданными SAR/DAR,
-        что приводит к деформации в Telegram. Перекодируем в H.264.
+        что приводит к деформации в Telegram.
+
+        Логика:
+        - SAR = 1:1 и H.264 → ничего не делаем
+        - SAR = 1:1, но не H.264 → копируем без перекодирования
+        - SAR ≠ 1:1 → масштабируем (scale=iw*sar:ih) + перекодируем в H.264
 
         Returns:
-            Путь к исправленному файлу или None при ошибке
+            Путь к исправленному файлу или None если исправление не требовалось
         """
         import subprocess
 
@@ -431,29 +436,44 @@ class VideoDownloader:
             # Парсим codec,sar
             parts = probe_output.split(',')
             codec = parts[0] if parts else ''
-            sar = parts[1] if len(parts) > 1 else '1:1'
+            sar = parts[1].strip() if len(parts) > 1 else '1:1'
 
-            # Если уже H.264 с правильным SAR - пропускаем
-            if codec == 'h264' and (sar == '1:1' or sar == 'N/A' or not sar):
+            # Нормализуем SAR (1/1 -> 1:1)
+            sar_normalized = sar.replace('/', ':')
+
+            # SAR считается правильным если 1:1, N/A или пустой
+            sar_is_ok = sar_normalized in ('1:1', 'N/A', '')
+
+            # Если уже H.264 с правильным SAR - ничего не делаем
+            if codec == 'h264' and sar_is_ok:
                 logger.info(f"TikTok video OK: codec={codec}, sar={sar}")
                 return None
 
-            logger.info(f"TikTok video fix: codec={codec}, sar={sar} -> h264, 1:1")
-
-            # Перекодируем в H.264 с правильным SAR
             output_path = video_path.rsplit('.', 1)[0] + "_fixed.mp4"
 
-            fix_cmd = [
-                'ffmpeg', '-i', video_path,
-                '-vf', 'setsar=1:1',
-                '-c:v', 'libx264',
-                '-preset', 'fast',  # Баланс скорости и качества
-                '-crf', '20',       # Хорошее качество
-                '-c:a', 'aac',      # Аудио тоже перекодируем для совместимости
-                '-b:a', '128k',
-                '-movflags', '+faststart',
-                '-y', output_path
-            ]
+            if sar_is_ok:
+                # SAR правильный, но кодек не H.264 — просто копируем (быстро)
+                logger.info(f"TikTok video copy (codec {codec} -> container fix)")
+                fix_cmd = [
+                    'ffmpeg', '-i', video_path,
+                    '-c', 'copy',
+                    '-movflags', '+faststart',
+                    '-y', output_path
+                ]
+            else:
+                # SAR неправильный — масштабируем для исправления пропорций
+                logger.info(f"TikTok video scale fix: codec={codec}, sar={sar} -> h264, 1:1")
+                fix_cmd = [
+                    'ffmpeg', '-i', video_path,
+                    '-vf', 'scale=iw*sar:ih,setsar=1:1',
+                    '-c:v', 'libx264',
+                    '-preset', 'fast',
+                    '-crf', '20',
+                    '-c:a', 'aac',
+                    '-b:a', '128k',
+                    '-movflags', '+faststart',
+                    '-y', output_path
+                ]
 
             result = subprocess.run(fix_cmd, capture_output=True, timeout=180)
 

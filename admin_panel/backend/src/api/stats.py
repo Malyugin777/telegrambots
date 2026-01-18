@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 import random
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -48,10 +48,7 @@ async def get_stats(
     result = await db.execute(
         select(func.count(ActionLog.id)).where(
             ActionLog.created_at >= today_start,
-            or_(
-                ActionLog.action == "download_video",
-                ActionLog.action == "download_audio"
-            )
+            ActionLog.action == "download_success"
         )
     )
     downloads_today = result.scalar() or 0
@@ -59,10 +56,7 @@ async def get_stats(
     # Total downloads
     result = await db.execute(
         select(func.count(ActionLog.id)).where(
-            or_(
-                ActionLog.action == "download_video",
-                ActionLog.action == "download_audio"
-            )
+            ActionLog.action == "download_success"
         )
     )
     total_downloads = result.scalar() or 0
@@ -117,10 +111,7 @@ async def get_load_chart(
             select(func.count(ActionLog.id)).where(
                 ActionLog.created_at >= day_start,
                 ActionLog.created_at < day_end,
-                or_(
-                    ActionLog.action == "download_video",
-                    ActionLog.action == "download_audio"
-                )
+                ActionLog.action == "download_success"
             )
         )
         downloads_count = result.scalar() or 0

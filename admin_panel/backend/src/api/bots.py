@@ -5,7 +5,7 @@ import hashlib
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -29,14 +29,11 @@ async def get_bot_stats(db: AsyncSession, bot_id: int) -> tuple[int, int]:
     )
     users_count = result.scalar() or 0
 
-    # Downloads count
+    # Downloads count (count successful downloads)
     result = await db.execute(
         select(func.count(ActionLog.id)).where(
             ActionLog.bot_id == bot_id,
-            or_(
-                ActionLog.action == "download_video",
-                ActionLog.action == "download_audio"
-            )
+            ActionLog.action == "download_success"
         )
     )
     downloads_count = result.scalar() or 0

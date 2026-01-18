@@ -4,7 +4,7 @@ Users management API endpoints.
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
@@ -20,10 +20,7 @@ async def get_user_downloads_count(db: AsyncSession, user_id: int) -> int:
     result = await db.execute(
         select(func.count(ActionLog.id)).where(
             ActionLog.user_id == user_id,
-            or_(
-                ActionLog.action == "download_video",
-                ActionLog.action == "download_audio"
-            )
+            ActionLog.action == "download_success"
         )
     )
     return result.scalar() or 0

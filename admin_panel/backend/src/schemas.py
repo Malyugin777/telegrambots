@@ -32,6 +32,19 @@ class LoadChartResponse(BaseModel):
     users: List[ChartDataPoint]
 
 
+class PlatformPerformance(BaseModel):
+    platform: str
+    avg_download_time_ms: Optional[float] = None
+    avg_file_size_mb: Optional[float] = None
+    avg_speed_kbps: Optional[float] = None
+    total_downloads: int
+
+
+class PerformanceResponse(BaseModel):
+    overall: PlatformPerformance
+    platforms: List[PlatformPerformance]
+
+
 # ============ Bots ============
 
 class BotBase(BaseModel):

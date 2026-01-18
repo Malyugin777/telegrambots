@@ -8,6 +8,9 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   FireOutlined,
+  ThunderboltOutlined,
+  FileOutlined,
+  DashboardOutlined,
 } from '@ant-design/icons';
 import { Line, Pie } from '@ant-design/charts';
 import { useTranslation } from 'react-i18next';
@@ -38,6 +41,19 @@ interface PlatformData {
   platforms: Array<{ name: string; count: number }>;
 }
 
+interface PlatformPerformance {
+  platform: string;
+  avg_download_time_ms: number | null;
+  avg_file_size_mb: number | null;
+  avg_speed_kbps: number | null;
+  total_downloads: number;
+}
+
+interface PerformanceData {
+  overall: PlatformPerformance;
+  platforms: PlatformPerformance[];
+}
+
 export const Dashboard = () => {
   const { t } = useTranslation();
 
@@ -59,9 +75,15 @@ export const Dashboard = () => {
     method: 'get',
   });
 
+  const { data: performanceData } = useCustom<PerformanceData>({
+    url: '/stats/performance',
+    method: 'get',
+  });
+
   const stats = statsData?.data;
   const chart = chartData?.data;
   const platforms = platformData?.data?.platforms || [];
+  const performance = performanceData?.data?.overall;
 
   // Prepare chart data
   const lineData = [
@@ -202,6 +224,47 @@ export const Dashboard = () => {
           </Card>
         </Col>
       </Row>
+
+      {/* Performance Cards */}
+      {performance && (
+        <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+          <Col xs={24} sm={8}>
+            <Card className="stat-card">
+              <Statistic
+                title="Средняя скорость"
+                value={performance.avg_speed_kbps ? Math.round(performance.avg_speed_kbps) : 0}
+                suffix="KB/s"
+                prefix={<ThunderboltOutlined />}
+                valueStyle={{ color: '#faad14' }}
+              />
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={8}>
+            <Card className="stat-card">
+              <Statistic
+                title="Средний размер файла"
+                value={performance.avg_file_size_mb ? performance.avg_file_size_mb.toFixed(2) : '0.00'}
+                suffix="MB"
+                prefix={<FileOutlined />}
+                valueStyle={{ color: '#1890ff' }}
+              />
+            </Card>
+          </Col>
+
+          <Col xs={24} sm={8}>
+            <Card className="stat-card">
+              <Statistic
+                title="Среднее время скачивания"
+                value={performance.avg_download_time_ms ? Math.round(performance.avg_download_time_ms / 1000) : 0}
+                suffix="сек"
+                prefix={<DashboardOutlined />}
+                valueStyle={{ color: '#52c41a' }}
+              />
+            </Card>
+          </Col>
+        </Row>
+      )}
 
       {/* Charts Row */}
       <Row gutter={[16, 16]} style={{ marginTop: '24px' }}>

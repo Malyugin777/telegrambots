@@ -12,7 +12,7 @@ from ..database import get_db
 from ..redis_client import get_redis
 from ..config import settings
 from ..models import Bot, User, Broadcast, ActionLog, BotStatus, BroadcastStatus
-from ..schemas import StatsResponse, LoadChartResponse, ChartDataPoint
+from ..schemas import StatsResponse, LoadChartResponse, ChartDataPoint, PerformanceResponse, PlatformPerformance
 from ..auth import get_current_user
 
 router = APIRouter()
@@ -171,3 +171,93 @@ async def get_platform_stats(
             for name, count in sorted(platform_counts.items(), key=lambda x: -x[1])
         ]
     }
+
+
+@router.get("/performance", response_model=PerformanceResponse)
+async def get_performance_stats(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """Get performance metrics (download time, file size, speed) by platform."""
+
+    # Overall metrics
+    result = await db.execute(
+        select(
+            func.avg(ActionLog.download_time_ms).label('avg_time'),
+            func.avg(ActionLog.file_size_bytes).label('avg_size'),
+            func.avg(ActionLog.download_speed_kbps).label('avg_speed'),
+            func.count(ActionLog.id).label('total')
+        ).where(
+            ActionLog.action == "download_success",
+            ActionLog.download_time_ms.isnot(None)
+        )
+    )
+    row = result.first()
+
+    overall = PlatformPerformance(
+        platform="overall",
+        avg_download_time_ms=round(row.avg_time, 2) if row.avg_time else None,
+        avg_file_size_mb=round(row.avg_size / 1024 / 1024, 2) if row.avg_size else None,
+        avg_speed_kbps=round(row.avg_speed, 2) if row.avg_speed else None,
+        total_downloads=row.total or 0
+    )
+
+    # Per-platform metrics
+    # Parse platform from details->info field
+    result = await db.execute(
+        select(
+            ActionLog.details,
+            func.avg(ActionLog.download_time_ms).label('avg_time'),
+            func.avg(ActionLog.file_size_bytes).label('avg_size'),
+            func.avg(ActionLog.download_speed_kbps).label('avg_speed'),
+            func.count(ActionLog.id).label('total')
+        ).where(
+            ActionLog.action == "download_success",
+            ActionLog.download_time_ms.isnot(None)
+        ).group_by(ActionLog.details)
+    )
+
+    platform_metrics: dict[str, dict] = {}
+    for row in result:
+        details = row.details
+        if details and isinstance(details, dict) and 'info' in details:
+            info = details['info']
+            # Parse "video:instagram" -> "instagram"
+            if ':' in info:
+                parts = info.split(':')
+                # Handle both "video:instagram" and "instagram:url"
+                platform = parts[1] if parts[1] not in ['http', 'https'] else parts[0]
+            else:
+                platform = info
+
+            if platform not in platform_metrics:
+                platform_metrics[platform] = {
+                    'time': [],
+                    'size': [],
+                    'speed': [],
+                    'total': 0
+                }
+
+            platform_metrics[platform]['time'].append(row.avg_time or 0)
+            platform_metrics[platform]['size'].append(row.avg_size or 0)
+            platform_metrics[platform]['speed'].append(row.avg_speed or 0)
+            platform_metrics[platform]['total'] += row.total or 0
+
+    platforms = []
+    for name, metrics in sorted(platform_metrics.items(), key=lambda x: -x[1]['total']):
+        avg_time = sum(metrics['time']) / len(metrics['time']) if metrics['time'] else None
+        avg_size = sum(metrics['size']) / len(metrics['size']) if metrics['size'] else None
+        avg_speed = sum(metrics['speed']) / len(metrics['speed']) if metrics['speed'] else None
+
+        platforms.append(PlatformPerformance(
+            platform=name,
+            avg_download_time_ms=round(avg_time, 2) if avg_time else None,
+            avg_file_size_mb=round(avg_size / 1024 / 1024, 2) if avg_size else None,
+            avg_speed_kbps=round(avg_speed, 2) if avg_speed else None,
+            total_downloads=metrics['total']
+        ))
+
+    return PerformanceResponse(
+        overall=overall,
+        platforms=platforms
+    )

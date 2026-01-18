@@ -26,10 +26,29 @@ logger = logging.getLogger(__name__)
 
 async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
+    from aiohttp import ClientTimeout
+    from aiogram.client.session.aiohttp import AiohttpSession
+
+    # Создаём сессию с увеличенными таймаутами для больших файлов
+    session = AiohttpSession()
+
     bot = Bot(
         token=token,
+        session=session,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML)
     )
+
+    # HACK: Патчим внутреннюю aiohttp сессию напрямую после создания
+    # Устанавливаем длинные таймауты для загрузки больших файлов (до 2GB)
+    if hasattr(bot.session, '_session') and bot.session._session:
+        bot.session._session._timeout = ClientTimeout(
+            total=None,        # Без общего лимита (используем request_timeout)
+            connect=60,        # 1 минута на подключение
+            sock_read=600,     # 10 минут между чанками (КЛЮЧЕВОЕ!)
+            sock_connect=60    # 1 минута на socket connect
+        )
+        logger.info("Patched aiohttp session timeout: sock_read=600s (for large file uploads)")
+
     dp = Dispatcher()
 
     # Регистрируем middleware для трекинга пользователей

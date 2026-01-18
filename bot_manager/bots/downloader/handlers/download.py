@@ -81,15 +81,18 @@ async def resolve_short_url(url: str) -> str:
 
 
 async def update_progress_message(status_msg, done_event: asyncio.Event):
-    """Обновляет статус-сообщение для долгих загрузок"""
+    """Обновляет статус-сообщение для долгих загрузок с таймером"""
     try:
-        await asyncio.sleep(30)
-        if not done_event.is_set():
-            await status_msg.edit_text("⏳ Ещё немного, файл большой...")
-
-        await asyncio.sleep(30)  # Ещё 30 сек (итого 60)
-        if not done_event.is_set():
-            await status_msg.edit_text("⏳ Почти готово...")
+        elapsed = 0
+        while not done_event.is_set():
+            await asyncio.sleep(30)
+            elapsed += 30
+            if not done_event.is_set():
+                # Форматируем время: "0:30", "1:00", "2:30" и т.д.
+                minutes = elapsed // 60
+                seconds = elapsed % 60
+                time_str = f"{minutes}:{seconds:02d}"
+                await status_msg.edit_text(f"⏳ Скачиваю... {time_str}")
     except Exception:
         pass  # Игнорируем ошибки редактирования
 

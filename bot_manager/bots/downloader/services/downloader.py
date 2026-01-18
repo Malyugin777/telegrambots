@@ -39,8 +39,8 @@ MAX_FILE_SIZE_MB = 50
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 MAX_YOUTUBE_DOCUMENT_MB = 2048  # 2GB для YouTube полных видео
 MAX_YOUTUBE_DOCUMENT_BYTES = MAX_YOUTUBE_DOCUMENT_MB * 1024 * 1024
-DOWNLOAD_TIMEOUT = 120  # секунд (для обычных видео)
-YOUTUBE_DOWNLOAD_TIMEOUT = 300  # секунд (5 минут для полных YouTube видео)
+DOWNLOAD_TIMEOUT = 120  # секунд (для обычных видео: Instagram, TikTok, Pinterest, YouTube Shorts)
+YOUTUBE_DOWNLOAD_TIMEOUT = 1200  # секунд (20 минут для полных YouTube видео до 2GB)
 AUDIO_BITRATE = "320"  # kbps
 
 # Пул потоков для синхронных операций yt-dlp

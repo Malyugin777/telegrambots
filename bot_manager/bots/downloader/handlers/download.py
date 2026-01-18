@@ -81,42 +81,62 @@ async def resolve_short_url(url: str) -> str:
 
 
 async def update_progress_message(status_msg, done_event: asyncio.Event, progress_data: dict):
-    """Обновляет статус-сообщение для долгих загрузок с прогрессом раз в минуту"""
+    """
+    Обновляет статус-сообщение ТОЛЬКО 3 раза:
+    - 0 мин: "⏳ Скачиваю видео..."
+    - 5 мин: "⏳ Скачиваю... 45 MB / 200 MB (720p)"
+    - 15 мин: "⏳ Почти готово... 180 MB / 200 MB"
+    """
+    UPDATE_INTERVALS = [0, 300, 900]  # 0, 5 мин, 15 мин (в секундах)
+
     try:
-        elapsed = 0
-        while not done_event.is_set():
-            await asyncio.sleep(60)  # Обновляем раз в МИНУТУ
-            elapsed += 60
-            if not done_event.is_set():
-                # Проверяем есть ли данные о прогрессе
-                downloaded = progress_data.get('downloaded_bytes', 0)
-                total = progress_data.get('total_bytes', 0)
-                speed = progress_data.get('speed', 0)
+        start_time = asyncio.get_event_loop().time()
+        update_index = 0
 
+        while not done_event.is_set() and update_index < len(UPDATE_INTERVALS):
+            # Вычисляем время до следующего обновления
+            next_update_at = UPDATE_INTERVALS[update_index]
+            current_elapsed = asyncio.get_event_loop().time() - start_time
+            sleep_time = next_update_at - current_elapsed
+
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
+
+            if done_event.is_set():
+                break
+
+            # Формируем сообщение в зависимости от момента времени
+            downloaded = progress_data.get('downloaded_bytes', 0)
+            total = progress_data.get('total_bytes', 0)
+
+            if update_index == 0:
+                # 0 мин - стартовое сообщение уже показано, пропускаем
+                pass
+            elif update_index == 1:
+                # 5 мин
                 if total and downloaded:
-                    # Форматируем размеры в MB
-                    downloaded_mb = downloaded / (1024 * 1024)
-                    total_mb = total / (1024 * 1024)
-
-                    # Оцениваем оставшееся время
-                    if speed and speed > 0:
-                        remaining_bytes = total - downloaded
-                        eta_seconds = int(remaining_bytes / speed)
-                        eta_minutes = eta_seconds // 60
-
-                        # Форматируем сообщение с прогрессом
-                        text = f"⏳ Скачиваю... {downloaded_mb:.0f} MB / {total_mb:.0f} MB — ~{eta_minutes} мин осталось"
-                    else:
-                        # Без оценки времени
-                        text = f"⏳ Скачиваю... {downloaded_mb:.0f} MB / {total_mb:.0f} MB"
+                    downloaded_mb = int(downloaded / (1024 * 1024))
+                    total_mb = int(total / (1024 * 1024))
+                    text = f"⏳ Скачиваю... {downloaded_mb} MB / {total_mb} MB (720p)"
                 else:
-                    # Нет данных о прогрессе - показываем только время
-                    minutes = elapsed // 60
-                    text = f"⏳ Скачиваю... {minutes} мин"
-
+                    text = "⏳ Скачиваю большое видео..."
                 await status_msg.edit_text(text)
-    except Exception:
-        pass  # Игнорируем ошибки редактирования
+                logger.info(f"[PROGRESS] 5min update: {downloaded}/{total} bytes")
+            elif update_index == 2:
+                # 15 мин
+                if total and downloaded:
+                    downloaded_mb = int(downloaded / (1024 * 1024))
+                    total_mb = int(total / (1024 * 1024))
+                    text = f"⏳ Почти готово... {downloaded_mb} MB / {total_mb} MB"
+                else:
+                    text = "⏳ Почти готово..."
+                await status_msg.edit_text(text)
+                logger.info(f"[PROGRESS] 15min update: {downloaded}/{total} bytes")
+
+            update_index += 1
+
+    except Exception as e:
+        logger.warning(f"[PROGRESS] Update error: {e}")
 
 
 def use_rapidapi(url: str) -> bool:
@@ -191,11 +211,22 @@ async def handle_url(message: types.Message):
     }
 
     # Callback для прогресса yt-dlp
+    last_log_time = [0]  # Используем список чтобы изменять в замыкании
     def progress_callback(d):
         if d['status'] == 'downloading':
             progress_data['downloaded_bytes'] = d.get('downloaded_bytes', 0)
             progress_data['total_bytes'] = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
             progress_data['speed'] = d.get('speed', 0)
+
+            # Логируем прогресс раз в 60 секунд (для отладки)
+            import time
+            now = time.time()
+            if now - last_log_time[0] >= 60:
+                downloaded_mb = progress_data['downloaded_bytes'] / (1024 * 1024)
+                total_mb = progress_data['total_bytes'] / (1024 * 1024) if progress_data['total_bytes'] else 0
+                speed_kbps = (progress_data['speed'] or 0) / 1024
+                logger.info(f"[PROGRESS] {downloaded_mb:.1f}MB / {total_mb:.1f}MB, speed={speed_kbps:.1f}KB/s")
+                last_log_time[0] = now
 
     # Прогресс для долгих загрузок
     done_event = asyncio.Event()
@@ -204,6 +235,7 @@ async def handle_url(message: types.Message):
     try:
         # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
         download_start = time.time()
+        logger.info(f"[HANDLER_START] user={user_id}, platform={platform}, url={url[:100]}")
 
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
         # Instagram -> RapidAPI (yt-dlp требует авторизации)
@@ -416,6 +448,10 @@ async def handle_url(message: types.Message):
             await cache_file_ids(url, file_id, audio_file_id)
             await downloader.cleanup(result.file_path)
             await status_msg.delete()
+
+            # Логируем успешное завершение
+            total_time = time.time() - download_start
+            logger.info(f"[HANDLER_SUCCESS] user={user_id}, total_time={total_time:.1f}s")
 
     except Exception as e:
         logger.exception(f"Handler error: {e}")

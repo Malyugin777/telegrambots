@@ -292,13 +292,14 @@ class VideoDownloader:
             return result
 
         except asyncio.TimeoutError:
+            logger.error(f"[DOWNLOAD_TIMEOUT] URL={url[:100]}, timeout={timeout}s")
             await self.cleanup(output_path)
             return DownloadResult(
                 success=False,
-                error=f"Таймаут загрузки ({DOWNLOAD_TIMEOUT} сек)"
+                error=f"Таймаут загрузки ({timeout} сек)"
             )
         except Exception as e:
-            logger.exception(f"Download error for {url}: {e}")
+            logger.exception(f"[DOWNLOAD_EXCEPTION] URL={url[:100]}: {e}")
             await self.cleanup(output_path)
             return DownloadResult(
                 success=False,
@@ -351,11 +352,21 @@ class VideoDownloader:
 
     def _download_sync(self, url: str, opts: dict, is_audio: bool = False) -> DownloadResult:
         """Синхронная загрузка (выполняется в thread pool)"""
+        import time
+        start_time = time.time()
+
         try:
+            logger.info(f"[DOWNLOAD_START] URL={url[:100]}, is_audio={is_audio}")
+
             with yt_dlp.YoutubeDL(opts) as ydl:
+                logger.info(f"[DOWNLOAD] Extracting info...")
                 info = ydl.extract_info(url, download=True)
 
+                elapsed = time.time() - start_time
+                logger.info(f"[DOWNLOAD] Download completed in {elapsed:.1f}s")
+
                 if not info:
+                    logger.warning(f"[DOWNLOAD] No info returned from yt-dlp")
                     return DownloadResult(
                         success=False,
                         error="Не удалось получить информацию о видео"
@@ -364,6 +375,7 @@ class VideoDownloader:
                 file_path = self._find_downloaded_file(info, opts, is_audio)
 
                 if not file_path or not os.path.exists(file_path):
+                    logger.error(f"[DOWNLOAD] File not found after download")
                     return DownloadResult(
                         success=False,
                         error="Файл не найден после скачивания"
@@ -374,6 +386,8 @@ class VideoDownloader:
                 ext = "mp3" if is_audio else "mp4"
                 filename = self._sanitize_filename(media_info.title, ext)
 
+                logger.info(f"[DOWNLOAD_SUCCESS] file={file_path}, size={file_size}, time={elapsed:.1f}s")
+
                 return DownloadResult(
                     success=True,
                     file_path=file_path,
@@ -383,12 +397,16 @@ class VideoDownloader:
                 )
 
         except yt_dlp.utils.DownloadError as e:
+            elapsed = time.time() - start_time
+            error_msg = str(e)
+            logger.error(f"[DOWNLOAD_ERROR] DownloadError after {elapsed:.1f}s: {error_msg[:200]}")
             return DownloadResult(
                 success=False,
-                error=self._format_error(str(e))
+                error=self._format_error(error_msg)
             )
         except Exception as e:
-            logger.exception(f"yt-dlp sync error: {e}")
+            elapsed = time.time() - start_time
+            logger.exception(f"[DOWNLOAD_ERROR] Exception after {elapsed:.1f}s: {e}")
             return DownloadResult(
                 success=False,
                 error=self._format_error(str(e))

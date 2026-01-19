@@ -40,7 +40,7 @@ from ..messages import (
 )
 from bot_manager.middlewares import log_action
 from bot_manager.services.error_logger import error_logger
-from shared.utils.video_fixer import get_video_dimensions, get_video_duration
+from shared.utils.video_fixer import get_video_dimensions, get_video_duration, download_thumbnail
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -474,6 +474,7 @@ async def handle_url(message: types.Message):
                         info=MediaInfo(
                             title=pytube_result.title or "video",
                             author=pytube_result.author or "unknown",
+                            thumbnail=pytube_result.thumbnail_url,
                             platform=platform
                         )
                     )
@@ -500,6 +501,7 @@ async def handle_url(message: types.Message):
                         info=MediaInfo(
                             title=pytube_result.title or "video",
                             author=pytube_result.author or "unknown",
+                            thumbnail=pytube_result.thumbnail_url,
                             platform=platform
                         )
                     )
@@ -569,6 +571,7 @@ async def handle_url(message: types.Message):
                         info=MediaInfo(
                             title=pytube_result.title or "video",
                             author=pytube_result.author or "unknown",
+                            thumbnail=pytube_result.thumbnail_url,
                             platform=platform
                         )
                     )
@@ -710,9 +713,19 @@ async def handle_url(message: types.Message):
             width, height = get_video_dimensions(result.file_path)
             duration = get_video_duration(result.file_path)
 
+            # Скачиваем thumbnail (превью) если есть URL
+            # Это даёт preview "как у конкурентов" вместо чёрного прямоугольника
+            thumb_path = None
+            thumb_file = None
+            if result.info and result.info.thumbnail:
+                thumb_path = download_thumbnail(result.info.thumbnail)
+                if thumb_path:
+                    thumb_file = FSInputFile(thumb_path)
+
             video_msg = await message.answer_video(
                 video=media_file,
                 caption=CAPTION,
+                thumbnail=thumb_file,  # КРИТИЧНО для превью! Без этого - чёрный прямоугольник
                 duration=duration if duration > 0 else None,  # КРИТИЧНО для отображения времени!
                 width=width if width > 0 else None,
                 height=height if height > 0 else None,
@@ -746,6 +759,9 @@ async def handle_url(message: types.Message):
                 await instaloader_dl.cleanup(result.file_path)
             else:
                 await downloader.cleanup(result.file_path)
+            # Удаляем thumbnail
+            if thumb_path and os.path.exists(thumb_path):
+                os.remove(thumb_path)
             await status_msg.delete()
 
             # Логируем успешное завершение

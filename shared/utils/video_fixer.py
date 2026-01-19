@@ -13,9 +13,13 @@ import os
 import logging
 import subprocess
 import json
+import uuid
+import urllib.request
 from typing import Optional, Tuple
 
 logger = logging.getLogger(__name__)
+
+DOWNLOAD_DIR = "/tmp/downloads"
 
 
 def get_video_dimensions(video_path: str) -> tuple[int, int]:
@@ -155,6 +159,70 @@ def ensure_faststart(video_path: str) -> bool:
     except Exception as e:
         logger.warning(f"[FASTSTART] ERROR: {e}")
         return False
+
+
+def download_thumbnail(thumbnail_url: str) -> Optional[str]:
+    """
+    Скачивает и ужимает thumbnail для Telegram.
+
+    Telegram требует:
+    - JPEG формат
+    - До ~320px по длинной стороне
+    - Небольшой вес (<200KB)
+
+    Args:
+        thumbnail_url: URL превью (например с YouTube)
+
+    Returns:
+        Путь к локальному thumbnail файлу или None при ошибке
+    """
+    if not thumbnail_url:
+        return None
+
+    try:
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+        # Генерируем уникальное имя
+        unique_id = uuid.uuid4().hex[:12]
+        temp_path = os.path.join(DOWNLOAD_DIR, f"thumb_raw_{unique_id}.jpg")
+        output_path = os.path.join(DOWNLOAD_DIR, f"thumb_{unique_id}.jpg")
+
+        # Скачиваем thumbnail
+        logger.info(f"[THUMBNAIL] Downloading: {thumbnail_url[:80]}")
+        urllib.request.urlretrieve(thumbnail_url, temp_path)
+
+        if not os.path.exists(temp_path):
+            logger.warning(f"[THUMBNAIL] Download failed")
+            return None
+
+        # Ужимаем до 320px по длинной стороне через ffmpeg
+        # scale='min(320,iw)':-2 - если меньше 320 - не увеличиваем, -2 для чётной высоты
+        resize_cmd = [
+            'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+            '-i', temp_path,
+            '-vf', "scale='min(320,iw)':-2",
+            '-q:v', '5',  # JPEG качество (2-31, меньше = лучше)
+            output_path
+        ]
+
+        result = subprocess.run(resize_cmd, capture_output=True, timeout=10)
+
+        # Удаляем временный файл
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
+
+        if result.returncode == 0 and os.path.exists(output_path):
+            thumb_size = os.path.getsize(output_path)
+            logger.info(f"[THUMBNAIL] SUCCESS: {output_path}, size={thumb_size}")
+            return output_path
+        else:
+            stderr = result.stderr.decode() if result.stderr else 'unknown'
+            logger.warning(f"[THUMBNAIL] Resize failed: {stderr[:100]}")
+            return None
+
+    except Exception as e:
+        logger.warning(f"[THUMBNAIL] ERROR: {e}")
+        return None
 
 
 def fix_video(video_path: str) -> Optional[str]:

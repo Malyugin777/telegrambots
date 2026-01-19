@@ -37,6 +37,7 @@ class PytubeResult:
     title: str = ""
     author: str = ""
     duration: int = 0
+    thumbnail_url: Optional[str] = None  # URL превью с YouTube
     error: Optional[str] = None
 
 
@@ -235,8 +236,9 @@ class PytubeDownloader:
             title = yt.title or "video"
             author = yt.author or "unknown"
             duration = yt.length or 0
+            thumbnail_url = yt.thumbnail_url  # URL превью с YouTube
 
-            logger.info(f"[PYTUBEFIX] Video info: title='{title[:50]}', author='{author}', duration={duration}s")
+            logger.info(f"[PYTUBEFIX] Video info: title='{title[:50]}', author='{author}', duration={duration}s, thumb={thumbnail_url[:50] if thumbnail_url else 'none'}")
 
             # Логируем ВСЕ доступные потоки для анализа
             logger.info(f"[PYTUBEFIX] Available streams:")
@@ -383,7 +385,8 @@ class PytubeDownloader:
                 file_size=actual_size,
                 title=title,
                 author=author,
-                duration=duration
+                duration=duration,
+                thumbnail_url=thumbnail_url
             )
 
         except Exception as e:

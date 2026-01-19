@@ -2,8 +2,10 @@
 Обработчик ссылок - скачивание видео и аудио
 
 Используем:
-- RapidAPI для Instagram (требует авторизации в yt-dlp)
-- yt-dlp для TikTok, YouTube Shorts, Pinterest (работает хорошо)
+- Instagram: instaloader (primary) → RapidAPI (fallback)
+- YouTube Shorts (<5 мин): pytubefix (primary) → RapidAPI (fallback)
+- YouTube полные (≥5 мин): pytubefix (только)
+- TikTok, Pinterest: yt-dlp (работает хорошо)
 """
 import re
 import os
@@ -16,6 +18,8 @@ from aiogram.types import FSInputFile, BufferedInputFile, InputMediaPhoto, Input
 
 from ..services.downloader import VideoDownloader
 from ..services.rapidapi_downloader import RapidAPIDownloader
+from ..services.pytubefix_downloader import PytubeDownloader
+from ..services.instaloader_downloader import InstaloaderDownloader
 from ..services.cache import (
     get_cached_file_ids,
     cache_file_ids,
@@ -50,8 +54,10 @@ TIMEOUT_CAROUSEL = 1200  # 20 минут для каруселей
 TIMEOUT_AUDIO = 600      # 10 минут для аудио
 
 # Глобальные экземпляры загрузчиков
-downloader = VideoDownloader()
-rapidapi = RapidAPIDownloader()
+downloader = VideoDownloader()  # yt-dlp (TikTok, Pinterest)
+rapidapi = RapidAPIDownloader()  # Fallback для Instagram, YouTube Shorts
+pytubefix = PytubeDownloader()  # YouTube (primary)
+instaloader_dl = InstaloaderDownloader()  # Instagram (primary)
 
 # NOTE: Таймауты теперь настроены глобально в main.py через ClientTimeout
 # ClientTimeout(total=None, sock_read=1200) в aiohttp session
@@ -286,21 +292,59 @@ async def handle_url(message: types.Message):
         api_source = None
 
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
-        # Instagram -> RapidAPI download_all() (карусели)
-        # YouTube Shorts (<5 мин) -> yt-dlp (работает отлично) → RapidAPI fallback
-        # YouTube длинные (≥5 мин) -> RapidAPI (адаптивное качество)
-        # TikTok/Pinterest -> yt-dlp первым, RapidAPI fallback если упал
+        # Instagram -> instaloader (primary) → RapidAPI (fallback)
+        # YouTube Shorts (<5 мин) -> pytubefix (primary) → RapidAPI (fallback)
+        # YouTube полные (≥5 мин) -> только pytubefix
+        # TikTok/Pinterest -> yt-dlp
 
         is_instagram = any(d in url.lower() for d in ['instagram.com', 'instagr.am'])
         is_youtube = any(d in url.lower() for d in ['youtube.com', 'youtu.be'])
 
-        # INSTAGRAM - RapidAPI primary
+        # INSTAGRAM - instaloader primary, RapidAPI fallback
         if is_instagram:
-            logger.info(f"Using RapidAPI (primary) for Instagram: {url}")
-            api_source = "rapidapi"
+            logger.info(f"[INSTAGRAM] Trying instaloader (primary): {url}")
 
-            # Скачиваем ВСЕ медиа (для каруселей)
-            carousel = await rapidapi.download_all(url)
+            # Пробуем instaloader
+            insta_result = await instaloader_dl.download(url)
+
+            if insta_result.success:
+                logger.info(f"[INSTAGRAM] instaloader success: {len(insta_result.files)} files")
+                api_source = "instaloader"
+
+                # Преобразуем в формат CarouselResult для единообразия
+                from ..services.rapidapi_downloader import CarouselResult, DownloadedFile
+
+                carousel_files = []
+                has_video = False
+
+                for f in insta_result.files:
+                    carousel_files.append(DownloadedFile(
+                        success=True,
+                        file_path=f.file_path,
+                        filename=f.filename,
+                        file_size=f.file_size,
+                        is_photo=f.is_photo,
+                        title=insta_result.title,
+                        author=insta_result.author
+                    ))
+                    if not f.is_photo:
+                        has_video = True
+
+                carousel = CarouselResult(
+                    success=True,
+                    files=carousel_files,
+                    title=insta_result.title,
+                    author=insta_result.author,
+                    has_video=has_video
+                )
+
+            else:
+                # FALLBACK: Пробуем RapidAPI
+                logger.warning(f"[INSTAGRAM] instaloader failed: {insta_result.error}, trying RapidAPI fallback")
+                await status_msg.edit_text("⏳ Пробую альтернативный способ...")
+
+                api_source = "rapidapi"
+                carousel = await rapidapi.download_all(url)
 
             if not carousel.success:
                 logger.warning(f"Download failed: user={user_id}, error={carousel.error}")
@@ -402,7 +446,10 @@ async def handle_url(message: types.Message):
 
                 # Очистка
                 for file in carousel.files:
-                    await rapidapi.cleanup(file.file_path)
+                    if api_source == "instaloader":
+                        await instaloader_dl.cleanup(file.file_path)
+                    else:
+                        await rapidapi.cleanup(file.file_path)
                 await status_msg.delete()
                 return
 
@@ -422,67 +469,132 @@ async def handle_url(message: types.Message):
                 )
             )
 
-        # YOUTUBE - проверяем длительность
+        # YOUTUBE - pytubefix (primary), RapidAPI fallback для Shorts
         elif is_youtube:
+            logger.info(f"[YOUTUBE] Getting video info: {url}")
+
             # Получаем инфо чтобы узнать длительность
-            info = await rapidapi.get_media_info(url)
+            info = await pytubefix.get_video_info(url)
 
             if not info.success:
-                # Не получилось получить инфо - пробуем yt-dlp
-                logger.warning(f"RapidAPI info failed for YouTube, trying yt-dlp: {info.error}")
-                result = await downloader.download(url, progress_callback=progress_callback)
-                api_source = "ytdlp"
-            elif info.duration > 0 and info.duration < 300:
-                # Короткое видео (<5 мин) - используем yt-dlp (Shorts работают отлично)
-                logger.info(f"YouTube Shorts detected ({info.duration}s), using yt-dlp")
-                result = await downloader.download(url, progress_callback=progress_callback)
-                api_source = "ytdlp"
-            else:
-                # Длинное видео (≥5 мин) или нет инфо о длительности - используем RapidAPI
-                logger.info(f"YouTube long video ({info.duration}s), using RapidAPI with adaptive quality")
-                api_source = "rapidapi"
+                # Не получилось получить инфо - пробуем скачать сразу
+                logger.warning(f"[YOUTUBE] pytubefix info failed: {info.error}, trying direct download")
+                pytube_result = await pytubefix.download(url, quality="720p")
+                api_source = "pytubefix"
 
+                # Преобразуем PytubeResult → DownloadResult
                 from ..services.downloader import DownloadResult, MediaInfo
-                file_result = await rapidapi.download(url, adaptive_quality=True)
-
-                if not file_result.success:
-                    logger.warning(f"RapidAPI download failed: {file_result.error}")
-                    await error_logger.log_error_by_telegram_id(
-                        telegram_id=user_id,
-                        bot_username="SaveNinja_bot",
-                        platform=platform,
-                        url=url,
-                        error_type="download_failed",
-                        error_message=file_result.error,
-                        error_details={"source": "rapidapi"}
+                if pytube_result.success:
+                    result = DownloadResult(
+                        success=True,
+                        file_path=pytube_result.file_path,
+                        filename=pytube_result.filename,
+                        file_size=pytube_result.file_size,
+                        is_photo=False,
+                        send_as_document=False,
+                        info=MediaInfo(
+                            title=pytube_result.title or "video",
+                            author=pytube_result.author or "unknown",
+                            platform=platform
+                        )
                     )
-                    await status_msg.edit_text(f"❌ {make_user_friendly_error(file_result.error)}")
-                    return
+                else:
+                    result = DownloadResult(success=False, error=pytube_result.error)
 
-                # Проверяем размер файла
-                file_size = file_result.file_size or 0
+            elif info.duration > 0 and info.duration < 300:
+                # Короткое видео (<5 мин = Shorts) - pytubefix primary, RapidAPI fallback
+                logger.info(f"[YOUTUBE] Shorts detected ({info.duration}s), using pytubefix (primary)")
+                pytube_result = await pytubefix.download(url, quality="720p")
 
-                if file_size > 2_000_000_000:  # > 2GB
-                    await status_msg.edit_text("❌ Видео слишком большое (>2GB), не могу отправить в Telegram")
-                    await rapidapi.cleanup(file_result.file_path)
-                    return
+                if pytube_result.success:
+                    api_source = "pytubefix"
 
-                # Всегда отправляем как видео (Local Bot API поддерживает до 2GB)
-
-                # Создаём DownloadResult
-                result = DownloadResult(
-                    success=True,
-                    file_path=file_result.file_path,
-                    filename=file_result.filename,
-                    file_size=file_result.file_size,
-                    is_photo=file_result.is_photo,
-                    send_as_document=False,  # Всегда отправляем как видео
-                    info=MediaInfo(
-                        title=file_result.title or "video",
-                        author=file_result.author or "unknown",
-                        platform=platform
+                    # Преобразуем PytubeResult → DownloadResult
+                    from ..services.downloader import DownloadResult, MediaInfo
+                    result = DownloadResult(
+                        success=True,
+                        file_path=pytube_result.file_path,
+                        filename=pytube_result.filename,
+                        file_size=pytube_result.file_size,
+                        is_photo=False,
+                        send_as_document=False,
+                        info=MediaInfo(
+                            title=pytube_result.title or "video",
+                            author=pytube_result.author or "unknown",
+                            platform=platform
+                        )
                     )
-                )
+                else:
+                    # FALLBACK: RapidAPI для Shorts
+                    logger.warning(f"[YOUTUBE] pytubefix failed for Shorts: {pytube_result.error}, trying RapidAPI fallback")
+                    await status_msg.edit_text("⏳ Пробую альтернативный способ...")
+
+                    from ..services.downloader import DownloadResult, MediaInfo
+                    file_result = await rapidapi.download(url, adaptive_quality=False)
+
+                    if not file_result.success:
+                        # Оба упали
+                        logger.error(f"[YOUTUBE] Both pytubefix and RapidAPI failed for Shorts")
+                        await error_logger.log_error_by_telegram_id(
+                            telegram_id=user_id,
+                            bot_username="SaveNinja_bot",
+                            platform=platform,
+                            url=url,
+                            error_type="download_failed",
+                            error_message=f"pytubefix: {pytube_result.error}, RapidAPI: {file_result.error}",
+                            error_details={"source": "both"}
+                        )
+                        await status_msg.edit_text(f"❌ {make_user_friendly_error(pytube_result.error)}")
+                        return
+
+                    api_source = "rapidapi"
+
+                    # Проверяем размер
+                    file_size = file_result.file_size or 0
+                    if file_size > 2_000_000_000:  # > 2GB
+                        await status_msg.edit_text(get_error_message("too_large"))
+                        await rapidapi.cleanup(file_result.file_path)
+                        return
+
+                    # Создаём DownloadResult
+                    result = DownloadResult(
+                        success=True,
+                        file_path=file_result.file_path,
+                        filename=file_result.filename,
+                        file_size=file_result.file_size,
+                        is_photo=False,
+                        send_as_document=False,
+                        info=MediaInfo(
+                            title=file_result.title or "video",
+                            author=file_result.author or "unknown",
+                            platform=platform
+                        )
+                    )
+
+            else:
+                # Длинное видео (≥5 мин) - только pytubefix (720p)
+                logger.info(f"[YOUTUBE] Full video detected ({info.duration}s), using pytubefix only (720p)")
+                pytube_result = await pytubefix.download(url, quality="720p")
+                api_source = "pytubefix"
+
+                # Преобразуем PytubeResult → DownloadResult
+                from ..services.downloader import DownloadResult, MediaInfo
+                if pytube_result.success:
+                    result = DownloadResult(
+                        success=True,
+                        file_path=pytube_result.file_path,
+                        filename=pytube_result.filename,
+                        file_size=pytube_result.file_size,
+                        is_photo=False,
+                        send_as_document=False,
+                        info=MediaInfo(
+                            title=pytube_result.title or "video",
+                            author=pytube_result.author or "unknown",
+                            platform=platform
+                        )
+                    )
+                else:
+                    result = DownloadResult(success=False, error=pytube_result.error)
 
         # TikTok, Pinterest -> yt-dlp
         else:
@@ -588,6 +700,10 @@ async def handle_url(message: types.Message):
             await cache_file_ids(url, file_id, None)
             if api_source == "rapidapi":
                 await rapidapi.cleanup(result.file_path)
+            elif api_source == "pytubefix":
+                await pytubefix.cleanup(result.file_path)
+            elif api_source == "instaloader":
+                await instaloader_dl.cleanup(result.file_path)
             else:
                 await downloader.cleanup(result.file_path)
             await status_msg.delete()
@@ -636,6 +752,10 @@ async def handle_url(message: types.Message):
             await cache_file_ids(url, file_id, None)
             if api_source == "rapidapi":
                 await rapidapi.cleanup(result.file_path)
+            elif api_source == "pytubefix":
+                await pytubefix.cleanup(result.file_path)
+            elif api_source == "instaloader":
+                await instaloader_dl.cleanup(result.file_path)
             else:
                 await downloader.cleanup(result.file_path)
             await status_msg.delete()

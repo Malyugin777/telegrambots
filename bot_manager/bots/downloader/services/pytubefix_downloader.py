@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 
+from shared.utils.video_fixer import fix_video
+
 logger = logging.getLogger(__name__)
 
 DOWNLOAD_DIR = "/tmp/downloads"
@@ -290,11 +292,19 @@ class PytubeDownloader:
                 if not os.path.exists(file_path):
                     return PytubeResult(success=False, error="Merge output not found")
 
+                # Фиксим SAR/DAR для корректного отображения на всех устройствах
+                logger.info(f"[PYTUBEFIX] Fixing video SAR/DAR: {file_path}")
+                fix_video(file_path)
+
             else:
                 # Progressive: скачиваем как обычно
                 file_path = stream.download(output_path=DOWNLOAD_DIR)
                 if not file_path or not os.path.exists(file_path):
                     return PytubeResult(success=False, error="Download failed (no file)")
+
+                # Фиксим SAR/DAR для корректного отображения на всех устройствах
+                logger.info(f"[PYTUBEFIX] Fixing video SAR/DAR: {file_path}")
+                fix_video(file_path)
 
             actual_size = os.path.getsize(file_path)
 

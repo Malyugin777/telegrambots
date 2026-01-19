@@ -608,8 +608,7 @@ async def handle_url(message: types.Message):
                 return
 
             # === ОТПРАВЛЯЕМ ВИДЕО (до 2GB с Local Bot API Server) ===
-            await status_msg.edit_text(get_uploading_message())
-
+            # Статус уже "📤 Отправляю..." после скачивания
             video_msg = await message.answer_video(
                 video=media_file,
                 caption=CAPTION,

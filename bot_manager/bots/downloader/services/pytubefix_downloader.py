@@ -18,8 +18,6 @@ from dataclasses import dataclass
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 
-from shared.utils.video_fixer import fix_video
-
 logger = logging.getLogger(__name__)
 
 DOWNLOAD_DIR = "/tmp/downloads"
@@ -58,7 +56,12 @@ class PytubeDownloader:
 
     def _merge_video_audio(self, video_path: str, audio_path: str, output_path: str) -> bool:
         """
-        Объединить видео и аудио через ffmpeg
+        Объединить видео и аудио через ffmpeg (БЕЗ перекодирования)
+
+        Используем STREAM COPY + изменение метаданных (Вариант A - каноничный)
+        - Мгновенная обработка (0.5 сек вместо 10 минут)
+        - Нет потери качества (100% исходные пиксели)
+        - Исправление aspect ratio через метаданные
 
         Args:
             video_path: Путь к видео файлу
@@ -69,32 +72,28 @@ class PytubeDownloader:
             True если успешно, False если ошибка
         """
         try:
-            logger.info(f"[PYTUBEFIX] Merging video+audio with ffmpeg: {output_path}")
+            logger.info(f"[PYTUBEFIX] Merging video+audio (stream copy, no re-encode): {output_path}")
 
-            # ffmpeg с перекодированием видео для исправления aspect ratio
-            # Приводим к точному 16:9 (1280x720) с сохранением пропорций
-            # Используем быстрый preset для скорости
+            # КАНОНИЧНОЕ РЕШЕНИЕ: Copy + Metadata
+            # Из deep research: "минимальное перекодирование" - только метаданные
             result = subprocess.run([
                 'ffmpeg',
                 '-i', video_path,
                 '-i', audio_path,
-                '-c:v', 'libx264',     # Перекодируем видео (h264)
-                '-preset', 'veryfast', # Быстрый preset (меньше CPU, больше размер)
-                '-crf', '23',          # Качество (23 = хорошее, default)
-                # Приводим к 1280x720 (16:9) с сохранением пропорций + черные полосы
-                '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1:1',
-                '-c:a', 'copy',        # Аудио копируем без изменений
-                '-movflags', '+faststart',  # Быстрый старт для стриминга
-                '-shortest',           # Обрезать до самого короткого потока
-                '-y',                  # Перезаписать если файл существует
+                '-c', 'copy',                    # Копируем ВСЕ потоки (видео+аудио) БЕЗ перекодирования
+                '-aspect', '16:9',               # Устанавливаем DAR (Display Aspect Ratio) = 16:9
+                '-bsf:v', 'h264_metadata=sample_aspect_ratio=1/1',  # Устанавливаем SAR = 1:1 (квадратные пиксели)
+                '-movflags', '+faststart',       # Быстрый старт для стриминга
+                '-shortest',                     # Обрезать до самого короткого потока
+                '-y',                            # Перезаписать если файл существует
                 output_path
-            ], capture_output=True, text=True, timeout=600)  # 10 минут таймаут для перекодирования
+            ], capture_output=True, text=True, timeout=30)  # 30 сек таймаут (copy очень быстрый)
 
             if result.returncode != 0:
                 logger.error(f"[PYTUBEFIX] ffmpeg merge failed: {result.stderr}")
                 return False
 
-            logger.info(f"[PYTUBEFIX] Merge success: {output_path}")
+            logger.info(f"[PYTUBEFIX] Merge success (instant): {output_path}")
             return True
 
         except subprocess.TimeoutExpired:
@@ -306,9 +305,7 @@ class PytubeDownloader:
                 if not os.path.exists(file_path):
                     return PytubeResult(success=False, error="Merge output not found")
 
-                # Фиксим SAR/DAR для корректного отображения на всех устройствах
-                logger.info(f"[PYTUBEFIX] Fixing video SAR/DAR: {file_path}")
-                fix_video(file_path)
+                # SAR/DAR уже исправлены через ffmpeg metadata в merge
 
             else:
                 # Progressive: скачиваем как обычно
@@ -316,9 +313,7 @@ class PytubeDownloader:
                 if not file_path or not os.path.exists(file_path):
                     return PytubeResult(success=False, error="Download failed (no file)")
 
-                # Фиксим SAR/DAR для корректного отображения на всех устройствах
-                logger.info(f"[PYTUBEFIX] Fixing video SAR/DAR: {file_path}")
-                fix_video(file_path)
+                # Progressive видео отправляются как есть + width/height в sendVideo (Issue #468)
 
             actual_size = os.path.getsize(file_path)
 

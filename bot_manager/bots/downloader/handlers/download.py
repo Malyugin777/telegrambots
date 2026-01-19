@@ -64,6 +64,113 @@ instaloader_dl = InstaloaderDownloader()  # Instagram (primary)
 # ClientTimeout(total=None, sock_read=1200) в aiohttp session
 # Здесь используем request_timeout только для переопределения если нужно
 
+# === RETRY CONFIGURATION ===
+RETRY_MAX_ATTEMPTS = 3
+RETRY_BACKOFF = [5, 10, 20]  # секунды между попытками
+
+# Ошибки которые стоит ретраить (network/transport)
+RETRYABLE_ERRORS = (
+    ConnectionResetError,
+    ConnectionError,
+    TimeoutError,
+    asyncio.TimeoutError,
+)
+RETRYABLE_ERROR_STRINGS = (
+    "closing transport",
+    "connection reset",
+    "server disconnected",
+    "broken pipe",
+    "timed out",
+    "network error",
+)
+
+
+def _is_retryable_error(error: Exception) -> bool:
+    """Проверяет, стоит ли ретраить эту ошибку"""
+    # Проверяем тип исключения
+    if isinstance(error, RETRYABLE_ERRORS):
+        return True
+
+    # Проверяем текст ошибки
+    error_str = str(error).lower()
+    return any(s in error_str for s in RETRYABLE_ERROR_STRINGS)
+
+
+async def send_with_retry(
+    send_func,
+    file_path: str,
+    filename: str,
+    thumb_path: str | None = None,
+    max_attempts: int = RETRY_MAX_ATTEMPTS,
+    backoff: list = None,
+    **send_kwargs
+):
+    """
+    Отправка файла с retry логикой.
+
+    Args:
+        send_func: async функция отправки (message.answer_video, message.answer_photo)
+        file_path: путь к файлу
+        filename: имя файла для Telegram
+        thumb_path: путь к thumbnail (опционально)
+        max_attempts: максимум попыток
+        backoff: список задержек между попытками [5, 10, 20]
+        **send_kwargs: дополнительные аргументы для send_func
+            - Если thumbnail=True и thumb_path задан, создаст FSInputFile для thumbnail
+
+    Returns:
+        Результат send_func (Message)
+
+    Raises:
+        Exception: если все попытки исчерпаны
+    """
+    if backoff is None:
+        backoff = RETRY_BACKOFF
+
+    last_error = None
+
+    for attempt in range(max_attempts):
+        try:
+            # Пересоздаём FSInputFile на каждую попытку (handle может быть "одноразовый")
+            media_file = FSInputFile(file_path, filename=filename)
+
+            # Копируем kwargs для модификации
+            kwargs = dict(send_kwargs)
+
+            # Пересоздаём thumbnail если есть путь и флаг thumbnail=True
+            if thumb_path and os.path.exists(thumb_path) and kwargs.get('thumbnail') is True:
+                kwargs['thumbnail'] = FSInputFile(thumb_path)
+            elif kwargs.get('thumbnail') is True:
+                # thumbnail=True но нет файла — убираем из kwargs
+                kwargs.pop('thumbnail', None)
+
+            # Отправляем
+            result = await send_func(media_file, **kwargs)
+            return result
+
+        except Exception as e:
+            last_error = e
+
+            if not _is_retryable_error(e):
+                # Не ретраим: "file too big", "bad request", etc
+                logger.warning(f"[RETRY] Non-retryable error (attempt {attempt + 1}): {e}")
+                raise
+
+            if attempt < max_attempts - 1:
+                wait_time = backoff[attempt] if attempt < len(backoff) else backoff[-1]
+                logger.warning(
+                    f"[RETRY] Retryable error (attempt {attempt + 1}/{max_attempts}): {e}. "
+                    f"Waiting {wait_time}s..."
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(f"[RETRY] All {max_attempts} attempts failed: {e}")
+                raise
+
+    # Не должны сюда попасть, но на всякий случай
+    raise last_error or Exception("All retry attempts failed")
+
+
 # Паттерн для поддерживаемых URL
 URL_PATTERN = re.compile(
     r"https?://(?:www\.|m\.|vm\.|vt\.|[a-z]{2}\.)?"
@@ -286,11 +393,13 @@ async def handle_url(message: types.Message):
     done_event = asyncio.Event()
     progress_task = asyncio.create_task(update_progress_message(status_msg, done_event, progress_data, download_start))
 
+    # === ПЕРЕМЕННЫЕ ДЛЯ CLEANUP (инициализируем до try для доступа в finally) ===
+    result = None  # Результат скачивания (содержит file_path)
+    thumb_path = None  # Путь к thumbnail
+    api_source = None  # Источник API для cleanup
+
     try:
         logger.info(f"[HANDLER_START] user={user_id}, platform={platform}, url={url[:100]}")
-
-        # Переменная для отслеживания используемого API
-        api_source = None
 
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
         # Instagram -> instaloader (primary) → RapidAPI (fallback)
@@ -651,13 +760,17 @@ async def handle_url(message: types.Message):
         # Отправляем медиа
         await status_msg.edit_text(get_uploading_message())
 
-        media_file = FSInputFile(result.file_path, filename=result.filename)
         file_id = None
 
         if result.is_photo:
-            # === ОТПРАВЛЯЕМ ФОТО ===
-            photo_msg = await message.answer_photo(
-                photo=media_file,
+            # === ОТПРАВЛЯЕМ ФОТО (с retry) ===
+            async def _send_photo(media_file, **kwargs):
+                return await message.answer_photo(photo=media_file, **kwargs)
+
+            photo_msg = await send_with_retry(
+                send_func=_send_photo,
+                file_path=result.file_path,
+                filename=result.filename,
                 caption=CAPTION,
                 request_timeout=TIMEOUT_PHOTO,  # 5 минут для фото
             )
@@ -678,16 +791,8 @@ async def handle_url(message: types.Message):
                 api_source=api_source
             )
 
-            # Кэшируем и удаляем
+            # Кэшируем file_id
             await cache_file_ids(url, file_id, None)
-            if api_source == "rapidapi":
-                await rapidapi.cleanup(result.file_path)
-            elif api_source == "pytubefix":
-                await pytubefix.cleanup(result.file_path)
-            elif api_source == "instaloader":
-                await instaloader_dl.cleanup(result.file_path)
-            else:
-                await downloader.cleanup(result.file_path)
             await status_msg.delete()
 
         else:
@@ -699,11 +804,7 @@ async def handle_url(message: types.Message):
                 size_mb = file_size / 1024 / 1024
                 await status_msg.edit_text(get_error_message("too_large"))
                 logger.warning(f"File too large: {size_mb:.1f}MB > 2GB limit")
-                if api_source == "rapidapi":
-                    await rapidapi.cleanup(result.file_path)
-                else:
-                    await downloader.cleanup(result.file_path)
-                return
+                return  # Cleanup будет в finally
 
             # === ОТПРАВЛЯЕМ ВИДЕО (до 2GB с Local Bot API Server) ===
             # Статус уже "📤 Отправляю..." после скачивания
@@ -715,21 +816,24 @@ async def handle_url(message: types.Message):
 
             # Скачиваем thumbnail (превью) если есть URL
             # Это даёт preview "как у конкурентов" вместо чёрного прямоугольника
-            thumb_path = None
-            thumb_file = None
             if result.info and result.info.thumbnail:
                 thumb_path = download_thumbnail(result.info.thumbnail)
-                if thumb_path:
-                    thumb_file = FSInputFile(thumb_path)
 
-            video_msg = await message.answer_video(
-                video=media_file,
+            # === ОТПРАВКА С RETRY (3 попытки, backoff 5/10/20s) ===
+            async def _send_video(media_file, **kwargs):
+                return await message.answer_video(video=media_file, **kwargs)
+
+            video_msg = await send_with_retry(
+                send_func=_send_video,
+                file_path=result.file_path,
+                filename=result.filename,
+                thumb_path=thumb_path,
                 caption=CAPTION,
-                thumbnail=thumb_file,  # КРИТИЧНО для превью! Без этого - чёрный прямоугольник
-                duration=duration if duration > 0 else None,  # КРИТИЧНО для отображения времени!
+                thumbnail=True,  # Флаг что нужен thumbnail (send_with_retry создаст FSInputFile)
+                duration=duration if duration > 0 else None,
                 width=width if width > 0 else None,
                 height=height if height > 0 else None,
-                supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
+                supports_streaming=True,
                 request_timeout=TIMEOUT_VIDEO,  # 15 минут для видео
             )
             file_id = video_msg.video.file_id if video_msg.video else None
@@ -749,19 +853,8 @@ async def handle_url(message: types.Message):
                 api_source=api_source
             )
 
-            # Кэшируем и удаляем (без аудио для длинных видео)
+            # Кэшируем file_id
             await cache_file_ids(url, file_id, None)
-            if api_source == "rapidapi":
-                await rapidapi.cleanup(result.file_path)
-            elif api_source == "pytubefix":
-                await pytubefix.cleanup(result.file_path)
-            elif api_source == "instaloader":
-                await instaloader_dl.cleanup(result.file_path)
-            else:
-                await downloader.cleanup(result.file_path)
-            # Удаляем thumbnail
-            if thumb_path and os.path.exists(thumb_path):
-                os.remove(thumb_path)
             await status_msg.delete()
 
             # Логируем успешное завершение
@@ -802,6 +895,29 @@ async def handle_url(message: types.Message):
         # Останавливаем фоновую задачу обновления прогресса
         done_event.set()
         progress_task.cancel()
+
+        # === CLEANUP: Всегда чистим файлы (даже при ошибках) ===
+        try:
+            # Чистим основной файл
+            if result and result.file_path and os.path.exists(result.file_path):
+                if api_source == "rapidapi":
+                    await rapidapi.cleanup(result.file_path)
+                elif api_source == "pytubefix":
+                    await pytubefix.cleanup(result.file_path)
+                elif api_source == "instaloader":
+                    await instaloader_dl.cleanup(result.file_path)
+                else:
+                    await downloader.cleanup(result.file_path)
+                logger.debug(f"[CLEANUP] Cleaned main file: {result.file_path}")
+
+            # Чистим thumbnail
+            if thumb_path and os.path.exists(thumb_path):
+                os.remove(thumb_path)
+                logger.debug(f"[CLEANUP] Cleaned thumbnail: {thumb_path}")
+
+        except Exception as cleanup_error:
+            logger.warning(f"[CLEANUP] Error during cleanup: {cleanup_error}")
+
         # Освобождаем слот юзера
         await release_user_slot(user_id)
 

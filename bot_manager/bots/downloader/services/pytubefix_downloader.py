@@ -71,7 +71,8 @@ class PytubeDownloader:
         try:
             logger.info(f"[PYTUBEFIX] Merging video+audio with ffmpeg: {output_path}")
 
-            # ffmpeg с перекодированием видео для исправления SAR/DAR
+            # ffmpeg с перекодированием видео для исправления aspect ratio
+            # Приводим к точному 16:9 (1280x720) с сохранением пропорций
             # Используем быстрый preset для скорости
             result = subprocess.run([
                 'ffmpeg',
@@ -80,7 +81,8 @@ class PytubeDownloader:
                 '-c:v', 'libx264',     # Перекодируем видео (h264)
                 '-preset', 'veryfast', # Быстрый preset (меньше CPU, больше размер)
                 '-crf', '23',          # Качество (23 = хорошее, default)
-                '-vf', 'setsar=1:1',   # Форсировать SAR=1:1
+                # Приводим к 1280x720 (16:9) с сохранением пропорций + черные полосы
+                '-vf', 'scale=1280:720:force_original_aspect_ratio=decrease,pad=1280:720:(ow-iw)/2:(oh-ih)/2,setsar=1:1',
                 '-c:a', 'copy',        # Аудио копируем без изменений
                 '-movflags', '+faststart',  # Быстрый старт для стриминга
                 '-shortest',           # Обрезать до самого короткого потока
@@ -193,11 +195,17 @@ class PytubeDownloader:
 
             logger.info(f"[PYTUBEFIX] Video info: title='{title[:50]}', author='{author}', duration={duration}s")
 
+            # Логируем ВСЕ доступные потоки для анализа
+            logger.info(f"[PYTUBEFIX] Available streams:")
+            for s in yt.streams.filter(file_extension='mp4'):
+                logger.info(f"  - {s.resolution} {s.fps}fps {'progressive' if s.includes_audio_track else 'adaptive'} "
+                           f"{'video+audio' if s.includes_audio_track else 'video-only'} size={s.filesize}")
+
             # Переменные для adaptive
             audio_stream = None
             use_adaptive = False
 
-            # Ищем поток с нужным качеством (progressive = видео+аудио вместе)
+            # Ищем поток с нужным качеством (progressive = видео+аудио вместо)
             progressive_stream = yt.streams.filter(
                 progressive=True,
                 file_extension='mp4',

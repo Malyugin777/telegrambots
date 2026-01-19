@@ -40,6 +40,7 @@ from ..messages import (
 )
 from bot_manager.middlewares import log_action
 from bot_manager.services.error_logger import error_logger
+from shared.utils.video_fixer import get_video_dimensions
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -335,9 +336,13 @@ async def handle_url(message: types.Message):
                     if file.is_photo:
                         media_group.append(InputMediaPhoto(media=input_file, caption=caption))
                     else:
+                        # Извлекаем размеры для правильного aspect ratio (Issue #468)
+                        width, height = get_video_dimensions(file.file_path)
                         media_group.append(InputMediaVideo(
                             media=input_file,
                             caption=caption,
+                            width=width if width > 0 else None,
+                            height=height if height > 0 else None,
                             supports_streaming=True
                         ))
 
@@ -366,7 +371,15 @@ async def handle_url(message: types.Message):
                                     if file.is_photo:
                                         media_group.append(InputMediaPhoto(media=input_file, caption=caption))
                                     else:
-                                        media_group.append(InputMediaVideo(media=input_file, caption=caption, supports_streaming=True))
+                                        # Извлекаем размеры для правильного aspect ratio (Issue #468)
+                                        width, height = get_video_dimensions(file.file_path)
+                                        media_group.append(InputMediaVideo(
+                                            media=input_file,
+                                            caption=caption,
+                                            width=width if width > 0 else None,
+                                            height=height if height > 0 else None,
+                                            supports_streaming=True
+                                        ))
                             else:
                                 logger.error(f"Carousel upload failed after {max_retries} attempts: {e}")
                                 raise
@@ -687,9 +700,15 @@ async def handle_url(message: types.Message):
 
             # === ОТПРАВЛЯЕМ ВИДЕО (до 2GB с Local Bot API Server) ===
             # Статус уже "📤 Отправляю..." после скачивания
+
+            # Извлекаем размеры для правильного aspect ratio (Issue #468)
+            width, height = get_video_dimensions(result.file_path)
+
             video_msg = await message.answer_video(
                 video=media_file,
                 caption=CAPTION,
+                width=width if width > 0 else None,
+                height=height if height > 0 else None,
                 supports_streaming=True,  # КРИТИЧНО для автопроигрывания!
                 request_timeout=TIMEOUT_VIDEO,  # 15 минут для видео
             )

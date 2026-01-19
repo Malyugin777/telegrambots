@@ -15,6 +15,42 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
+def get_video_dimensions(video_path: str) -> tuple[int, int]:
+    """
+    Извлекает размеры видео через ffprobe.
+
+    Args:
+        video_path: Путь к видео файлу
+
+    Returns:
+        Кортеж (width, height). Если не удалось определить, возвращает (0, 0)
+    """
+    try:
+        probe_cmd = [
+            'ffprobe', '-v', 'error', '-select_streams', 'v:0',
+            '-show_entries', 'stream=width,height',
+            '-of', 'json', video_path
+        ]
+        result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=10)
+
+        data = json.loads(result.stdout.strip())
+        streams = data.get('streams', [])
+        if not streams:
+            logger.warning(f"[GET_DIMENSIONS] No streams found in {video_path}")
+            return (0, 0)
+
+        stream = streams[0]
+        width = stream.get('width', 0)
+        height = stream.get('height', 0)
+
+        logger.info(f"[GET_DIMENSIONS] {video_path}: {width}x{height}")
+        return (width, height)
+
+    except Exception as e:
+        logger.warning(f"[GET_DIMENSIONS] Error for {video_path}: {e}")
+        return (0, 0)
+
+
 def fix_video(video_path: str) -> Optional[str]:
     """
     Исправляет SAR/DAR для ВСЕХ видео (TikTok, Pinterest, YouTube, Instagram).

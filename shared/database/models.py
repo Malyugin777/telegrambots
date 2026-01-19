@@ -29,6 +29,8 @@ class APISource(str, PyEnum):
     YTDLP = "ytdlp"
     RAPIDAPI = "rapidapi"
     COBALT = "cobalt"
+    PYTUBEFIX = "pytubefix"
+    INSTALOADER = "instaloader"
 
 
 class User(Base):

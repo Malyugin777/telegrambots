@@ -163,12 +163,18 @@ class InstaloaderDownloader:
             # Получаем пост
             post = instaloader.Post.from_shortcode(L.context, shortcode)
 
-            # Проверяем доступность
-            if post.is_private:
-                return InstaloaderResult(
-                    success=False,
-                    error="Private content (login required)"
-                )
+            # Проверяем доступность (is_private может не существовать, проверяем owner_profile)
+            try:
+                # Пробуем получить доступ к метаданным (если приватное - упадет)
+                _ = post.caption
+            except Exception as e:
+                if "login" in str(e).lower() or "private" in str(e).lower():
+                    return InstaloaderResult(
+                        success=False,
+                        error="Private content (login required)"
+                    )
+                # Другая ошибка - пробрасываем дальше
+                raise
 
             # Метаданные
             title = post.caption[:100] if post.caption else "instagram_media"

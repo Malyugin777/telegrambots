@@ -8,10 +8,12 @@ pytubefix Downloader для YouTube
 - YouTube Shorts
 - Полные видео (любой длины)
 - Качество: 720p (фиксированное)
+- Adaptive streams: автоматическое объединение видео+аудио через ffmpeg
 """
 import os
 import logging
 import asyncio
+import subprocess
 from dataclasses import dataclass
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
@@ -51,6 +53,46 @@ class PytubeDownloader:
 
     def __init__(self):
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+    def _merge_video_audio(self, video_path: str, audio_path: str, output_path: str) -> bool:
+        """
+        Объединить видео и аудио через ffmpeg
+
+        Args:
+            video_path: Путь к видео файлу
+            audio_path: Путь к аудио файлу
+            output_path: Путь к выходному файлу
+
+        Returns:
+            True если успешно, False если ошибка
+        """
+        try:
+            logger.info(f"[PYTUBEFIX] Merging video+audio with ffmpeg: {output_path}")
+
+            # ffmpeg -i video.mp4 -i audio.m4a -c copy -shortest output.mp4
+            result = subprocess.run([
+                'ffmpeg',
+                '-i', video_path,
+                '-i', audio_path,
+                '-c', 'copy',  # Копировать без перекодирования (быстро)
+                '-shortest',   # Обрезать до самого короткого потока
+                '-y',          # Перезаписать если файл существует
+                output_path
+            ], capture_output=True, text=True, timeout=300)  # 5 минут таймаут
+
+            if result.returncode != 0:
+                logger.error(f"[PYTUBEFIX] ffmpeg merge failed: {result.stderr}")
+                return False
+
+            logger.info(f"[PYTUBEFIX] Merge success: {output_path}")
+            return True
+
+        except subprocess.TimeoutExpired:
+            logger.error("[PYTUBEFIX] ffmpeg merge timeout")
+            return False
+        except Exception as e:
+            logger.exception(f"[PYTUBEFIX] Merge error: {e}")
+            return False
 
     async def get_video_info(self, url: str) -> PytubeResult:
         """
@@ -143,24 +185,27 @@ class PytubeDownloader:
 
             logger.info(f"[PYTUBEFIX] Video info: title='{title[:50]}', author='{author}', duration={duration}s")
 
+            # Переменные для adaptive
+            audio_stream = None
+            use_adaptive = False
+
             # Ищем поток с нужным качеством (progressive = видео+аудио вместе)
-            stream = yt.streams.filter(
+            progressive_stream = yt.streams.filter(
                 progressive=True,
                 file_extension='mp4',
                 res=quality
             ).first()
 
-            # Если нет 720p, берём лучшее progressive
-            if not stream:
-                logger.warning(f"[PYTUBEFIX] {quality} not available, trying best progressive")
-                stream = yt.streams.filter(
-                    progressive=True,
-                    file_extension='mp4'
-                ).order_by('resolution').desc().first()
+            # Если есть progressive 720p - используем его
+            if progressive_stream:
+                logger.info(f"[PYTUBEFIX] Using progressive stream: {quality}")
+                stream = progressive_stream
 
-            # Если нет progressive, берём видео отдельно + аудио (потом надо объединить)
-            if not stream:
-                logger.warning(f"[PYTUBEFIX] No progressive stream, using adaptive")
+            else:
+                # Нет progressive 720p - используем adaptive (видео отдельно + аудио)
+                logger.info(f"[PYTUBEFIX] Progressive {quality} not available, using adaptive streams")
+
+                # Ищем видео 720p adaptive
                 video_stream = yt.streams.filter(
                     adaptive=True,
                     file_extension='mp4',
@@ -168,8 +213,9 @@ class PytubeDownloader:
                     res=quality
                 ).first()
 
+                # Если нет 720p, берём максимальное качество
                 if not video_stream:
-                    # Берём максимальное качество видео
+                    logger.warning(f"[PYTUBEFIX] {quality} adaptive not found, using best quality")
                     video_stream = yt.streams.filter(
                         adaptive=True,
                         file_extension='mp4',
@@ -179,27 +225,76 @@ class PytubeDownloader:
                 if not video_stream:
                     return PytubeResult(success=False, error="No video stream found")
 
+                # Ищем лучший аудио поток
+                audio_stream = yt.streams.filter(
+                    adaptive=True,
+                    only_audio=True
+                ).order_by('abr').desc().first()
+
+                if not audio_stream:
+                    return PytubeResult(success=False, error="No audio stream found")
+
                 stream = video_stream
+                use_adaptive = True
 
             if not stream:
                 return PytubeResult(success=False, error=f"No {quality} stream available")
 
-            logger.info(f"[PYTUBEFIX] Selected stream: resolution={stream.resolution}, filesize={stream.filesize}")
+            logger.info(f"[PYTUBEFIX] Selected stream: resolution={stream.resolution}, filesize={stream.filesize}, adaptive={use_adaptive}")
 
             # Проверяем размер до скачивания
-            file_size = stream.filesize or 0
-            if file_size > MAX_FILE_SIZE_BYTES:
-                size_mb = file_size // 1024 // 1024
+            video_size = stream.filesize or 0
+            audio_size = audio_stream.filesize if use_adaptive else 0
+            estimated_size = video_size + audio_size
+
+            if estimated_size > MAX_FILE_SIZE_BYTES:
+                size_mb = estimated_size // 1024 // 1024
                 return PytubeResult(
                     success=False,
                     error=f"Video too large ({size_mb}MB > 2GB limit)"
                 )
 
             # Скачиваем
-            file_path = stream.download(output_path=DOWNLOAD_DIR)
+            if use_adaptive:
+                # Adaptive: скачиваем видео + аудио, мержим
+                logger.info(f"[PYTUBEFIX] Downloading adaptive streams: video={stream.resolution}, audio={audio_stream.abr}")
 
-            if not file_path or not os.path.exists(file_path):
-                return PytubeResult(success=False, error="Download failed (no file)")
+                # Скачиваем видео
+                video_path = stream.download(output_path=DOWNLOAD_DIR, filename_prefix="video_")
+                if not video_path or not os.path.exists(video_path):
+                    return PytubeResult(success=False, error="Video download failed")
+
+                # Скачиваем аудио
+                audio_path = audio_stream.download(output_path=DOWNLOAD_DIR, filename_prefix="audio_")
+                if not audio_path or not os.path.exists(audio_path):
+                    os.remove(video_path)
+                    return PytubeResult(success=False, error="Audio download failed")
+
+                # Мержим через ffmpeg
+                import uuid
+                output_filename = f"merged_{uuid.uuid4().hex[:12]}.mp4"
+                file_path = os.path.join(DOWNLOAD_DIR, output_filename)
+
+                merge_success = self._merge_video_audio(video_path, audio_path, file_path)
+
+                # Удаляем исходники
+                try:
+                    os.remove(video_path)
+                    os.remove(audio_path)
+                except:
+                    pass
+
+                if not merge_success:
+                    return PytubeResult(success=False, error="ffmpeg merge failed")
+
+                if not os.path.exists(file_path):
+                    return PytubeResult(success=False, error="Merge output not found")
+
+            else:
+                # Progressive: скачиваем как обычно
+                file_path = stream.download(output_path=DOWNLOAD_DIR)
+                if not file_path or not os.path.exists(file_path):
+                    return PytubeResult(success=False, error="Download failed (no file)")
 
             actual_size = os.path.getsize(file_path)
 

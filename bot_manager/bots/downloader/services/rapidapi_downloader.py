@@ -469,6 +469,11 @@ class RapidAPIDownloader:
     ) -> DownloadedFile:
         """Синхронное скачивание файла"""
         try:
+            # Логируем hostname для диагностики (googlevideo = YouTube CDN, другое = прокси)
+            from urllib.parse import urlparse
+            parsed = urlparse(media_url)
+            logger.info(f"[RAPIDAPI] Download host: {parsed.netloc}, path_start: {parsed.path[:50]}")
+
             # Скачиваем с потоковой передачей (для больших файлов)
             response = curl_requests.get(
                 media_url,

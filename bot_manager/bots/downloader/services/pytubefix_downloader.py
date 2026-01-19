@@ -198,7 +198,7 @@ class PytubeDownloader:
             # Логируем ВСЕ доступные потоки для анализа
             logger.info(f"[PYTUBEFIX] Available streams:")
             for s in yt.streams.filter(file_extension='mp4'):
-                logger.info(f"  - {s.resolution} {s.fps}fps {'progressive' if s.includes_audio_track else 'adaptive'} "
+                logger.info(f"  - {s.resolution} {'progressive' if s.includes_audio_track else 'adaptive'} "
                            f"{'video+audio' if s.includes_audio_track else 'video-only'} size={s.filesize}")
 
             # Переменные для adaptive

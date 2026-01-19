@@ -65,7 +65,8 @@
       "Bash(echo:*)",
       "WebFetch(domain:github.com)",
       "WebSearch",
-      "WebFetch(domain:rapidapi.com)"
+      "WebFetch(domain:rapidapi.com)",
+      "Bash(gh run list:*)"
     ]
   }
 }

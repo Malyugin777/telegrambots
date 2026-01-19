@@ -1,32 +1,220 @@
 # NEXUS PROJECT - ПРАВИЛА
 
-**Версия:** 1.4.0
+**Версия:** 1.5.0
 **Последнее обновление:** 2026-01-19
 
-## РЕАЛИЗОВАННЫЕ ФИЧИ
+## Цель продукта
 
-### Боты (SaveNinja_bot)
-- ✅ Instagram (фото, видео, карусели, истории, актуальное) - RapidAPI
-- ✅ TikTok (видео без водяного знака) - yt-dlp
-- ✅ YouTube Shorts (<5 мин) - yt-dlp с RapidAPI fallback
-- ✅ YouTube Full (≥5 мин, до 2GB) - RapidAPI с адаптивным качеством (720p для <60 мин, 480p для >60 мин)
-- ✅ Pinterest (фото и видео, включая pin.it короткие ссылки) - yt-dlp с RapidAPI fallback
-- ✅ RapidAPI fallback для TikTok/Pinterest/YouTube при сбое yt-dlp
-- ✅ Извлечение аудио из видео (MP3 320kbps)
-- ✅ Redis кэширование file_id для мгновенной переотправки
-- ✅ Авто-обновление сообщений бота из БД (60s TTL)
-- ✅ Performance metrics (время, размер, скорость скачивания)
+SaveNinja Bot (@SaveNinja_bot) - Telegram бот для скачивания медиа из социальных сетей.
 
-### Админка (shadow-api.ru)
-- ✅ Dashboard с метриками (боты, пользователи, скачивания)
-- ✅ User Management (список, профили, активность)
-- ✅ Broadcast System (массовые рассылки с сегментацией)
-- ✅ Activity Logs (действия пользователей)
-- ✅ Error Tracking (логи ошибок по платформам)
-- ✅ Billing Tracker (Фаза 3)
-- ✅ Bot Messages Editor (Фаза 5) - редактирование текстов бота
-- ✅ Performance Monitor (Фаза 6) - метрики производительности
-- ✅ API Usage Tracking - статистика использования yt-dlp/RapidAPI по платформам
+**Поддерживаемые платформы:** Instagram, TikTok, YouTube (Shorts + Full), Pinterest
+**Ограничения:** Telegram лимит 50MB для видео, 2GB для документов (Local Bot API Server)
+**Фокус:** Максимальное качество, правильный aspect ratio, превью как у конкурентов
+
+## Пайплайн обработки видео
+
+```
+URL от пользователя
+       │
+       ▼
+┌──────────────────┐
+│ Определение      │
+│ платформы        │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────────────────────────────────────────────┐
+│                    ПРОВАЙДЕРЫ                            │
+├──────────────────────────────────────────────────────────┤
+│ Instagram    → RapidAPI (primary)                        │
+│ YouTube <5m  → pytubefix → RapidAPI (fallback)           │
+│ YouTube ≥5m  → pytubefix (720p adaptive)                 │
+│ TikTok       → yt-dlp → RapidAPI (fallback)              │
+│ Pinterest    → yt-dlp → RapidAPI (fallback)              │
+└────────┬─────────────────────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Скачивание       │
+│ video + audio    │
+└────────┬─────────┘
+         │
+         ▼
+┌──────────────────┐     ┌─────────────────────────────────┐
+│ Merge/Remux      │────►│ pytubefix: ffmpeg -c copy       │
+│ (если adaptive)  │     │ + h264_metadata SAR=1:1         │
+└────────┬─────────┘     │ + movflags +faststart           │
+         │               └─────────────────────────────────┘
+         ▼
+┌──────────────────┐     ┌─────────────────────────────────┐
+│ fix_video()      │────►│ SAR != 1:1 → scale + re-encode  │
+│                  │     │ codec != h264 → re-encode       │
+└────────┬─────────┘     │ SAR=1:1 + h264 → SKIP           │
+         │               └─────────────────────────────────┘
+         ▼
+┌──────────────────┐     ┌─────────────────────────────────┐
+│ ensure_faststart │────►│ ffmpeg -c copy -movflags        │
+│ (RapidAPI only)  │     │ +faststart -fflags +genpts      │
+└────────┬─────────┘     └─────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐     ┌─────────────────────────────────┐
+│ download_thumb   │────►│ urllib + ffmpeg scale 320px     │
+│ (YouTube)        │     │ JPEG quality 5                  │
+└────────┬─────────┘     └─────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐     ┌─────────────────────────────────┐
+│ sendVideo        │────►│ duration, width, height         │
+│                  │     │ thumbnail, supports_streaming   │
+└────────┬─────────┘     └─────────────────────────────────┘
+         │
+         ▼
+┌──────────────────┐
+│ Cleanup          │
+│ video + thumb    │
+└──────────────────┘
+```
+
+## Провайдеры
+
+| Провайдер | Платформы | Когда используется | Типичные ошибки | Fallback |
+|-----------|-----------|-------------------|-----------------|----------|
+| **pytubefix** | YouTube | Primary для всех YouTube | HTTP 500, throttling | RapidAPI (Shorts) |
+| **RapidAPI** | Instagram, YouTube Full | Primary для IG, fallback для YT | Rate limits, slow download | Нет |
+| **yt-dlp** | TikTok, Pinterest | Primary | Login required (IG), geo-blocks | RapidAPI |
+
+### pytubefix
+- **Когда:** YouTube Shorts (<5 мин), YouTube Full (≥5 мин)
+- **Качество:** 720p fixed (adaptive streams + merge)
+- **Ошибки:** HTTP 500 от YouTube, cipher issues
+- **При ошибке:** Для Shorts → RapidAPI fallback, для Full → показываем ошибку
+
+### RapidAPI (Social Download All In One)
+- **Когда:** Instagram always, YouTube fallback, TikTok/Pinterest fallback
+- **Лимиты:** ~500 req/day (бесплатный план)
+- **Качество:** Адаптивное (720p <60 мин, 480p >60 мин)
+- **Время скачки:** 1-15 мин для длинных видео (68 мин ≈ 10 мин download)
+
+### yt-dlp
+- **Когда:** TikTok, Pinterest (primary)
+- **Особенности:** Chrome impersonate для TikTok, H.264 preferred
+- **При ошибке:** RapidAPI fallback
+
+## Telegram отправка
+
+### sendVideo vs sendDocument
+| Размер | Метод | Причина |
+|--------|-------|---------|
+| ≤50MB | `sendVideo` | Превью, автоплей, duration в UI |
+| >50MB, ≤2GB | `sendDocument` | Только для YouTube Full |
+
+### Параметры sendVideo
+```python
+await message.answer_video(
+    video=media_file,
+    thumbnail=thumb_file,        # FSInputFile ~320px JPEG
+    duration=duration,           # int секунды (из ffprobe)
+    width=width,                 # int пиксели
+    height=height,               # int пиксели
+    supports_streaming=True,     # КРИТИЧНО для автоплея
+    caption=CAPTION,
+)
+```
+
+**Важно:** `duration` передаётся ЯВНО - не зависит от moov atom в файле.
+
+### Local Bot API Server
+- **URL:** `http://telegram_bot_api:8081`
+- **Лимит:** 2GB (вместо 50MB стандартного API)
+- **Файлы:** `/tmp/downloads/` (внутри контейнера)
+- **Таймауты:** 30 мин для документов, 15 мин для видео
+
+## FFmpeg политика
+
+### Используемые команды
+
+**1. Merge (pytubefix adaptive streams):**
+```bash
+ffmpeg -y -i video.mp4 -i audio.m4a \
+  -map 0:v:0 -map 1:a:0 \
+  -c copy \
+  -bsf:v h264_metadata=sample_aspect_ratio=1/1 \
+  -movflags +faststart \
+  -shortest output.mp4
+```
+
+**2. ensure_faststart (RapidAPI videos):**
+```bash
+ffmpeg -y -fflags +genpts -i input.mp4 \
+  -map 0 -c copy \
+  -movflags +faststart \
+  output.mp4
+```
+
+**3. fix_video (SAR correction):**
+```bash
+# Если SAR != 1:1
+ffmpeg -i input.mp4 \
+  -vf "scale=NEW_W:NEW_H,setsar=1:1" \
+  -c:v libx264 -preset fast -crf 20 \
+  -c:a aac -b:a 128k \
+  -movflags +faststart \
+  output.mp4
+```
+
+**4. download_thumbnail:**
+```bash
+ffmpeg -y -i thumb.jpg \
+  -vf "scale='min(320,iw)':-2" \
+  -q:v 5 \
+  thumb_resized.jpg
+```
+
+### Что НЕ делаем
+- ❌ Crop (обрезка) - теряем контент
+- ❌ Blur-fill для 4:3 - слишком тяжело
+- ❌ Forced aspect ratio (`-aspect 16:9`) - растягивает 4:3
+- ❌ Re-encode без необходимости - теряем качество
+
+## Хранилище и очистка
+
+| Что | Путь | TTL |
+|-----|------|-----|
+| Видео | `/tmp/downloads/*.mp4` | Удаляется после отправки |
+| Thumbnail | `/tmp/downloads/thumb_*.jpg` | Удаляется после отправки |
+| Redis cache | `file_id:{url_hash}` | 24 часа |
+
+**Очистка:** Файлы удаляются в `finally` блоке handler'а.
+
+## Метрики и логирование
+
+### Что измеряем
+- `download_time_ms` - время от запроса до отправки
+- `file_size_bytes` - размер файла
+- `download_speed_kbps` - скорость скачивания
+- `api_source` - какой провайдер использовался (ytdlp/rapidapi/pytubefix)
+
+### Логи
+```
+[PYTUBEFIX] Starting download: URL, quality=720p
+[PYTUBEFIX] Video info: title, author, duration
+[PYTUBEFIX] Detected codec: h264
+[FIX_VIDEO] SKIP - already OK: 1280x720, codec=h264, sar=1:1
+[FASTSTART] SUCCESS: path, size=204857344
+[THUMBNAIL] SUCCESS: path, size=15234
+```
+
+## Открытые проблемы/риски
+
+| Проблема | Причина | Митигация |
+|----------|---------|-----------|
+| YouTube HTTP 500 | YouTube throttling/blocks | RapidAPI fallback для Shorts |
+| Долгое скачивание >60 мин видео | RapidAPI медленный | Progress updates каждые 60 сек |
+| Instagram login required | yt-dlp блокируется | RapidAPI primary для IG |
+| 4:3 видео выглядит "уже" | Не растягиваем | Это правильное поведение |
+
+---
 
 ## КРИТИЧЕСКИ ВАЖНО
 
@@ -91,32 +279,6 @@ RAPIDAPI_KEY=3a98632be0msh6686aaf9450a750p1cf661jsn3100d744f778
 RAPIDAPI_HOST=social-download-all-in-one.p.rapidapi.com
 ```
 
-**Загрузчики:**
-- Instagram → RapidAPI primary (yt-dlp требует авторизации)
-- YouTube Shorts (<5 мин) → yt-dlp → RapidAPI fallback
-- YouTube Full (≥5 мин) → RapidAPI с адаптивным качеством (720p/<60 мин, 480p/>60 мин)
-- TikTok, Pinterest → yt-dlp → RapidAPI fallback
-
-## Поддерживаемые платформы
-
-| Платформа | Форматы | Движок | Лимиты |
-|-----------|---------|--------|--------|
-| Instagram | Фото, видео, карусели, истории, актуальное | RapidAPI | до 50MB |
-| Pinterest | Фото и видео (включая pin.it) | yt-dlp | до 50MB |
-| TikTok | Видео без водяного знака | yt-dlp | до 50MB |
-| YouTube Shorts | Короткие видео | yt-dlp | до 50MB |
-| YouTube Full | Полные видео (адаптивное 720p/480p по длительности) | RapidAPI | до 2GB (как документ если >50MB) |
-
-## Трекинг пользователей
-
-Бот автоматически:
-- Сохраняет пользователей в `users` при первом сообщении
-- Обновляет `last_active_at` при каждом сообщении
-- Логирует действия в `action_logs`: start, help, download_request, download_success, audio_extracted
-- Регистрирует себя в `bots` при запуске
-
-Middleware: `bot_manager/middlewares/`
-
 ## Частые команды
 
 ```bash
@@ -129,50 +291,9 @@ ssh root@185.96.80.254 "docker logs admin_api --tail 50"
 # Перезапуск ботов
 ssh root@66.151.33.167 "cd /root/telegrambots/infrastructure && docker compose restart bot_manager"
 
-# Перезапуск админки API
-ssh root@185.96.80.254 "cd /root/admin_panel && docker compose restart"
-
 # Пересборка ботов
 ssh root@66.151.33.167 "cd /root/telegrambots && git pull && cd infrastructure && docker compose up -d --build bot_manager"
 ```
-
-## Структура на серверах
-
-### Hostkey (66.151.33.167)
-```
-/root/telegrambots/
-├── infrastructure/
-│   ├── docker-compose.yml
-│   └── .env
-├── bot_manager/
-├── shared/
-└── admin_panel/  # НЕ ИСПОЛЬЗУЕТСЯ!
-```
-
-### Aeza (185.96.80.254)
-```
-/root/admin_panel/
-├── backend/
-├── frontend/
-├── docker-compose.yml
-└── .env
-
-/var/www/shadow-api/   # Собранный frontend
-├── index.html
-└── assets/
-```
-
-## ОБЯЗАТЕЛЬНО ДЕЛАТЬ
-
-- **SAR/DAR фикс для ВСЕХ видео:**
-  - Применяется автоматически для всех платформ (Instagram, TikTok, Pinterest, YouTube)
-  - Функция `_fix_video()` вызывается после скачивания любого видео
-  - Исправляет неправильный Sample Aspect Ratio (SAR) через явный пересчёт пикселей
-  - НЕ применяется только к фото
-
-- **После значимых изменений обновлять:**
-  - `CLAUDE.md` - если изменилась архитектура, креды, команды
-  - `README.md` - если изменился функционал, поддерживаемые платформы
 
 ## НЕ ДЕЛАТЬ
 
@@ -184,15 +305,75 @@ ssh root@66.151.33.167 "cd /root/telegrambots && git pull && cd infrastructure &
 - docker compose up через ssh для обновления
 
 ✅ **РАЗРЕШЕНО:**
-- **git push** — GitHub Actions сам деплоит на оба сервера
-- **ssh ТОЛЬКО для:**
-  - Миграции БД (`ALTER TABLE` через docker exec)
-  - Просмотр логов (`docker logs`)
-  - Экстренный рестарт (`docker restart`)
+- **git push** — GitHub Actions сам деплоит
+- **ssh ТОЛЬКО для:** миграции БД, просмотр логов, экстренный рестарт
 
-### Другие запреты:
-- Не редактировать код через SSH
-- Не создавать дубли моделей
-- Не путать серверы!
-- Не деплоить админку на Hostkey
-- Не вставлять bcrypt хэши через shell (экранирование $)
+---
+
+## Приложение: Реальные кейсы
+
+### Кейс 1: YouTube Shorts (успех)
+```
+URL: https://youtube.com/shorts/abc123
+Провайдер: pytubefix
+Результат: ✅ 720p, 45MB, duration=58s, thumb=OK
+Время: 12 сек
+```
+
+### Кейс 2: YouTube Full с fallback
+```
+URL: https://youtube.com/watch?v=xyz789 (68 мин)
+Провайдер: pytubefix → HTTP 500 → RapidAPI fallback
+Результат: ✅ 480p, 204MB, duration=4115s, thumb=OK
+Время: 11 мин (slow RapidAPI download)
+```
+
+### Кейс 3: Instagram карусель
+```
+URL: https://instagram.com/p/abc123
+Провайдер: RapidAPI
+Результат: ✅ 5 фото + 2 видео, MediaGroup
+Время: 8 сек
+```
+
+### Кейс 4: TikTok без водяного знака
+```
+URL: https://vm.tiktok.com/xyz
+Провайдер: yt-dlp (Chrome impersonate)
+Результат: ✅ 1080x1920, 15MB, no watermark
+Время: 5 сек
+```
+
+## Приложение: Примеры логов
+
+### Успешное скачивание YouTube
+```
+2026-01-19 12:00:00 - [PYTUBEFIX] Starting download: https://youtube.com/watch?v=abc, quality=720p
+2026-01-19 12:00:01 - [PYTUBEFIX] Video info: title='Test Video', author='Channel', duration=120s, thumb=https://i.ytimg.com/...
+2026-01-19 12:00:01 - [PYTUBEFIX] Using adaptive streams: video=720p, audio=128kbps
+2026-01-19 12:00:15 - [PYTUBEFIX] Merging video+audio (stream copy, no re-encode)
+2026-01-19 12:00:15 - [PYTUBEFIX] Detected codec: h264
+2026-01-19 12:00:16 - [PYTUBEFIX] Merge success (instant)
+2026-01-19 12:00:16 - [FIX_VIDEO] SKIP - already OK: 1280x720, codec=h264, sar=1:1
+2026-01-19 12:00:16 - [THUMBNAIL] Downloading: https://i.ytimg.com/vi/abc/maxresdefault.jpg
+2026-01-19 12:00:17 - [THUMBNAIL] SUCCESS: /tmp/downloads/thumb_abc123.jpg, size=15234
+2026-01-19 12:00:20 - Sent video: user=123456, size=45000000, time=20000ms
+```
+
+### RapidAPI fallback
+```
+2026-01-19 12:00:00 - [PYTUBEFIX] Starting download: https://youtube.com/watch?v=xyz
+2026-01-19 12:00:05 - [PYTUBEFIX] Download error: HTTP Error 500
+2026-01-19 12:00:05 - Trying RapidAPI fallback for: https://youtube.com/watch?v=xyz
+2026-01-19 12:00:06 - [RAPIDAPI] Available qualities: ['360p', '480p', '720p']
+2026-01-19 12:00:06 - [ADAPTIVE] duration=4115s -> desired=480p, selected=480p
+2026-01-19 12:10:00 - [FIX_VIDEO] SKIP - already OK
+2026-01-19 12:10:00 - [FASTSTART] SUCCESS: /tmp/downloads/xyz.mp4, size=204857344
+```
+
+### Ошибка (private video)
+```
+2026-01-19 12:00:00 - [PYTUBEFIX] Starting download: https://youtube.com/watch?v=private
+2026-01-19 12:00:02 - [PYTUBEFIX] Download error: Video is private
+2026-01-19 12:00:02 - Download failed: user=123456, error=🔒 Это приватное видео
+```

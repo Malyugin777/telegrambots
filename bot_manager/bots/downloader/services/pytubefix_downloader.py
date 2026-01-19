@@ -71,14 +71,16 @@ class PytubeDownloader:
         try:
             logger.info(f"[PYTUBEFIX] Merging video+audio with ffmpeg: {output_path}")
 
-            # ffmpeg -i video.mp4 -i audio.m4a -c copy -shortest output.mp4
+            # ffmpeg с форсированием правильного SAR/DAR
             result = subprocess.run([
                 'ffmpeg',
                 '-i', video_path,
                 '-i', audio_path,
-                '-c', 'copy',  # Копировать без перекодирования (быстро)
-                '-shortest',   # Обрезать до самого короткого потока
-                '-y',          # Перезаписать если файл существует
+                '-c', 'copy',          # Копировать без перекодирования (быстро)
+                '-aspect', '16:9',     # Форсировать aspect ratio 16:9
+                '-bsf:v', 'h264_metadata=sample_aspect_ratio=1/1',  # Форсировать SAR=1:1
+                '-shortest',           # Обрезать до самого короткого потока
+                '-y',                  # Перезаписать если файл существует
                 output_path
             ], capture_output=True, text=True, timeout=300)  # 5 минут таймаут
 

@@ -23,7 +23,7 @@ from concurrent.futures import ThreadPoolExecutor
 import aiohttp
 from curl_cffi import requests as curl_requests
 
-from shared.utils.video_fixer import fix_video
+from shared.utils.video_fixer import fix_video, ensure_faststart
 
 logger = logging.getLogger(__name__)
 
@@ -488,6 +488,9 @@ class RapidAPIDownloader:
             # Фиксим видео (SAR/кодек) для корректного отображения в Telegram
             if not is_photo:
                 fix_video(file_path)
+                # КРИТИЧНО: Гарантируем faststart (moov в начале) для корректного duration в Telegram
+                # fix_video может SKIP если SAR уже OK и кодек H.264, но moov может быть в конце!
+                ensure_faststart(file_path)
 
             file_size = os.path.getsize(file_path)
 

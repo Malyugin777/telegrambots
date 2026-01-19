@@ -83,6 +83,71 @@ RETRYABLE_ERROR_STRINGS = (
     "network error",
 )
 
+# === PHASE 7.0 TELEMETRY: Error Classification ===
+# HARD_KILL = мгновенный fallback + cooldown (IP ban, auth required)
+# STALL = retry once, then fallback (network issues)
+# PROVIDER_BUG = логируем, не cooldown (parser error, format unavailable)
+HARD_KILL_PATTERNS = (
+    "ssl: unexpected_eof",
+    "ssl_error_eof",
+    "403 forbidden",
+    "429 too many",
+    "sign in to confirm",
+    "login required",
+    "private video",
+    "age-restricted",
+)
+STALL_PATTERNS = (
+    "download stalled",
+    "connection timeout",
+    "incomplete read",
+    "no progress",
+    "connection reset",
+    "server disconnected",
+)
+
+
+def classify_error(error: str) -> str:
+    """
+    Phase 7.0 Telemetry: Классифицирует ошибку для аналитики и cooldown.
+
+    Returns:
+        'HARD_KILL' - IP ban, auth required → instant fallback + cooldown
+        'STALL' - network issue → retry once, then fallback
+        'PROVIDER_BUG' - parser error → log only, no cooldown
+    """
+    if not error:
+        return "PROVIDER_BUG"
+
+    error_lower = error.lower()
+
+    for pattern in HARD_KILL_PATTERNS:
+        if pattern in error_lower:
+            return "HARD_KILL"
+
+    for pattern in STALL_PATTERNS:
+        if pattern in error_lower:
+            return "STALL"
+
+    return "PROVIDER_BUG"
+
+
+def get_duration_bucket(duration_sec: int) -> str:
+    """
+    Phase 7.0 Telemetry: Определяет bucket по длительности видео.
+
+    Returns:
+        'shorts' - <5 min (300 sec)
+        'medium' - 5-30 min (300-1800 sec)
+        'long' - >30 min (>1800 sec)
+    """
+    if duration_sec < 300:
+        return "shorts"
+    elif duration_sec < 1800:
+        return "medium"
+    else:
+        return "long"
+
 
 def _is_retryable_error(error: Exception) -> bool:
     """Проверяет, стоит ли ретраить эту ошибку"""
@@ -418,7 +483,8 @@ async def handle_url(message: types.Message):
             carousel = await rapidapi.download_all(url)
 
             if not carousel.success:
-                logger.warning(f"Download failed: user={user_id}, error={carousel.error}")
+                error_class = classify_error(carousel.error)
+                logger.warning(f"Download failed: user={user_id}, error={carousel.error}, class={error_class}")
                 await error_logger.log_error_by_telegram_id(
                     telegram_id=user_id,
                     bot_username="SaveNinja_bot",
@@ -426,7 +492,7 @@ async def handle_url(message: types.Message):
                     url=url,
                     error_type="download_failed",
                     error_message=carousel.error,
-                    error_details={"source": "rapidapi"}
+                    error_details={"source": "rapidapi", "error_class": error_class}
                 )
                 await status_msg.edit_text(f"❌ {make_user_friendly_error(carousel.error)}")
                 return
@@ -506,7 +572,12 @@ async def handle_url(message: types.Message):
                 logger.info(f"Sent carousel: user={user_id}, files={len(carousel.files)}, time={download_time_ms}ms, size={total_size}")
                 await log_action(
                     user_id, "download_success",
-                    {"type": "carousel", "platform": platform, "files_count": len(carousel.files)},
+                    {
+                        "type": "carousel",
+                        "platform": platform,
+                        "files_count": len(carousel.files),
+                        "has_video": carousel.has_video,
+                    },
                     download_time_ms=download_time_ms,
                     file_size_bytes=total_size,
                     download_speed_kbps=download_speed,
@@ -620,7 +691,8 @@ async def handle_url(message: types.Message):
                         )
                     else:
                         # Все 3 способа упали
-                        logger.error(f"[YOUTUBE] All 3 methods failed: yt-dlp, pytubefix, RapidAPI")
+                        error_class = classify_error(result.error)  # Классифицируем по первой ошибке
+                        logger.error(f"[YOUTUBE] All 3 methods failed: yt-dlp, pytubefix, RapidAPI, class={error_class}")
                         await error_logger.log_error_by_telegram_id(
                             telegram_id=user_id,
                             bot_username="SaveNinja_bot",
@@ -628,7 +700,13 @@ async def handle_url(message: types.Message):
                             url=url,
                             error_type="download_failed",
                             error_message=f"yt-dlp: {result.error}, pytubefix: {pytube_result.error}, RapidAPI: {file_result.error}",
-                            error_details={"source": "all_three"}
+                            error_details={
+                                "source": "all_three",
+                                "error_class": error_class,
+                                "ytdlp_class": classify_error(result.error),
+                                "pytubefix_class": classify_error(pytube_result.error),
+                                "rapidapi_class": classify_error(file_result.error),
+                            }
                         )
                         await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
                         return
@@ -673,7 +751,8 @@ async def handle_url(message: types.Message):
                             )
                         )
                     else:
-                        logger.error(f"Both yt-dlp and RapidAPI failed for: {url}")
+                        error_class = classify_error(result.error)
+                        logger.error(f"Both yt-dlp and RapidAPI failed for: {url}, class={error_class}")
                         await error_logger.log_error_by_telegram_id(
                             telegram_id=user_id,
                             bot_username="SaveNinja_bot",
@@ -681,11 +760,17 @@ async def handle_url(message: types.Message):
                             url=url,
                             error_type="download_failed",
                             error_message=f"yt-dlp: {result.error}, RapidAPI: {file_result.error}",
-                            error_details={"source": "both"}
+                            error_details={
+                                "source": "both",
+                                "error_class": error_class,
+                                "ytdlp_class": classify_error(result.error),
+                                "rapidapi_class": classify_error(file_result.error),
+                            }
                         )
                         await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
                         return
                 else:
+                    error_class = classify_error(result.error)
                     await error_logger.log_error_by_telegram_id(
                         telegram_id=user_id,
                         bot_username="SaveNinja_bot",
@@ -693,7 +778,7 @@ async def handle_url(message: types.Message):
                         url=url,
                         error_type="download_failed",
                         error_message=result.error,
-                        error_details={"source": "yt-dlp"}
+                        error_details={"source": "yt-dlp", "error_class": error_class}
                     )
                     await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
                     return
@@ -795,10 +880,18 @@ async def handle_url(message: types.Message):
             file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
             download_speed = int(file_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
 
-            logger.info(f"Sent video: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s")
+            # Phase 7.0 Telemetry: duration_bucket для аналитики
+            duration_bucket = get_duration_bucket(duration) if duration > 0 else "unknown"
+
+            logger.info(f"Sent video: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s, bucket={duration_bucket}")
             await log_action(
                 user_id, "download_success",
-                {"type": "video", "platform": platform},
+                {
+                    "type": "video",
+                    "platform": platform,
+                    "duration_bucket": duration_bucket,
+                    "duration_sec": duration,
+                },
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
                 download_speed_kbps=download_speed,
@@ -814,7 +907,8 @@ async def handle_url(message: types.Message):
             logger.info(f"[HANDLER_SUCCESS] user={user_id}, total_time={total_time:.1f}s")
 
     except Exception as e:
-        logger.exception(f"Handler error: {e}")
+        error_class = classify_error(str(e))
+        logger.exception(f"Handler error: {e}, class={error_class}")
         await error_logger.log_error_by_telegram_id(
             telegram_id=user_id,
             bot_username="SaveNinja_bot",
@@ -822,7 +916,11 @@ async def handle_url(message: types.Message):
             url=url,
             error_type="exception",
             error_message=str(e)[:200],
-            error_details={"exception_type": type(e).__name__}
+            error_details={
+                "exception_type": type(e).__name__,
+                "error_class": error_class,
+                "api_source": api_source,
+            }
         )
 
         # Человеческие сообщения об ошибках (используем messages.py)

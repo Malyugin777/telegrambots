@@ -448,7 +448,17 @@ ALERT_RULES = {
 
 ---
 
-### 7.4 Testing & Optimization (Phase 4)
+### 7.4 Future Improvements (Post-MVP)
+
+**Отложено на потом:**
+- [ ] **Async delivery mode** — для видео >30 мин: "готовлю, пришлю позже" + background worker
+- [ ] **Soft fail budget** — бюджет кончился → "YouTube перегружен, попробуй позже" вместо hard block
+- [ ] **Cancellation-safe downloads** — async cancel не оставляет мусор (tmp files, zombie processes)
+- [ ] **Centralized download orchestrator** — один модуль для fallback логики (сейчас размазано по файлам)
+
+---
+
+### 7.5 Testing & Optimization (Phase 4)
 
 **Тестовые сценарии:**
 - [ ] Short video (<5 min) - должен качаться за <10 сек
@@ -464,7 +474,7 @@ ALERT_RULES = {
 
 ---
 
-### 7.5 VPS Scaling
+### 7.6 VPS Scaling
 
 **Текущий VPS (Hostkey):**
 - 2 vCore, 2GB RAM, 3TB traffic

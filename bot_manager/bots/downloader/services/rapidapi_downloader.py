@@ -290,12 +290,17 @@ class RapidAPIDownloader:
         if not info.success:
             return DownloadedFile(success=False, error=info.error)
 
+        # Логируем доступные качества
+        available_qualities = [m.quality for m in info.medias if m.type == "video"]
+        logger.info(f"[RAPIDAPI] Available qualities: {available_qualities}")
+
         # Выбираем медиа
         if adaptive_quality and info.duration > 0:
             # Адаптивное качество для YouTube
             desired_quality = get_quality_for_duration(info.duration)
             target_media = select_best_media_by_quality(info.medias, desired_quality)
-            logger.info(f"[ADAPTIVE] duration={info.duration}s -> quality={desired_quality}p")
+            selected_quality = getattr(target_media, 'quality', 'unknown') if target_media else 'none'
+            logger.info(f"[ADAPTIVE] duration={info.duration}s -> desired={desired_quality}p, selected={selected_quality}")
         else:
             # Обычный режим - берём лучшее видео или фото
             video_media = None

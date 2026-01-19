@@ -54,14 +54,33 @@ class PytubeDownloader:
     def __init__(self):
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
+    def _get_video_codec(self, video_path: str) -> str:
+        """Определить кодек видео через ffprobe"""
+        try:
+            result = subprocess.run([
+                'ffprobe', '-v', 'error',
+                '-select_streams', 'v:0',
+                '-show_entries', 'stream=codec_name',
+                '-of', 'default=noprint_wrappers=1:nokey=1',
+                video_path
+            ], capture_output=True, text=True, timeout=5)
+
+            codec = result.stdout.strip().lower()
+            logger.info(f"[PYTUBEFIX] Detected codec: {codec}")
+            return codec
+        except Exception as e:
+            logger.warning(f"[PYTUBEFIX] Failed to detect codec: {e}, assuming h264")
+            return "h264"
+
     def _merge_video_audio(self, video_path: str, audio_path: str, output_path: str) -> bool:
         """
         Объединить видео и аудио через ffmpeg (БЕЗ перекодирования)
 
-        Используем STREAM COPY + изменение метаданных (Вариант A - каноничный)
+        Используем STREAM COPY + изменение метаданных (Вариант A+ - каноничный)
         - Мгновенная обработка (0.5 сек вместо 10 минут)
         - Нет потери качества (100% исходные пиксели)
-        - Исправление aspect ratio через метаданные
+        - Исправление aspect ratio через метаданные (SAR=1/1)
+        - НЕ меняем геометрию кадра (без -aspect)
 
         Args:
             video_path: Путь к видео файлу
@@ -74,20 +93,45 @@ class PytubeDownloader:
         try:
             logger.info(f"[PYTUBEFIX] Merging video+audio (stream copy, no re-encode): {output_path}")
 
-            # КАНОНИЧНОЕ РЕШЕНИЕ: Copy + Metadata
-            # Из deep research: "минимальное перекодирование" - только метаданные
-            result = subprocess.run([
+            # Определяем кодек для правильного bsf (h264 vs hevc)
+            codec = self._get_video_codec(video_path)
+
+            # Выбираем правильный bitstream filter
+            if 'hevc' in codec or 'h265' in codec:
+                bsf = 'hevc_metadata=sample_aspect_ratio=1/1'
+            elif 'vp9' in codec or 'vp8' in codec:
+                bsf = None  # VP9/VP8 не поддерживают SAR metadata через bsf
+            else:  # h264, avc1, etc
+                bsf = 'h264_metadata=sample_aspect_ratio=1/1'
+
+            # КАНОНИЧНОЕ РЕШЕНИЕ: Copy + Metadata (Variant A+)
+            # Из deep research + GPT-рекомендации:
+            # - НЕ трогаем DAR (без -aspect) - иначе 4:3 растянется до 16:9
+            # - Только SAR=1/1 (квадратные пиксели) для Telegram
+            # - faststart для корректного duration/preview
+            cmd = [
                 'ffmpeg',
+                '-y',                            # Перезаписать если файл существует
+                '-hide_banner',                  # Меньше мусора в логах
+                '-loglevel', 'error',            # Только ошибки
                 '-i', video_path,
                 '-i', audio_path,
-                '-c', 'copy',                    # Копируем ВСЕ потоки (видео+аудио) БЕЗ перекодирования
-                '-aspect', '16:9',               # Устанавливаем DAR (Display Aspect Ratio) = 16:9
-                '-bsf:v', 'h264_metadata=sample_aspect_ratio=1/1',  # Устанавливаем SAR = 1:1 (квадратные пиксели)
-                '-movflags', '+faststart',       # Быстрый старт для стриминга
+                '-map', '0:v:0',                 # Берём первый видео поток
+                '-map', '1:a:0',                 # Берём первый аудио поток
+                '-c', 'copy',                    # Копируем БЕЗ перекодирования
+            ]
+
+            # Добавляем bsf если кодек поддерживает
+            if bsf:
+                cmd.extend(['-bsf:v', bsf])
+
+            cmd.extend([
+                '-movflags', '+faststart',       # moov atom в начало → Telegram видит duration
                 '-shortest',                     # Обрезать до самого короткого потока
-                '-y',                            # Перезаписать если файл существует
                 output_path
-            ], capture_output=True, text=True, timeout=30)  # 30 сек таймаут (copy очень быстрый)
+            ])
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)  # 30 сек таймаут (copy быстрый)
 
             if result.returncode != 0:
                 logger.error(f"[PYTUBEFIX] ffmpeg merge failed: {result.stderr}")

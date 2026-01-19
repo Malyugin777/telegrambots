@@ -452,12 +452,13 @@ class RapidAPIDownloader:
     ) -> DownloadedFile:
         """Синхронное скачивание файла"""
         try:
-            # Скачиваем
+            # Скачиваем с потоковой передачей (для больших файлов)
             response = curl_requests.get(
                 media_url,
                 impersonate='chrome',
                 timeout=DOWNLOAD_TIMEOUT,
-                allow_redirects=True
+                allow_redirects=True,
+                stream=True  # Включаем потоковую передачу
             )
             response.raise_for_status()
 
@@ -478,9 +479,11 @@ class RapidAPIDownloader:
             unique_id = str(uuid.uuid4())[:12]
             file_path = os.path.join(DOWNLOAD_DIR, f"{unique_id}.{ext}")
 
-            # Сохраняем
+            # Сохраняем потоково (чанками по 1MB)
             with open(file_path, 'wb') as f:
-                f.write(response.content)
+                for chunk in response.iter_content(chunk_size=1024*1024):  # 1MB чанки
+                    if chunk:
+                        f.write(chunk)
 
             # Фиксим видео (SAR/кодек) для корректного отображения в Telegram
             if not is_photo:

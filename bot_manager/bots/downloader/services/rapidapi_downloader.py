@@ -54,6 +54,7 @@ class RapidAPIResult:
     title: str = ""
     author: str = ""
     duration: int = 0  # Длительность видео в секундах
+    thumbnail: Optional[str] = None  # URL превью
     error: Optional[str] = None
 
 
@@ -67,6 +68,7 @@ class DownloadedFile:
     is_photo: bool = False
     title: str = ""
     author: str = ""
+    thumbnail: Optional[str] = None  # URL превью для видео
     error: Optional[str] = None
 
 
@@ -226,12 +228,24 @@ class RapidAPIDownloader:
     def _parse_response(self, data: dict) -> RapidAPIResult:
         """Парсит ответ RapidAPI"""
         try:
+            # Логируем ключи для отладки (только верхний уровень)
+            logger.debug(f"[RAPIDAPI] Response keys: {list(data.keys())}")
+
             # Проверяем на ошибки
             if data.get("error"):
                 return RapidAPIResult(
                     success=False,
                     error=data.get("message", "Unknown error")
                 )
+
+            # Извлекаем thumbnail (проверяем разные возможные поля)
+            thumbnail = None
+            for thumb_key in ('thumbnail', 'thumb', 'poster', 'preview', 'cover', 'thumbnailUrl'):
+                thumb_value = data.get(thumb_key)
+                if thumb_value and isinstance(thumb_value, str) and thumb_value.startswith('http'):
+                    thumbnail = thumb_value
+                    logger.info(f"[RAPIDAPI] Found thumbnail in '{thumb_key}': {thumbnail[:80]}...")
+                    break
 
             medias = []
             raw_medias = data.get("medias", [])
@@ -279,7 +293,8 @@ class RapidAPIDownloader:
                 medias=medias,
                 title=data.get("title", "")[:100],
                 author=data.get("author", "") or data.get("username", ""),
-                duration=duration
+                duration=duration,
+                thumbnail=thumbnail
             )
 
         except Exception as e:
@@ -343,7 +358,8 @@ class RapidAPIDownloader:
                     target_media.url,
                     is_photo,
                     info.title,
-                    info.author
+                    info.author,
+                    info.thumbnail  # Передаём thumbnail URL
                 ),
                 timeout=DOWNLOAD_TIMEOUT
             )
@@ -448,7 +464,8 @@ class RapidAPIDownloader:
         media_url: str,
         is_photo: bool,
         title: str,
-        author: str
+        author: str,
+        thumbnail_url: Optional[str] = None
     ) -> DownloadedFile:
         """Синхронное скачивание файла"""
         try:
@@ -507,6 +524,14 @@ class RapidAPIDownloader:
             safe_title = "".join(c for c in title if c.isalnum() or c in ' -_').strip()[:50]
             filename = f"{safe_title or 'media'}.{ext}"
 
+            # Thumbnail: используем URL из API или извлекаем кадр из видео
+            final_thumbnail = thumbnail_url
+            if not final_thumbnail and not is_photo:
+                # Fallback: извлекаем кадр из видео через ffmpeg
+                final_thumbnail = self._extract_video_frame(file_path)
+                if final_thumbnail:
+                    logger.info(f"[RAPIDAPI] Extracted thumbnail from video: {final_thumbnail}")
+
             return DownloadedFile(
                 success=True,
                 file_path=file_path,
@@ -514,12 +539,54 @@ class RapidAPIDownloader:
                 file_size=file_size,
                 is_photo=is_photo,
                 title=title,
-                author=author
+                author=author,
+                thumbnail=final_thumbnail
             )
 
         except Exception as e:
             logger.exception(f"File download error: {e}")
             return DownloadedFile(success=False, error=str(e)[:100])
+
+    def _extract_video_frame(self, video_path: str) -> Optional[str]:
+        """
+        Извлекает кадр из видео для thumbnail (fallback когда API не даёт превью)
+
+        Args:
+            video_path: Путь к видео файлу
+
+        Returns:
+            Путь к jpg файлу с кадром или None при ошибке
+        """
+        try:
+            import subprocess
+
+            # Генерируем путь для thumbnail
+            thumb_path = video_path.rsplit('.', 1)[0] + "_thumb.jpg"
+
+            # Извлекаем кадр на 1 секунде, масштабируем до 320px
+            cmd = [
+                'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+                '-ss', '1',  # Пропускаем 1 секунду (избегаем чёрный кадр)
+                '-i', video_path,
+                '-frames:v', '1',  # Только 1 кадр
+                '-vf', "scale='min(320,iw)':-2",  # Масштаб до 320px
+                '-q:v', '5',  # JPEG качество
+                thumb_path
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, timeout=10)
+
+            if result.returncode == 0 and os.path.exists(thumb_path):
+                logger.info(f"[RAPIDAPI] Frame extracted: {thumb_path}")
+                return thumb_path
+            else:
+                stderr = result.stderr.decode() if result.stderr else 'unknown'
+                logger.warning(f"[RAPIDAPI] Frame extraction failed: {stderr[:100]}")
+                return None
+
+        except Exception as e:
+            logger.warning(f"[RAPIDAPI] Frame extraction error: {e}")
+            return None
 
     async def download_audio(self, url: str) -> DownloadedFile:
         """

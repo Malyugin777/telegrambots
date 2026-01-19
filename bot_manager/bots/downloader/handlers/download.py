@@ -553,6 +553,7 @@ async def handle_url(message: types.Message):
                 info=MediaInfo(
                     title=carousel.title or "video",
                     author=carousel.author or "unknown",
+                    thumbnail=single_file.thumbnail,  # RapidAPI/ffmpeg thumbnail
                     platform="instagram"
                 )
             )
@@ -657,6 +658,7 @@ async def handle_url(message: types.Message):
                         info=MediaInfo(
                             title=file_result.title or "video",
                             author=file_result.author or "unknown",
+                            thumbnail=file_result.thumbnail,  # RapidAPI thumbnail
                             platform=platform
                         )
                     )
@@ -726,6 +728,7 @@ async def handle_url(message: types.Message):
                         info=MediaInfo(
                             title=file_result.title or "video",
                             author=file_result.author or "unknown",
+                            thumbnail=file_result.thumbnail,  # RapidAPI thumbnail
                             platform=platform
                         )
                     )
@@ -814,10 +817,17 @@ async def handle_url(message: types.Message):
             width, height = get_video_dimensions(result.file_path)
             duration = get_video_duration(result.file_path)
 
-            # Скачиваем thumbnail (превью) если есть URL
+            # Скачиваем/используем thumbnail (превью)
             # Это даёт preview "как у конкурентов" вместо чёрного прямоугольника
             if result.info and result.info.thumbnail:
-                thumb_path = download_thumbnail(result.info.thumbnail)
+                thumbnail_value = result.info.thumbnail
+                if thumbnail_value.startswith('http'):
+                    # URL — скачиваем и ужимаем
+                    thumb_path = download_thumbnail(thumbnail_value)
+                elif os.path.exists(thumbnail_value):
+                    # Локальный файл (ffmpeg extracted) — используем напрямую
+                    thumb_path = thumbnail_value
+                    logger.info(f"[THUMBNAIL] Using local file: {thumb_path}")
 
             # === ОТПРАВКА С RETRY (3 попытки, backoff 5/10/20s) ===
             async def _send_video(media_file, **kwargs):

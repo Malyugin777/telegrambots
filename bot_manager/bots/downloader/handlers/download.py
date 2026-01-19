@@ -300,51 +300,13 @@ async def handle_url(message: types.Message):
         is_instagram = any(d in url.lower() for d in ['instagram.com', 'instagr.am'])
         is_youtube = any(d in url.lower() for d in ['youtube.com', 'youtu.be'])
 
-        # INSTAGRAM - instaloader primary, RapidAPI fallback
+        # INSTAGRAM - RapidAPI (instaloader блокируется Instagram без логина)
         if is_instagram:
-            logger.info(f"[INSTAGRAM] Trying instaloader (primary): {url}")
+            logger.info(f"[INSTAGRAM] Using RapidAPI: {url}")
+            api_source = "rapidapi"
 
-            # Пробуем instaloader
-            insta_result = await instaloader_dl.download(url)
-
-            if insta_result.success:
-                logger.info(f"[INSTAGRAM] instaloader success: {len(insta_result.files)} files")
-                api_source = "instaloader"
-
-                # Преобразуем в формат CarouselResult для единообразия
-                from ..services.rapidapi_downloader import CarouselResult, DownloadedFile
-
-                carousel_files = []
-                has_video = False
-
-                for f in insta_result.files:
-                    carousel_files.append(DownloadedFile(
-                        success=True,
-                        file_path=f.file_path,
-                        filename=f.filename,
-                        file_size=f.file_size,
-                        is_photo=f.is_photo,
-                        title=insta_result.title,
-                        author=insta_result.author
-                    ))
-                    if not f.is_photo:
-                        has_video = True
-
-                carousel = CarouselResult(
-                    success=True,
-                    files=carousel_files,
-                    title=insta_result.title,
-                    author=insta_result.author,
-                    has_video=has_video
-                )
-
-            else:
-                # FALLBACK: Пробуем RapidAPI
-                logger.warning(f"[INSTAGRAM] instaloader failed: {insta_result.error}, trying RapidAPI fallback")
-                await status_msg.edit_text("⏳ Пробую альтернативный способ...")
-
-                api_source = "rapidapi"
-                carousel = await rapidapi.download_all(url)
+            # Скачиваем ВСЕ медиа (для каруселей)
+            carousel = await rapidapi.download_all(url)
 
             if not carousel.success:
                 logger.warning(f"Download failed: user={user_id}, error={carousel.error}")

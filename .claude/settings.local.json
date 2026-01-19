@@ -64,7 +64,8 @@
       "Bash(npm run build:*)",
       "Bash(echo:*)",
       "WebFetch(domain:github.com)",
-      "WebSearch"
+      "WebSearch",
+      "WebFetch(domain:rapidapi.com)"
     ]
   }
 }

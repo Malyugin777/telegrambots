@@ -559,14 +559,39 @@ class RapidAPIDownloader:
         """
         try:
             import subprocess
+            import json
+
+            # Получаем длительность видео для умного выбора -ss
+            duration = 0
+            try:
+                probe_cmd = [
+                    'ffprobe', '-v', 'error',
+                    '-show_entries', 'format=duration',
+                    '-of', 'json', video_path
+                ]
+                probe_result = subprocess.run(probe_cmd, capture_output=True, text=True, timeout=5)
+                if probe_result.returncode == 0:
+                    data = json.loads(probe_result.stdout)
+                    duration = float(data.get('format', {}).get('duration', 0))
+            except Exception:
+                pass
+
+            # Выбираем позицию кадра в зависимости от длины видео
+            # Цель: избежать чёрный кадр/титр в начале, но не выйти за пределы
+            if duration > 5:
+                seek_pos = '2'  # На 2с — обычно уже контент
+            elif duration > 2:
+                seek_pos = '1'  # На 1с — безопасно
+            else:
+                seek_pos = '0.3'  # Короткое видео — почти в начале
 
             # Генерируем путь для thumbnail
             thumb_path = video_path.rsplit('.', 1)[0] + "_thumb.jpg"
 
-            # Извлекаем кадр на 1 секунде, масштабируем до 320px
+            # Извлекаем кадр, масштабируем до 320px
             cmd = [
                 'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
-                '-ss', '1',  # Пропускаем 1 секунду (избегаем чёрный кадр)
+                '-ss', seek_pos,
                 '-i', video_path,
                 '-frames:v', '1',  # Только 1 кадр
                 '-vf', "scale='min(320,iw)':-2",  # Масштаб до 320px
@@ -577,7 +602,7 @@ class RapidAPIDownloader:
             result = subprocess.run(cmd, capture_output=True, timeout=10)
 
             if result.returncode == 0 and os.path.exists(thumb_path):
-                logger.info(f"[RAPIDAPI] Frame extracted: {thumb_path}")
+                logger.info(f"[RAPIDAPI] Frame extracted at {seek_pos}s: {thumb_path}")
                 return thumb_path
             else:
                 stderr = result.stderr.decode() if result.stderr else 'unknown'

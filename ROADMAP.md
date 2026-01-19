@@ -18,7 +18,7 @@
 - [x] **Billing Tracker (Фаза 3)** — управление подписками
 - [x] **Bot Messages Editor (Фаза 5)** — редактирование текстов бота
 - [x] **Performance Monitor (Фаза 6)** — метрики производительности
-- [x] **YouTube полные видео** — до 2GB с отправкой как документ
+- [x] **YouTube полные видео** — sendVideo до 2GB (Local Bot API)
 - [x] **Pinterest pin.it** — поддержка коротких ссылок
 - [x] **YouTube 3-step fallback** — yt-dlp → pytubefix → RapidAPI
 - [x] **A+ remux** — stream copy с SAR metadata fix
@@ -124,6 +124,27 @@ CREATE TABLE subscriptions (
 
 **SLA:** 2-5 минут макс или показать ошибку. 8+ минут недопустимо.
 
+**Ключевая политика:**
+```python
+MAX_USER_WAIT_SEC = 180  # 3 минуты — после этого либо background queue, либо отказ
+```
+
+---
+
+### 7.0 Telemetry Baseline (Phase 0) ✅ ЧАСТИЧНО
+
+**Цель:** Собрать данные для принятия решений, "соединить Клода с реальностью".
+
+**Уже реализовано:**
+- [x] `download_host` logging в RapidAPI (googlevideo.com = плохо)
+- [x] `download_time_ms`, `file_size_bytes`, `download_speed_kbps` в ActionLog
+
+**Нужно добавить:**
+- [ ] `redirect_chain` — если API редиректит на googlevideo
+- [ ] `ttfb_ms` (time to first byte) — показывает latency провайдера
+- [ ] `error_type` в ActionLog (HARD_KILL / STALL / PROVIDER_BUG)
+- [ ] `duration_bucket` (shorts/medium/long) для аналитики
+
 ---
 
 ### 7.1 Research APIs (Phase 1)
@@ -226,17 +247,29 @@ STALL_ERRORS = [
 ]
 ```
 
-**Cooldown Logic:**
+**Cooldown Logic (per provider:platform:bucket):**
 ```python
-async def on_provider_error(provider_id: str, error_type: str):
+# Cooldown key = {provider}:{platform}:{bucket}
+# Пример: "yt-dlp:youtube:long" — yt-dlp дохнет на длинных, но работает на shorts
+# bucket = "shorts" (<5 min) | "medium" (5-30 min) | "long" (>30 min)
+
+async def on_provider_error(provider: str, platform: str, duration_sec: int, error_type: str):
+    bucket = get_duration_bucket(duration_sec)  # shorts/medium/long
+    cooldown_key = f"{provider}:{platform}:{bucket}"
+
     if error_type == "HARD_KILL":
-        # Мгновенно отключаем на 30 мин
-        await set_cooldown(provider_id, minutes=30)
+        # Мгновенно отключаем на 30 мин (только для этого bucket!)
+        await set_cooldown(cooldown_key, minutes=30)
     elif error_type == "STALL":
         # Увеличиваем cooldown экспоненциально
-        current = await get_error_count_1h(provider_id)
+        current = await get_error_count_1h(cooldown_key)
         if current >= 3:
-            await set_cooldown(provider_id, minutes=15)
+            await set_cooldown(cooldown_key, minutes=15)
+
+def get_duration_bucket(duration_sec: int) -> str:
+    if duration_sec < 300: return "shorts"      # <5 min
+    if duration_sec < 1800: return "medium"     # 5-30 min
+    return "long"                                # >30 min
 ```
 
 **Budget Guardrails (платные API):**
@@ -268,13 +301,24 @@ class EgressPoolProvider:
         return await self.download_via_endpoint(endpoint, url)
 ```
 
-**Concurrency Manager:**
+**Concurrency Manager (платформо-специфичный):**
 ```python
 # Redis-based concurrency limits
+# ВАЖНО: YouTube банит быстрее при параллельных запросах!
 CONCURRENCY_LIMITS = {
-    "youtube_download": 3,      # Max 3 concurrent YouTube downloads
-    "rapidapi_request": 5,      # Max 5 concurrent RapidAPI requests
+    # YouTube — агрессивный IP бан, держим низко
+    "youtube:yt-dlp": 2,        # Max 2 concurrent yt-dlp YouTube
+    "youtube:pytubefix": 2,     # Max 2 concurrent pytubefix
+    "youtube:rapidapi": 3,      # RapidAPI чуть больше (их IP)
+
+    # Другие платформы — более лояльные
+    "instagram:rapidapi": 5,    # Instagram через RapidAPI
+    "tiktok:yt-dlp": 5,         # TikTok более лоялен
+    "pinterest:yt-dlp": 5,      # Pinterest тоже
+
+    # Общие лимиты
     "telegram_upload": 10,      # Max 10 concurrent uploads
+    "ffmpeg_process": 3,        # Max 3 concurrent ffmpeg
 }
 
 async def acquire_slot(category: str, timeout: int = 60) -> bool:

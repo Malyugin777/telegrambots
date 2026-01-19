@@ -113,38 +113,52 @@ def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: i
     if not videos:
         return None
 
-    # Парсим качество из строки ("720p" -> 720)
+    # Парсим качество из строки ("720p" или "mp4 (720p) avc1" -> 720)
     def parse_quality(quality_str: str) -> int:
         try:
-            return int(quality_str.lower().replace('p', '').strip())
+            import re
+            # Ищем паттерн вида "720p", "1080p", etc
+            match = re.search(r'(\d+)p', quality_str.lower())
+            if match:
+                return int(match.group(1))
+            return 0
         except (ValueError, AttributeError):
             return 0
 
-    # Создаём список (quality_int, media)
+    # Создаём список (quality_int, priority, media)
+    # priority: 2=avc1/h264 (лучше для Telegram), 1=vp9, 0=av01/другое
     videos_with_quality = []
     for v in videos:
         q = parse_quality(v.quality)
         if q > 0:
-            videos_with_quality.append((q, v))
+            # Определяем приоритет формата
+            quality_lower = v.quality.lower()
+            if 'avc1' in quality_lower or 'h264' in quality_lower:
+                priority = 2  # Лучший формат для Telegram
+            elif 'vp9' in quality_lower:
+                priority = 1
+            else:
+                priority = 0
+            videos_with_quality.append((q, priority, v))
 
     if not videos_with_quality:
         return videos[0]
 
-    # Сортируем по качеству (от меньшего к большему)
-    videos_with_quality.sort(key=lambda x: x[0])
+    # Сортируем по качеству, потом по приоритету формата
+    videos_with_quality.sort(key=lambda x: (x[0], -x[1]))
 
-    # 1. Точное совпадение
-    for q, media in videos_with_quality:
+    # 1. Точное совпадение (предпочитаем avc1)
+    for q, priority, media in videos_with_quality:
         if q == desired_quality:
             return media
 
-    # 2. Ближайшее СВЕРХУ (минимальное среди больших)
-    for q, media in videos_with_quality:
+    # 2. Ближайшее СВЕРХУ (минимальное среди больших, предпочитаем avc1)
+    for q, priority, media in videos_with_quality:
         if q > desired_quality:
-            return media  # Возвращаем первое больше (минимальное сверху)
+            return media  # Возвращаем первое больше (минимальное сверху с лучшим форматом)
 
     # 3. Нет сверху - берем максимальное снизу
-    return videos_with_quality[-1][1]
+    return videos_with_quality[-1][2]
 
 
 # === DOWNLOADER CLASS ===

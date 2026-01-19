@@ -101,10 +101,13 @@ def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: i
     """
     Выбрать видео ближайшее к желаемому качеству
 
-    Логика:
-    1. Ищем точное совпадение (720p)
-    2. Если нет - берём ближайшее снизу (480p вместо 720p)
-    3. Если нет снизу - берём ближайшее сверху (1080p вместо 720p)
+    Логика (предпочитаем ЛУЧШЕЕ качество):
+    1. Точное совпадение (480p) → берём его
+    2. Нет точного → берём ближайшее СВЕРХУ (720p для 480p)
+    3. Нет сверху → берём максимальное снизу (360p если 720p недоступно)
+
+    Пример: доступны 360p, 720p; запрос 480p → вернет 720p
+    Пример: доступны 360p, 480p, 720p; запрос 480p → вернет 480p (точное)
     """
     videos = [m for m in medias if m.type == "video"]
     if not videos:
@@ -113,7 +116,6 @@ def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: i
     # Парсим качество из строки ("720p" -> 720)
     def parse_quality(quality_str: str) -> int:
         try:
-            # Убираем 'p' и парсим число
             return int(quality_str.lower().replace('p', '').strip())
         except (ValueError, AttributeError):
             return 0
@@ -126,23 +128,23 @@ def select_best_media_by_quality(medias: List[RapidAPIMedia], desired_quality: i
             videos_with_quality.append((q, v))
 
     if not videos_with_quality:
-        # Нет информации о качестве - берём первое видео
         return videos[0]
 
-    # Сортируем по качеству
+    # Сортируем по качеству (от меньшего к большему)
     videos_with_quality.sort(key=lambda x: x[0])
 
-    # Ищем ближайшее
-    best_match = None
-    best_diff = float('inf')
-
+    # 1. Точное совпадение
     for q, media in videos_with_quality:
-        diff = abs(q - desired_quality)
-        if diff < best_diff:
-            best_diff = diff
-            best_match = media
+        if q == desired_quality:
+            return media
 
-    return best_match
+    # 2. Ближайшее СВЕРХУ (минимальное среди больших)
+    for q, media in videos_with_quality:
+        if q > desired_quality:
+            return media  # Возвращаем первое больше (минимальное сверху)
+
+    # 3. Нет сверху - берем максимальное снизу
+    return videos_with_quality[-1][1]
 
 
 # === DOWNLOADER CLASS ===

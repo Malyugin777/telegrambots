@@ -66,7 +66,18 @@
       "WebFetch(domain:github.com)",
       "WebSearch",
       "WebFetch(domain:rapidapi.com)",
-      "Bash(gh run list:*)"
+      "Bash(gh run list:*)",
+      "Bash(python -m py_compile:*)",
+      "Bash(python3 -m py_compile:*)",
+      "Bash(/c/Users/maliu/AppData/Local/Microsoft/WindowsApps/python3:*)",
+      "Bash(/c/Users/maliu/AppData/Local/Microsoft/WindowsApps/python3.exe -m py_compile:*)",
+      "WebFetch(domain:youtube-download-api.org)",
+      "WebFetch(domain:video-download-api.com)",
+      "WebFetch(domain:docs.rapidapi.com)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add SaveNow API for YouTube (CDN, no IP ban)\n\n- New savenow_downloader.py with polling progress\n- Quota headers logging (x-ratelimit-*)\n- Unit cost logging for budget tracking\n- Temporarily set SaveNow first for testing\n- docs/API_COSTS.md with pricing comparison\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager 2>&1 | tail -150 | grep -E ''SAVENOW|YOUTUBE|ERROR|error|Error''\")",
+      "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager 2>&1 | tail -50 | grep -E ''Sent|SUCCESS|UPLOAD|upload|THUMBNAIL|thumbnail''\")",
+      "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager 2>&1 | tail -100 | grep -iE ''thumb|THUMBNAIL|preview''\")"
     ]
   }
 }

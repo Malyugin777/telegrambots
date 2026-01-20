@@ -110,6 +110,40 @@ class SaveNowDownloader:
             "X-RapidAPI-Key": self.api_key
         }
 
+    def _get_youtube_thumbnail(self, url: str) -> Optional[str]:
+        """
+        Получить URL thumbnail напрямую с YouTube.
+
+        YouTube thumbnail URLs:
+        - maxresdefault.jpg (1280x720) - лучшее качество
+        - hqdefault.jpg (480x360)
+        - mqdefault.jpg (320x180)
+        - default.jpg (120x90)
+        """
+        import re
+
+        # Извлекаем video_id из URL
+        patterns = [
+            r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})',
+            r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
+        ]
+
+        video_id = None
+        for pattern in patterns:
+            match = re.search(pattern, url)
+            if match:
+                video_id = match.group(1)
+                break
+
+        if not video_id:
+            logger.warning(f"[SAVENOW] Could not extract video_id from URL: {url}")
+            return None
+
+        # Пробуем maxresdefault, fallback на hqdefault
+        thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/maxresdefault.jpg"
+        logger.info(f"[SAVENOW] Using YouTube thumbnail: {thumbnail_url}")
+        return thumbnail_url
+
     def _log_quota_headers(self, headers: dict):
         """
         Логирует quota headers из ответа RapidAPI для мониторинга остатка пакета.
@@ -202,7 +236,7 @@ class SaveNowDownloader:
             title = job.get("title", "video")
             thumbnail_url = job.get("thumbnail")
 
-            logger.info(f"[SAVENOW] Job started: id={job_id}, title='{title[:50]}'")
+            logger.info(f"[SAVENOW] Job started: id={job_id}, title='{title[:50]}', thumbnail={'YES' if thumbnail_url else 'NO'}")
 
             # Шаг 2: Poll progress до готовности
             download_url = await self._poll_progress(job_id, progress_url)
@@ -313,6 +347,20 @@ class SaveNowDownloader:
                     if not progress_url and job_id:
                         progress_url = f"{RAPIDAPI_BASE_URL}/ajax/progress.php?id={job_id}"
 
+                    # Ищем thumbnail в разных местах response
+                    thumbnail = (
+                        data.get("thumbnail") or
+                        data.get("thumb") or
+                        data.get("poster") or
+                        (data.get("info") or {}).get("thumbnail") or
+                        (data.get("info") or {}).get("thumb") or
+                        (data.get("additional_info") or {}).get("thumbnail")
+                    )
+
+                    # Если thumbnail не найден — строим URL с YouTube напрямую
+                    if not thumbnail:
+                        thumbnail = self._get_youtube_thumbnail(url)
+
                     # Если download_url уже готов (быстрый ответ для коротких видео)
                     if data.get("download_url"):
                         return {
@@ -321,7 +369,7 @@ class SaveNowDownloader:
                             "progress_url": progress_url,
                             "download_url": data.get("download_url"),
                             "title": data.get("title", "video"),
-                            "thumbnail": data.get("thumbnail") or data.get("thumb")
+                            "thumbnail": thumbnail
                         }
 
                     if not job_id:
@@ -333,7 +381,7 @@ class SaveNowDownloader:
                         "id": job_id,
                         "progress_url": progress_url,
                         "title": data.get("title", "video"),
-                        "thumbnail": data.get("thumbnail") or data.get("thumb")
+                        "thumbnail": thumbnail
                     }
 
         except asyncio.TimeoutError:

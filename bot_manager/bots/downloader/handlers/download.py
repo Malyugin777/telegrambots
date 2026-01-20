@@ -3,7 +3,7 @@
 
 Используем:
 - Instagram: RapidAPI (primary, instaloader требует логин)
-- YouTube (все): yt-dlp (primary) → RapidAPI (fallback)
+- YouTube: yt-dlp (primary) → pytubefix → SaveNow API (CDN, не googlevideo!)
 - TikTok, Pinterest: yt-dlp (primary) → RapidAPI (fallback)
 """
 import re
@@ -19,6 +19,7 @@ from ..services.downloader import VideoDownloader
 from ..services.rapidapi_downloader import RapidAPIDownloader
 from ..services.pytubefix_downloader import PytubeDownloader
 from ..services.instaloader_downloader import InstaloaderDownloader
+from ..services.savenow_downloader import SaveNowDownloader
 from ..services.cache import (
     get_cached_file_ids,
     cache_file_ids,
@@ -55,8 +56,9 @@ TIMEOUT_AUDIO = 600      # 10 минут для аудио
 
 # Глобальные экземпляры загрузчиков
 downloader = VideoDownloader()  # yt-dlp (TikTok, Pinterest)
-rapidapi = RapidAPIDownloader()  # Fallback для Instagram, YouTube Shorts
+rapidapi = RapidAPIDownloader()  # Instagram primary, TikTok/Pinterest fallback
 pytubefix = PytubeDownloader()  # YouTube (primary)
+savenow = SaveNowDownloader()  # YouTube fallback (CDN, не googlevideo!)
 instaloader_dl = InstaloaderDownloader()  # Instagram (primary)
 
 # NOTE: Таймауты теперь настроены глобально в main.py через ClientTimeout
@@ -628,14 +630,53 @@ async def handle_url(message: types.Message):
                 )
             )
 
-        # YOUTUBE: yt-dlp (primary) -> pytubefix (fallback #1) -> RapidAPI (fallback #2)
+        # YOUTUBE: SaveNow (TEST) -> yt-dlp -> pytubefix
+        # TODO: После теста вернуть порядок: yt-dlp -> pytubefix -> SaveNow
         elif is_youtube:
             from ..services.downloader import DownloadResult, MediaInfo
 
-            # Step 1: yt-dlp (быстрый, напрямую с YouTube CDN)
-            logger.info(f"[YOUTUBE] Trying yt-dlp: {url}")
-            result = await downloader.download(url, progress_callback=progress_callback)
-            api_source = "ytdlp"
+            # Step 1: SaveNow API (TEST - временно первый для проверки)
+            logger.info(f"[YOUTUBE] TEST MODE: Trying SaveNow first: {url}")
+
+            # Получаем примерную длительность для адаптивного качества
+            duration_hint = 0
+            try:
+                info = await pytubefix.get_video_info(url)
+                if info.success:
+                    duration_hint = info.duration
+            except:
+                pass
+
+            file_result = await savenow.download_adaptive(url, duration_hint=duration_hint)
+
+            if file_result.success:
+                api_source = "savenow"
+                logger.info(f"[YOUTUBE] SaveNow succeeded: {file_result.filename}, host={file_result.download_host}")
+
+                if file_result.file_size > 2_000_000_000:
+                    await status_msg.edit_text("❌ Видео слишком большое (>2GB)")
+                    await savenow.cleanup(file_result.file_path)
+                    return
+
+                result = DownloadResult(
+                    success=True,
+                    file_path=file_result.file_path,
+                    filename=file_result.filename,
+                    file_size=file_result.file_size,
+                    is_photo=False,
+                    send_as_document=file_result.file_size > 50_000_000,
+                    info=MediaInfo(
+                        title=file_result.title or "video",
+                        author=file_result.author or "unknown",
+                        thumbnail=file_result.thumbnail_path,
+                        platform=platform
+                    )
+                )
+            else:
+                # SaveNow failed, fallback to yt-dlp
+                logger.warning(f"[YOUTUBE] SaveNow failed: {file_result.error}, trying yt-dlp")
+                result = await downloader.download(url, progress_callback=progress_callback)
+                api_source = "ytdlp"
 
             if not result.success:
                 # Step 2: pytubefix (иногда работает когда yt-dlp нет)
@@ -659,20 +700,29 @@ async def handle_url(message: types.Message):
                         )
                     )
                 else:
-                    # Step 3: RapidAPI (медленный но надёжный)
-                    logger.warning(f"[YOUTUBE] pytubefix failed: {pytube_result.error}, trying RapidAPI")
+                    # Step 3: SaveNow API (CDN проксирует, IP не банится)
+                    logger.warning(f"[YOUTUBE] pytubefix failed: {pytube_result.error}, trying SaveNow API")
                     await status_msg.edit_text("⏳ Пробую альтернативный способ...")
 
-                    file_result = await rapidapi.download(url, adaptive_quality=True)
+                    # Получаем примерную длительность для адаптивного качества
+                    duration_hint = 0
+                    try:
+                        info = await pytubefix.get_video_info(url)
+                        if info.success:
+                            duration_hint = info.duration
+                    except:
+                        pass
+
+                    file_result = await savenow.download_adaptive(url, duration_hint=duration_hint)
 
                     if file_result.success:
-                        api_source = "rapidapi"
-                        logger.info(f"[YOUTUBE] RapidAPI succeeded: {file_result.filename}")
+                        api_source = "savenow"
+                        logger.info(f"[YOUTUBE] SaveNow succeeded: {file_result.filename}, host={file_result.download_host}")
 
                         # Проверяем размер
                         if file_result.file_size > 2_000_000_000:
                             await status_msg.edit_text("❌ Видео слишком большое (>2GB)")
-                            await rapidapi.cleanup(file_result.file_path)
+                            await savenow.cleanup(file_result.file_path)
                             return
 
                         result = DownloadResult(
@@ -685,27 +735,27 @@ async def handle_url(message: types.Message):
                             info=MediaInfo(
                                 title=file_result.title or "video",
                                 author=file_result.author or "unknown",
-                                thumbnail=file_result.thumbnail,
+                                thumbnail=file_result.thumbnail_path,  # SaveNow возвращает локальный путь
                                 platform=platform
                             )
                         )
                     else:
                         # Все 3 способа упали
                         error_class = classify_error(result.error)  # Классифицируем по первой ошибке
-                        logger.error(f"[YOUTUBE] All 3 methods failed: yt-dlp, pytubefix, RapidAPI, class={error_class}")
+                        logger.error(f"[YOUTUBE] All 3 methods failed: yt-dlp, pytubefix, SaveNow, class={error_class}")
                         await error_logger.log_error_by_telegram_id(
                             telegram_id=user_id,
                             bot_username="SaveNinja_bot",
                             platform=platform,
                             url=url,
                             error_type="download_failed",
-                            error_message=f"yt-dlp: {result.error}, pytubefix: {pytube_result.error}, RapidAPI: {file_result.error}",
+                            error_message=f"yt-dlp: {result.error}, pytubefix: {pytube_result.error}, SaveNow: {file_result.error}",
                             error_details={
                                 "source": "all_three",
                                 "error_class": error_class,
                                 "ytdlp_class": classify_error(result.error),
                                 "pytubefix_class": classify_error(pytube_result.error),
-                                "rapidapi_class": classify_error(file_result.error),
+                                "savenow_class": classify_error(file_result.error),
                             }
                         )
                         await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
@@ -954,6 +1004,8 @@ async def handle_url(message: types.Message):
                     await rapidapi.cleanup(result.file_path)
                 elif api_source == "pytubefix":
                     await pytubefix.cleanup(result.file_path)
+                elif api_source == "savenow":
+                    await savenow.cleanup(result.file_path)
                 elif api_source == "instaloader":
                     await instaloader_dl.cleanup(result.file_path)
                 else:

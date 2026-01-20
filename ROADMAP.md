@@ -153,64 +153,73 @@ MAX_USER_WAIT_SEC = 180  # 3 минуты — после этого либо bac
 
 | API | CDN | Цена | Downloads/мес | Статус |
 |-----|-----|------|---------------|--------|
-| **youtube-download-api.org** | ✅ `media.yt-data-proxy.org` | $199/мес | ? (без лимитов?) | 💰 Дорого, но CDN |
-| **RapidAPI (YouTube Info & Download API)** | ❓ ПРОВЕРИТЬ | $5/мес Pro | ~16K (1080p) | ⚠️ Нужен тест CDN |
-| **video-download-api.com** | ❓ ПРОВЕРИТЬ | ~$0.00030/download | pay-per-use | ⚠️ Нужен тест CDN |
-| **SaveNow.to** | — | Виджеты + реклама | — | ❌ Не для бота |
+| **RapidAPI (YouTube Info & Download API)** | ✅ `*.savenow.to` | $5/мес Pro | ~16K-33K | 🏆 **РЕКОМЕНДУЕТСЯ** |
+| **youtube-download-api.org** | ✅ `media.yt-data-proxy.org` | $199/мес | без лимитов? | 💰 Backup (дорого) |
+| **video-download-api.com** | ✅ тот же backend | ~$0.00030/download | pay-per-use | 🔄 Альтернатива |
+| **RapidAPI (Social Download All In One)** | ❌ googlevideo.com | ~$0.004/download | — | ❌ Бан IP |
 | **Cobalt.tools** | ❌ Забанен YouTube | — | — | ❌ Нестабилен |
-| **RapidAPI (текущий)** | ❌ googlevideo.com | ~$0.004/download | — | ❌ Бан IP |
 
-**Результаты исследования (2026-01-20):**
+**Важно про SaveNow.to:** Сайт показывает рекламу, но через RapidAPI wrapper получаем прямые CDN ссылки без рекламы. API убирает рекламный слой.
 
-✅ **youtube-download-api.org** — CDN ПОДТВЕРЖДЁН, НО ДОРОГО
+**Результаты тестирования (2026-01-20):**
+
+### 🏆 RapidAPI "YouTube Info & Download API" — ПРОТЕСТИРОВАНО, РАБОТАЕТ!
+
+**Ключевые данные:**
+- **Host:** `youtube-info-download-api.p.rapidapi.com`
+- **Backend:** SaveNow.to (wrapper API, без рекламы)
+- **CDN:** ✅ `*.savenow.to` (rose44, pamela88, etc.) — **НЕ googlevideo.com!**
+- **Наш IP не банится YouTube!**
+
+**Тесты:**
+
+| Видео | Длина | Prep time | Размер | Cost | CDN Host |
+|-------|-------|-----------|--------|------|----------|
+| Rick Astley | 3:33 | ~5 сек | 30 MB | $0.0003 | `rose44.savenow.to` |
+| C# Tutorial | 4:31:09 | ~50 сек | 432 MB | $0.0015 | `pamela88.savenow.to` |
+| Harvard CS50 | 24+ часа | — | — | — | ❌ "Video too long" |
+
+**Лимиты:**
+- Pro Plan: **$5/мес** = 100,000 units
+- 720p/1080p = ~6 units = **~16,000 downloads/мес**
+- Extended duration: x3 (90 min over), x5 (180 min over), x33 (24h)
+- Overage: $0.000047/unit
+- Max video: **~4-5 часов** (24h не работает)
+
+**Скорость скачивания:** ~1.4 MB/s (с локальной машины)
+
+**API Flow:**
+```
+1. POST /ajax/download.php → получаем job ID + progress_url
+2. Poll progress_url каждые 5 сек
+3. Когда success=1 → download_url готов
+4. download_url = их CDN (*.savenow.to), не googlevideo!
+```
+
+**Пример запроса:**
+```bash
+curl "https://youtube-info-download-api.p.rapidapi.com/ajax/download.php?format=720&url=VIDEO_URL&allow_extended_duration=1" \
+  -H "x-rapidapi-host: youtube-info-download-api.p.rapidapi.com" \
+  -H "x-rapidapi-key: YOUR_KEY"
+```
+
+### ✅ youtube-download-api.org — CDN ПОДТВЕРЖДЁН, НО ДОРОГО
 - Возвращает URL их CDN: `https://media.yt-data-proxy.org/...`
 - НЕ googlevideo.com → наш IP не банится
 - <2 сек на получение ссылки
-- $199/мес flat rate — **пока дорого для нас**
-- Лимиты неизвестны, нужен trial
+- $199/мес flat rate — **backup если $5 API перестанет работать**
 
-⚠️ **RapidAPI "YouTube Info & Download API"** — ДЕШЁВЫЙ, НУЖЕН ТЕСТ CDN
-- Pro Plan: **$5/мес** за 100,000 units
-- MP4 1080p = $0.00030 = ~6 units → **~16,000 downloads/мес**
-- Duration multipliers: x3 (90 min over), x5 (180 min over)
-- Overage: $0.000047/unit
-- **КРИТИЧНО:** проверить, возвращает CDN или googlevideo.com!
-- **Следующий шаг:** тест на реальном видео
+### ✅ video-download-api.com — ТОТ ЖЕ BACKEND
+- Тот же автор что и RapidAPI wrapper (sp_golubev@protonmail.com)
+- Pay-per-use ~$0.00030/download
+- Альтернатива если RapidAPI недоступен
 
-⚠️ **video-download-api.com** — PAY-PER-USE
-- ~$0.00030/download (1080p)
-- Минимальный чек $1
-- **КРИТИЧНО:** проверить CDN vs googlevideo
-- **Следующий шаг:** тест
-
-❌ **SaveNow.to** — НЕ ПОДХОДИТ
-- Это widget/партнёрка с рекламой (25% → adUrl)
-- Не стабильный backend для бота
-
-❌ **Cobalt.tools** — НЕ ПОДХОДИТ
-- Main instance заблокирован YouTube с mid-2025
-- Self-hosted требует residential proxy ($$$)
-
-**Критерии оценки:**
-- [x] Проксирует через свой CDN → youtube-download-api.org ✅, остальные ❓
-- [ ] Скорость скачивания >5 MB/s → нужен тест
-- [ ] Поддержка длинных видео (>60 мин) → нужен тест
-- [x] Цена/лимиты → RapidAPI новый $5/мес 🏆
-- [ ] Надёжность (uptime) → нужен тест
-
-**Приоритет тестирования:**
-1. **RapidAPI "YouTube Info & Download API"** ($5/мес) — проверить CDN
-2. video-download-api.com — проверить CDN
-3. youtube-download-api.org ($199/мес) — если первые два = googlevideo
-
-**Диагностика (обязательно для каждого провайдера):**
-```python
-# Логировать для каждого провайдера:
-- download_host (googlevideo.com = плохо, cdn.* = хорошо)
-- redirect chain (если перенаправляет на googlevideo)
-- download_speed_kbps
-- time_to_first_byte
-```
+**Следующие шаги:**
+1. [x] ~~Тест CDN~~ → **CDN подтверждён!**
+2. [x] Интеграция в бота → `savenow_downloader.py` создан!
+3. [x] Quota monitoring → headers `x-ratelimit-*` логируются
+4. [ ] A/B тест: pytubefix vs savenow для длинных видео
+5. [ ] Мониторинг costs в админке
 
 ---
 

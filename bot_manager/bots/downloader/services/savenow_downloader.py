@@ -68,16 +68,11 @@ def get_quality_for_duration(duration_seconds: int) -> str:
     """
     Выбор качества видео по длительности
 
-    < 60 мин → 720 (отличное качество, ~100-300MB)
-    60-180 мин → 480 (экономия, влезает в 2GB)
-    > 180 мин → 360 (очень длинные видео)
+    Всегда 720p — пользователь хочет максимальное качество.
+    Duration multipliers увеличивают стоимость, но качество важнее.
     """
-    if duration_seconds < 3600:      # < 60 мин
-        return "720"
-    elif duration_seconds < 10800:   # < 180 мин
-        return "480"
-    else:
-        return "360"
+    # Всегда 720p
+    return "720"
 
 
 class SaveNowDownloader:

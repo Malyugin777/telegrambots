@@ -1,10 +1,10 @@
 """
 Обработчик ссылок - скачивание видео и аудио
 
-Используем:
-- Instagram: RapidAPI (primary, instaloader требует логин)
-- YouTube: yt-dlp (primary) → pytubefix → SaveNow API (CDN, не googlevideo!)
-- TikTok, Pinterest: yt-dlp (primary) → RapidAPI (fallback)
+Провайдеры:
+- Instagram: RapidAPI (primary)
+- YouTube: yt-dlp → pytubefix → SaveNow API (CDN, IP не банится!)
+- TikTok, Pinterest: yt-dlp → RapidAPI (fallback)
 """
 import re
 import os
@@ -630,53 +630,14 @@ async def handle_url(message: types.Message):
                 )
             )
 
-        # YOUTUBE: SaveNow (TEST) -> yt-dlp -> pytubefix
-        # TODO: После теста вернуть порядок: yt-dlp -> pytubefix -> SaveNow
+        # YOUTUBE: yt-dlp (primary) -> pytubefix (fallback #1) -> SaveNow (fallback #2, CDN)
         elif is_youtube:
             from ..services.downloader import DownloadResult, MediaInfo
 
-            # Step 1: SaveNow API (TEST - временно первый для проверки)
-            logger.info(f"[YOUTUBE] TEST MODE: Trying SaveNow first: {url}")
-
-            # Получаем примерную длительность для адаптивного качества
-            duration_hint = 0
-            try:
-                info = await pytubefix.get_video_info(url)
-                if info.success:
-                    duration_hint = info.duration
-            except:
-                pass
-
-            file_result = await savenow.download_adaptive(url, duration_hint=duration_hint)
-
-            if file_result.success:
-                api_source = "savenow"
-                logger.info(f"[YOUTUBE] SaveNow succeeded: {file_result.filename}, host={file_result.download_host}")
-
-                if file_result.file_size > 2_000_000_000:
-                    await status_msg.edit_text("❌ Видео слишком большое (>2GB)")
-                    await savenow.cleanup(file_result.file_path)
-                    return
-
-                result = DownloadResult(
-                    success=True,
-                    file_path=file_result.file_path,
-                    filename=file_result.filename,
-                    file_size=file_result.file_size,
-                    is_photo=False,
-                    send_as_document=file_result.file_size > 50_000_000,
-                    info=MediaInfo(
-                        title=file_result.title or "video",
-                        author=file_result.author or "unknown",
-                        thumbnail=file_result.thumbnail_path,
-                        platform=platform
-                    )
-                )
-            else:
-                # SaveNow failed, fallback to yt-dlp
-                logger.warning(f"[YOUTUBE] SaveNow failed: {file_result.error}, trying yt-dlp")
-                result = await downloader.download(url, progress_callback=progress_callback)
-                api_source = "ytdlp"
+            # Step 1: yt-dlp (быстрый, напрямую с YouTube CDN)
+            logger.info(f"[YOUTUBE] Trying yt-dlp: {url}")
+            result = await downloader.download(url, progress_callback=progress_callback)
+            api_source = "ytdlp"
 
             if not result.success:
                 # Step 2: pytubefix (иногда работает когда yt-dlp нет)

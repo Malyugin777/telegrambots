@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..database import get_db
 from ..redis_client import get_redis
-from ..models import ActionLog, ErrorLog, APISource
+from ..models import ActionLog, APISource
 from ..auth import get_current_user
 
 router = APIRouter()

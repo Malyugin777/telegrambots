@@ -17,6 +17,7 @@ Flow:
 import os
 import asyncio
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Optional
@@ -49,6 +50,24 @@ MAX_POLL_TIME = 600  # 10 минут максимум на подготовку
 _executor = ThreadPoolExecutor(max_workers=3)
 
 
+
+@dataclass
+class QuotaSnapshot:
+    """Snapshot квоты RapidAPI (Phase A Telemetry)"""
+    units_remaining: Optional[int] = None
+    units_reset_sec: Optional[int] = None
+    requests_remaining: Optional[int] = None
+    requests_reset_sec: Optional[int] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "units_remaining": self.units_remaining,
+            "units_reset_sec": self.units_reset_sec,
+            "requests_remaining": self.requests_remaining,
+            "requests_reset_sec": self.requests_reset_sec,
+        }
+
+
 @dataclass
 class SaveNowResult:
     """Результат скачивания через SaveNow API"""
@@ -62,6 +81,10 @@ class SaveNowResult:
     thumbnail_path: Optional[str] = None  # Локальный путь к thumbnail
     download_host: Optional[str] = None  # CDN host для логов
     error: Optional[str] = None
+    # Telemetry fields (Phase A)
+    prep_ms: int = 0  # Время подготовки (job + polling)
+    download_ms: int = 0  # Время скачивания файла
+    quota_snapshot: Optional[QuotaSnapshot] = None  # Snapshot квоты
 
 
 def get_quality_for_duration(duration_seconds: int) -> str:
@@ -93,6 +116,7 @@ class SaveNowDownloader:
 
     def __init__(self):
         self.api_key = os.getenv("RAPIDAPI_KEY", "")
+        self._last_quota_snapshot: Optional[QuotaSnapshot] = None
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
         if not self.api_key:

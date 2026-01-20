@@ -11,6 +11,7 @@ from .errors import router as errors_router
 from .uploads import router as uploads_router
 from .subscriptions import router as subscriptions_router
 from .bot_messages import router as bot_messages_router
+from .ops import router as ops_router
 
 api_router = APIRouter()
 
@@ -24,3 +25,4 @@ api_router.include_router(errors_router, prefix="/errors", tags=["errors"])
 api_router.include_router(uploads_router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(subscriptions_router, prefix="/subscriptions", tags=["subscriptions"])
 api_router.include_router(bot_messages_router, prefix="/bot-messages", tags=["bot-messages"])
+api_router.include_router(ops_router, prefix="/ops", tags=["ops"])

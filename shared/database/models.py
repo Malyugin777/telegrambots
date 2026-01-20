@@ -31,6 +31,7 @@ class APISource(str, PyEnum):
     COBALT = "cobalt"
     PYTUBEFIX = "pytubefix"
     INSTALOADER = "instaloader"
+    SAVENOW = "savenow"
 
 
 class User(Base):

@@ -377,7 +377,7 @@ export const Ops = () => {
       await fetch(`${apiUrl}/ops/providers/${provider}/${endpoint}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       message.success(`${provider} ${enabled ? 'enabled' : 'disabled'}`);
@@ -392,7 +392,7 @@ export const Ops = () => {
       await fetch(`${apiUrl}/ops/providers/${provider}/cooldown?minutes=${minutes}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       message.success(`${provider} in cooldown for ${minutes} minutes`);
@@ -424,19 +424,23 @@ export const Ops = () => {
     if (!editedChain) return;
     setRoutingSaving(true);
     try {
-      await fetch(`${apiUrl}/ops/routing/${selectedSource}`, {
+      const response = await fetch(`${apiUrl}/ops/routing/${selectedSource}`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ chain: editedChain }),
       });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `HTTP ${response.status}`);
+      }
       message.success('Routing saved');
       setEditedChain(null);
       refetchRouting();
-    } catch {
-      message.error('Failed to save routing');
+    } catch (err) {
+      message.error(`Failed to save routing: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
     setRoutingSaving(false);
   };
@@ -447,7 +451,7 @@ export const Ops = () => {
       await fetch(`${apiUrl}/ops/routing/${selectedSource}`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       message.success('Routing reset to default');
@@ -464,7 +468,7 @@ export const Ops = () => {
       await fetch(`${apiUrl}/ops/routing/${selectedSource}/override`, {
         method: 'DELETE',
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
         },
       });
       message.success('Override cleared');

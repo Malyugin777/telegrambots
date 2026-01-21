@@ -68,9 +68,9 @@ pytubefix = PytubeDownloader()  # YouTube (primary)
 savenow = SaveNowDownloader()  # YouTube fallback (CDN, не googlevideo!)
 instaloader_dl = InstaloaderDownloader()  # Instagram (primary)
 
-# NOTE: Таймауты теперь настроены глобально в main.py через ClientTimeout
-# ClientTimeout(total=None, sock_read=1200) в aiohttp session
-# Здесь используем request_timeout только для переопределения если нужно
+# NOTE: Глобальный таймаут сессии = 2700 сек (45 мин) в main.py
+# request_timeout здесь передаётся, но может не работать в aiogram 3.x
+# Основной таймаут контролируется в main.py через AiohttpSession(timeout=2700)
 
 # === RETRY CONFIGURATION ===
 RETRY_MAX_ATTEMPTS = 3

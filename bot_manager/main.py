@@ -37,9 +37,10 @@ async def start_bot(token: str, name: str, router):
     """Start a single bot with its router."""
 
     # Настраиваем сессию для использования Local Bot API Server
+    # Таймаут 45 минут для загрузки файлов до 2GB через Local Bot API
     session = AiohttpSession(
         api=TelegramAPIServer.from_base(LOCAL_BOT_API_SERVER),
-        timeout=60.0
+        timeout=2700.0  # 45 минут для больших файлов
     )
 
     logger.info(f"Using Local Bot API Server: {LOCAL_BOT_API_SERVER} (2GB file limit)")

@@ -94,7 +94,21 @@
       "Bash(medium)",
       "Bash(long\",\n  \"prep_ms\": 5000,\n  \"download_ms\": 15000,\n  \"upload_ms\": 8000,\n  \"total_ms\": 28000,\n  \"download_host\": \"cdn.savenow.to\",\n  \"quota\": {...}\n}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDYxNzkzfQ.7kZHXpM2CxF8BHNoK4BubRYtyJEMVQMP9YBAj3RRqM8\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDcyNTAyfQ.zt29QCF46wul4_pXHcKOB_1pYYzjtIcuvtgZPkquM3g\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDcyNTAyfQ.zt29QCF46wul4_pXHcKOB_1pYYzjtIcuvtgZPkquM3g\")",
+      "Bash(node -e:*)",
+      "Bash(curl -s -X POST \"https://api.telegram.org/bot8222846501:AAE6lJ5xBispWUBzVmCr7tKfKSI1NcSlHyI/setMyShortDescription\" )",
+      "Bash(curl -s -X POST \"https://api.telegram.org/bot8222846501:AAE6lJ5xBispWUBzVmCr7tKfKSI1NcSlHyI/setMyDescription\" )",
+      "Bash(python3 -c \"\nimport requests\n\nTOKEN = ''8222846501:AAE6lJ5xBispWUBzVmCr7tKfKSI1NcSlHyI''\n\nshort = ''🎬 Скачиваю видео из TikTok, Instagram, YouTube, Pinterest''\n\nfull = ''''''🎬 Быстрый загрузчик видео из соцсетей.\n\n• TikTok — без водяного знака\n• Instagram — посты, Reels, Stories\n• YouTube — Shorts и полные видео (до 2GB)\n• Pinterest — фото и видео\n\nРеклама/Вопросы: @Alexey_buying777''''''\n\nr1 = requests.post(f''https://api.telegram.org/bot{TOKEN}/setMyShortDescription'', json={''short_description'': short})\nr2 = requests.post(f''https://api.telegram.org/bot{TOKEN}/setMyDescription'', json={''description'': full})\n\nprint(''Short:'', r1.json())\nprint(''Full:'', r2.json())\n\")",
+      "Bash(python -c \"\nimport requests\n\nTOKEN = ''8222846501:AAE6lJ5xBispWUBzVmCr7tKfKSI1NcSlHyI''\n\nshort = ''🎬 Скачиваю видео из TikTok, Instagram, YouTube, Pinterest''\n\nfull = ''''''🎬 Быстрый загрузчик видео из соцсетей.\n\n• TikTok — без водяного знака\n• Instagram — посты, Reels, Stories\n• YouTube — Shorts и полные видео (до 2GB)\n• Pinterest — фото и видео\n\nРеклама/Вопросы: @Alexey_buying777''''''\n\nr1 = requests.post(f''https://api.telegram.org/bot{TOKEN}/setMyShortDescription'', json={''short_description'': short})\nr2 = requests.post(f''https://api.telegram.org/bot{TOKEN}/setMyDescription'', json={''description'': full})\n\nprint(''Short:'', r1.json())\nprint(''Full:'', r2.json())\n\")",
+      "Bash(powershell -Command \"\n$token = ''8222846501:AAE6lJ5xBispWUBzVmCr7tKfKSI1NcSlHyI''\n$body = @{short_description = ''Скачиваю видео из TikTok, Instagram, YouTube, Pinterest''} | ConvertTo-Json -Compress\nInvoke-RestMethod -Uri \"\"https://api.telegram.org/bot$token/setMyShortDescription\"\" -Method Post -Body $body -ContentType ''application/json; charset=utf-8''\n\")",
+      "Bash(/c/Users/maliu/AppData/Local/Microsoft/WindowsApps/python:*)",
+      "Bash(py -3:*)",
+      "Bash(cmd.exe /c \"python C:\\Projects\\TelegramBots\\set_bot_description.py\")",
+      "WebFetch(domain:api.flyerservice.io)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebFetch(domain:pypi.org)",
+      "Bash(cmd.exe /c \"python -m py_compile:*)",
+      "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add FlyerService monetization + update bot texts\n\n- Integrate FlyerService for subscription-based monetization\n- YouTube Full: 3 free, then check every time\n- Instagram: check every 3rd download\n- TikTok/Pinterest/YouTube Shorts: always free\n- First 3 days and first 5 downloads: no checks\n- Update /start and /help with YouTube Full support (up to 2GB)\n- Improve error messages (no technical details leak to users)\n- Add make_user_friendly_error with more patterns\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
     ]
   }
 }

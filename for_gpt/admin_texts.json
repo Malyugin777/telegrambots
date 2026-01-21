@@ -1,0 +1,800 @@
+{
+  "meta": {
+    "project": "SaveNinja Admin Panel",
+    "language": "ru",
+    "description": "Все пользовательские тексты админ-панели (Ops Dashboard)",
+    "extracted_at": "2026-01-21"
+  },
+  "texts": [
+    {
+      "key": "ops_title",
+      "lang": "ru",
+      "text": "Ops Dashboard",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:724"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок страницы Ops Dashboard"
+    },
+    {
+      "key": "time_range_1h",
+      "lang": "ru",
+      "text": "1 час",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:732"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Выбор временного диапазона"
+    },
+    {
+      "key": "time_range_24h",
+      "lang": "ru",
+      "text": "24 часа",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:733"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Выбор временного диапазона"
+    },
+    {
+      "key": "time_range_7d",
+      "lang": "ru",
+      "text": "7 дней",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:734"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Выбор временного диапазона"
+    },
+    {
+      "key": "kpi_success_rate",
+      "lang": "ru",
+      "text": "Общий % успеха",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:751"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "KPI карточка"
+    },
+    {
+      "key": "kpi_downloads_count",
+      "lang": "ru",
+      "text": "{success} / {total} загрузок",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:758"],
+      "category": "admin_ui",
+      "placeholders": ["{success}", "{total}"],
+      "notes": "Подпись под KPI"
+    },
+    {
+      "key": "kpi_worst_p95",
+      "lang": "ru",
+      "text": "Худшая P95 задержка",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:767"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "KPI карточка"
+    },
+    {
+      "key": "kpi_all_platforms",
+      "lang": "ru",
+      "text": "По всем платформам",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:774"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Подпись под KPI"
+    },
+    {
+      "key": "kpi_quota_ig_tt_pin",
+      "lang": "ru",
+      "text": "Квота IG/TT/Pin",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:783"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "KPI карточка квоты Instagram/TikTok/Pinterest"
+    },
+    {
+      "key": "kpi_quota_spent",
+      "lang": "ru",
+      "text": "% потрачено",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:785"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Суффикс для квоты"
+    },
+    {
+      "key": "kpi_quota_remaining",
+      "lang": "ru",
+      "text": "{remaining} из {limit} шт",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:796"],
+      "category": "admin_ui",
+      "placeholders": ["{remaining}", "{limit}"],
+      "notes": "Подпись под квотой"
+    },
+    {
+      "key": "kpi_no_data",
+      "lang": "ru",
+      "text": "Нет данных",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:797"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Когда нет данных о квоте"
+    },
+    {
+      "key": "kpi_active_ops",
+      "lang": "ru",
+      "text": "Активные операции",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:806"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "KPI карточка"
+    },
+    {
+      "key": "kpi_downloads",
+      "lang": "ru",
+      "text": "{count} скачиваний",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:813"],
+      "category": "admin_ui",
+      "placeholders": ["{count}"],
+      "notes": "Подпись"
+    },
+    {
+      "key": "kpi_uploads",
+      "lang": "ru",
+      "text": "{count} загрузок",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:817"],
+      "category": "admin_ui",
+      "placeholders": ["{count}"],
+      "notes": "Подпись"
+    },
+    {
+      "key": "tab_sources",
+      "lang": "ru",
+      "text": "Источники",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:832"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Название вкладки"
+    },
+    {
+      "key": "tab_providers",
+      "lang": "ru",
+      "text": "Провайдеры",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:869"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Название вкладки"
+    },
+    {
+      "key": "tab_system",
+      "lang": "ru",
+      "text": "Система",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:893"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Название вкладки"
+    },
+    {
+      "key": "tab_routing",
+      "lang": "ru",
+      "text": "Routing",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1116"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Название вкладки"
+    },
+    {
+      "key": "table_source",
+      "lang": "ru",
+      "text": "Источник",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:485"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_total",
+      "lang": "ru",
+      "text": "Всего",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:495"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_success_rate",
+      "lang": "ru",
+      "text": "% успеха",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:501"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_speed",
+      "lang": "ru",
+      "text": "Скорость",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:537"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_providers",
+      "lang": "ru",
+      "text": "Провайдеры",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:543"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_error",
+      "lang": "ru",
+      "text": "Ошибка",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:564"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_provider",
+      "lang": "ru",
+      "text": "Провайдер",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:577"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы провайдеров"
+    },
+    {
+      "key": "table_enabled",
+      "lang": "ru",
+      "text": "Вкл",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:595"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_cdn_hosts",
+      "lang": "ru",
+      "text": "CDN хосты",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:665"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_last_success",
+      "lang": "ru",
+      "text": "Последний успех",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:679"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "table_last_error",
+      "lang": "ru",
+      "text": "Последняя ошибка",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:691"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Колонка таблицы"
+    },
+    {
+      "key": "no_errors",
+      "lang": "ru",
+      "text": "Нет ошибок",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:708"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Когда у провайдера нет ошибок"
+    },
+    {
+      "key": "time_just_now",
+      "lang": "ru",
+      "text": "только что",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:259"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Время < 1 минуты назад"
+    },
+    {
+      "key": "time_minutes_ago",
+      "lang": "ru",
+      "text": "{count}м назад",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:260"],
+      "category": "admin_ui",
+      "placeholders": ["{count}"],
+      "notes": "Время в минутах"
+    },
+    {
+      "key": "time_hours_ago",
+      "lang": "ru",
+      "text": "{count}ч назад",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:261"],
+      "category": "admin_ui",
+      "placeholders": ["{count}"],
+      "notes": "Время в часах"
+    },
+    {
+      "key": "time_days_ago",
+      "lang": "ru",
+      "text": "{count}д назад",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:262"],
+      "category": "admin_ui",
+      "placeholders": ["{count}"],
+      "notes": "Время в днях"
+    },
+    {
+      "key": "health_ok",
+      "lang": "ru",
+      "text": "OK",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:268"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Статус здоровья провайдера"
+    },
+    {
+      "key": "health_degraded",
+      "lang": "ru",
+      "text": "Degraded",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:270"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Статус здоровья провайдера"
+    },
+    {
+      "key": "health_down",
+      "lang": "ru",
+      "text": "Down",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:272"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Статус здоровья провайдера"
+    },
+    {
+      "key": "health_unknown",
+      "lang": "ru",
+      "text": "Unknown",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:274"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Статус здоровья провайдера"
+    },
+    {
+      "key": "tooltip_p95",
+      "lang": "ru",
+      "text": "95% загрузок быстрее этого времени",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:279"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Tooltip для P95 метрик"
+    },
+    {
+      "key": "tooltip_autorefresh",
+      "lang": "ru",
+      "text": "Автообновление: 30с",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:737"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Tooltip для индикатора обновления"
+    },
+    {
+      "key": "card_sources_stats",
+      "lang": "ru",
+      "text": "Статистика по источникам",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:839"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок карточки"
+    },
+    {
+      "key": "card_providers_stats",
+      "lang": "ru",
+      "text": "Статистика по провайдерам",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:874"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок карточки"
+    },
+    {
+      "key": "card_system_metrics",
+      "lang": "ru",
+      "text": "Системные метрики (Hostkey)",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:900"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок карточки"
+    },
+    {
+      "key": "card_api_quotas",
+      "lang": "ru",
+      "text": "Квоты API",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:970"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок карточки"
+    },
+    {
+      "key": "no_quota_data",
+      "lang": "ru",
+      "text": "Нет данных о квотах",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1105"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Когда нет данных о квотах"
+    },
+    {
+      "key": "no_server_data",
+      "lang": "ru",
+      "text": "Нет данных с сервера Hostkey.",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:960"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Когда нет системных метрик"
+    },
+    {
+      "key": "metrics_update_interval",
+      "lang": "ru",
+      "text": "Метрики обновляются каждые 30 секунд",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:962"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Пояснение под метриками"
+    },
+    {
+      "key": "tmp_size",
+      "lang": "ru",
+      "text": "/tmp размер:",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:949"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Метка для размера /tmp"
+    },
+    {
+      "key": "segmented_by_platform",
+      "lang": "ru",
+      "text": "По платформе",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:843"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Группировка"
+    },
+    {
+      "key": "segmented_by_type",
+      "lang": "ru",
+      "text": "По типу",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:844"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Группировка"
+    },
+    {
+      "key": "routing_title",
+      "lang": "ru",
+      "text": "Настройка маршрутизации провайдеров",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1121"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок Routing таба"
+    },
+    {
+      "key": "routing_source_label",
+      "lang": "ru",
+      "text": "Источник:",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1132"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Метка селектора источника"
+    },
+    {
+      "key": "routing_override_active",
+      "lang": "ru",
+      "text": "Override активен до {time}",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1148"],
+      "category": "admin_ui",
+      "placeholders": ["{time}"],
+      "notes": "Тег override"
+    },
+    {
+      "key": "routing_clear_override",
+      "lang": "ru",
+      "text": "Снять",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1154"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Кнопка снятия override"
+    },
+    {
+      "key": "routing_chain_title",
+      "lang": "ru",
+      "text": "Порядок провайдеров",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1166"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок карточки chain"
+    },
+    {
+      "key": "routing_save",
+      "lang": "ru",
+      "text": "Сохранить",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1180"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Кнопка сохранения"
+    },
+    {
+      "key": "routing_cancel",
+      "lang": "ru",
+      "text": "Отмена",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1186"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Кнопка отмены"
+    },
+    {
+      "key": "routing_reset",
+      "lang": "ru",
+      "text": "Сбросить",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1196"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Кнопка сброса на дефолт"
+    },
+    {
+      "key": "routing_no_providers",
+      "lang": "ru",
+      "text": "Нет провайдеров",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1249"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Когда chain пустой"
+    },
+    {
+      "key": "routing_how_it_works",
+      "lang": "ru",
+      "text": "Как это работает",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1259"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Заголовок info карточки"
+    },
+    {
+      "key": "routing_info_1",
+      "lang": "ru",
+      "text": "Бот пробует провайдеров <b>сверху вниз</b>",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1264"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Инструкция"
+    },
+    {
+      "key": "routing_info_2",
+      "lang": "ru",
+      "text": "Если первый упал — пробует второго, и т.д.",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1265"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Инструкция"
+    },
+    {
+      "key": "routing_info_3",
+      "lang": "ru",
+      "text": "Выключенные провайдеры пропускаются",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1266"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Инструкция"
+    },
+    {
+      "key": "routing_info_4",
+      "lang": "ru",
+      "text": "Изменения применяются <b>мгновенно</b>",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1267"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Инструкция"
+    },
+    {
+      "key": "routing_tip",
+      "lang": "ru",
+      "text": "<b>Совет:</b> Если YouTube банит — поставь SaveNow первым.",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1270"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Совет в routing"
+    },
+    {
+      "key": "quota_tokens_remaining",
+      "lang": "ru",
+      "text": "Осталось токенов",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1011"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Для SaveNow (токены)"
+    },
+    {
+      "key": "quota_items_remaining",
+      "lang": "ru",
+      "text": "Осталось шт",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1011"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Для Social Download (запросы)"
+    },
+    {
+      "key": "quota_spent_month",
+      "lang": "ru",
+      "text": "Потрачено за месяц",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1033"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Для SaveNow"
+    },
+    {
+      "key": "quota_downloaded_24h",
+      "lang": "ru",
+      "text": "Скачано за 24ч",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1034"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Для Social Download"
+    },
+    {
+      "key": "quota_new_month",
+      "lang": "ru",
+      "text": "Новый месяц через",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1046"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Когда сбросится квота"
+    },
+    {
+      "key": "quota_days",
+      "lang": "ru",
+      "text": "дней",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1050"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Единица измерения"
+    },
+    {
+      "key": "quota_used",
+      "lang": "ru",
+      "text": "Использовано",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1062"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Для SaveNow"
+    },
+    {
+      "key": "quota_forecast",
+      "lang": "ru",
+      "text": "Прогноз на месяц",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1063"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Для Social Download"
+    },
+    {
+      "key": "quota_remaining_percent",
+      "lang": "ru",
+      "text": "{percent}% осталось",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:1097"],
+      "category": "admin_ui",
+      "placeholders": ["{percent}"],
+      "notes": "Progress bar label"
+    },
+    {
+      "key": "message_provider_enabled",
+      "lang": "ru",
+      "text": "{provider} enabled",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:383"],
+      "category": "admin_ui",
+      "placeholders": ["{provider}"],
+      "notes": "Toast сообщение"
+    },
+    {
+      "key": "message_provider_disabled",
+      "lang": "ru",
+      "text": "{provider} disabled",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:383"],
+      "category": "admin_ui",
+      "placeholders": ["{provider}"],
+      "notes": "Toast сообщение"
+    },
+    {
+      "key": "message_cooldown_set",
+      "lang": "ru",
+      "text": "{provider} in cooldown for {minutes} minutes",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:398"],
+      "category": "admin_ui",
+      "placeholders": ["{provider}", "{minutes}"],
+      "notes": "Toast сообщение"
+    },
+    {
+      "key": "message_routing_saved",
+      "lang": "ru",
+      "text": "Routing saved",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:439"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Toast сообщение"
+    },
+    {
+      "key": "message_routing_reset",
+      "lang": "ru",
+      "text": "Routing reset to default",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:458"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Toast сообщение"
+    },
+    {
+      "key": "message_override_cleared",
+      "lang": "ru",
+      "text": "Override cleared",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:476"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Toast сообщение"
+    },
+    {
+      "key": "error_update_provider",
+      "lang": "ru",
+      "text": "Failed to update provider state",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:386"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Toast ошибки"
+    },
+    {
+      "key": "error_set_cooldown",
+      "lang": "ru",
+      "text": "Failed to set cooldown",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:401"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Toast ошибки"
+    },
+    {
+      "key": "error_save_routing",
+      "lang": "ru",
+      "text": "Failed to save routing: {error}",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:443"],
+      "category": "admin_ui",
+      "placeholders": ["{error}"],
+      "notes": "Toast ошибки"
+    },
+    {
+      "key": "error_reset_routing",
+      "lang": "ru",
+      "text": "Failed to reset routing",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:461"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Toast ошибки"
+    },
+    {
+      "key": "error_clear_override",
+      "lang": "ru",
+      "text": "Failed to clear override",
+      "where_used": ["admin_panel/frontend/src/pages/ops/index.tsx:479"],
+      "category": "admin_ui",
+      "placeholders": [],
+      "notes": "Toast ошибки"
+    }
+  ],
+  "source_labels": {
+    "youtube_full": "YouTube (Full)",
+    "youtube_shorts": "YouTube Shorts",
+    "instagram_reel": "Instagram Reels",
+    "instagram_post": "Instagram Post",
+    "instagram_story": "Instagram Story",
+    "instagram_carousel": "Instagram Carousel",
+    "tiktok": "TikTok",
+    "pinterest": "Pinterest"
+  },
+  "provider_labels": {
+    "ytdlp": "yt-dlp",
+    "pytubefix": "pytubefix",
+    "savenow": "SaveNow API",
+    "rapidapi": "RapidAPI"
+  }
+}

@@ -39,6 +39,8 @@ class PytubeResult:
     duration: int = 0
     thumbnail_url: Optional[str] = None  # URL превью с YouTube
     error: Optional[str] = None
+    # Phase 7.0 Telemetry
+    download_host: str = "googlevideo.com"  # pytubefix всегда качает с YouTube CDN
 
 
 class PytubeDownloader:

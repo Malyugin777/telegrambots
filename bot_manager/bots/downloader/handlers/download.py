@@ -658,7 +658,9 @@ async def handle_url(message: types.Message):
                             author=pytube_result.author or "unknown",
                             thumbnail=pytube_result.thumbnail_url,
                             platform=platform
-                        )
+                        ),
+                        # Phase 7.0 Telemetry
+                        download_host=pytube_result.download_host
                     )
                 else:
                     # Step 3: SaveNow API (CDN проксирует, IP не банится)
@@ -698,7 +700,12 @@ async def handle_url(message: types.Message):
                                 author=file_result.author or "unknown",
                                 thumbnail=file_result.thumbnail_path,  # SaveNow возвращает локальный путь
                                 platform=platform
-                            )
+                            ),
+                            # Phase 7.0 Telemetry: передаем данные из SaveNowResult
+                            prep_ms=file_result.prep_ms,
+                            download_ms=file_result.download_ms,
+                            download_host=file_result.download_host,
+                            quota_snapshot=file_result.quota_snapshot.to_dict() if file_result.quota_snapshot else None
                         )
                     else:
                         # Все 3 способа упали
@@ -868,6 +875,9 @@ async def handle_url(message: types.Message):
                     logger.info(f"[THUMBNAIL] Using local file: {thumb_path}")
 
             # === ОТПРАВКА С RETRY (3 попытки, backoff 5/10/20s) ===
+            # Phase 7.0 Telemetry: измеряем upload_ms
+            upload_start = time.time()
+
             async def _send_video(media_file, **kwargs):
                 return await message.answer_video(video=media_file, **kwargs)
 
@@ -884,26 +894,44 @@ async def handle_url(message: types.Message):
                 supports_streaming=True,
                 request_timeout=TIMEOUT_VIDEO,  # 15 минут для видео
             )
+            upload_ms = int((time.time() - upload_start) * 1000)
             file_id = video_msg.video.file_id if video_msg.video else None
 
             # Рассчитываем метрики производительности
-            download_time_ms = int((time.time() - download_start) * 1000)
+            total_ms = int((time.time() - download_start) * 1000)
             file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
-            download_speed = int(file_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
+            download_speed = int(file_size / total_ms * 1000 / 1024) if total_ms > 0 else 0
 
             # Phase 7.0 Telemetry: duration_bucket для аналитики
             duration_bucket = get_duration_bucket(duration) if duration > 0 else "unknown"
 
-            logger.info(f"Sent video: user={user_id}, size={file_size}, time={download_time_ms}ms, speed={download_speed}KB/s, bucket={duration_bucket}")
+            # Phase 7.0 Telemetry: собираем данные из result (SaveNowResult и др.)
+            prep_ms = getattr(result, 'prep_ms', None) or 0
+            download_ms = getattr(result, 'download_ms', None) or 0
+            download_host = getattr(result, 'download_host', None)
+            quota_snapshot = getattr(result, 'quota_snapshot', None)
+
+            # Telemetry details для Ops API
+            telemetry = {
+                "type": "video",
+                "platform": platform,
+                "bucket": duration_bucket,
+                "duration_sec": duration,
+                "prep_ms": prep_ms,
+                "download_ms": download_ms,
+                "upload_ms": upload_ms,
+                "total_ms": total_ms,
+                "download_host": download_host,
+            }
+            # Добавляем quota если есть
+            if quota_snapshot:
+                telemetry["quota"] = quota_snapshot.to_dict() if hasattr(quota_snapshot, 'to_dict') else None
+
+            logger.info(f"Sent video: user={user_id}, size={file_size}, total={total_ms}ms, prep={prep_ms}ms, download={download_ms}ms, upload={upload_ms}ms, bucket={duration_bucket}")
             await log_action(
                 user_id, "download_success",
-                {
-                    "type": "video",
-                    "platform": platform,
-                    "duration_bucket": duration_bucket,
-                    "duration_sec": duration,
-                },
-                download_time_ms=download_time_ms,
+                telemetry,
+                download_time_ms=total_ms,
                 file_size_bytes=file_size,
                 download_speed_kbps=download_speed,
                 api_source=api_source

@@ -70,6 +70,11 @@ class DownloadResult:
     error: Optional[str] = None
     is_photo: bool = False  # Для фото из Instagram/Pinterest
     send_as_document: bool = False  # Для больших YouTube видео (50MB-2GB)
+    # Phase 7.0 Telemetry
+    prep_ms: int = 0  # Время подготовки (job + polling)
+    download_ms: int = 0  # Время скачивания файла
+    download_host: Optional[str] = None  # CDN host (для детекции googlevideo)
+    quota_snapshot: Optional[dict] = None  # Snapshot квоты API
 
 
 class VideoDownloader:

@@ -166,6 +166,7 @@ class SaveNowDownloader:
     def _log_quota_headers(self, headers: dict):
         """
         Логирует quota headers из ответа RapidAPI для мониторинга остатка пакета.
+        Также сохраняет QuotaSnapshot для телеметрии.
 
         RapidAPI отправляет:
         - x-ratelimit-requests-remaining: оставшиеся запросы
@@ -186,13 +187,33 @@ class SaveNowDownloader:
 
             # Ищем unit-based limits (для plans типа Pro с units)
             units_remaining = None
+            units_reset = None
             for key, value in quota_info.items():
-                if 'remaining' in key.lower() and 'requests' not in key.lower():
-                    units_remaining = f"{key}={value}"
-                    break
+                key_lower = key.lower()
+                if 'remaining' in key_lower and 'requests' not in key_lower:
+                    try:
+                        units_remaining = int(value)
+                    except (ValueError, TypeError):
+                        units_remaining = None
+                if 'reset' in key_lower and 'requests' not in key_lower:
+                    try:
+                        units_reset = int(value)
+                    except (ValueError, TypeError):
+                        units_reset = None
 
-            if units_remaining:
-                logger.info(f"[SAVENOW-QUOTA] requests_remaining={remaining}, reset_sec={reset_sec}, {units_remaining}")
+            # Phase 7.0 Telemetry: сохраняем QuotaSnapshot
+            try:
+                self._last_quota_snapshot = QuotaSnapshot(
+                    units_remaining=units_remaining,
+                    units_reset_sec=units_reset,
+                    requests_remaining=int(remaining) if remaining != 'N/A' else None,
+                    requests_reset_sec=int(reset_sec) if reset_sec != 'N/A' else None,
+                )
+            except (ValueError, TypeError):
+                pass
+
+            if units_remaining is not None:
+                logger.info(f"[SAVENOW-QUOTA] requests_remaining={remaining}, units_remaining={units_remaining}")
             else:
                 logger.info(f"[SAVENOW-QUOTA] requests_remaining={remaining}, reset_sec={reset_sec}")
 
@@ -239,6 +260,10 @@ class SaveNowDownloader:
         if not self.api_key:
             return SaveNowResult(success=False, error="RAPIDAPI_KEY not configured")
 
+        # Phase 7.0 Telemetry: измеряем времена
+        prep_start = time.monotonic()
+        download_ms = 0
+
         try:
             logger.info(f"[SAVENOW] Starting download: {url}, quality={quality}")
 
@@ -270,11 +295,15 @@ class SaveNowDownloader:
             download_host = parsed.netloc
             logger.info(f"[SAVENOW] Download ready: host={download_host}")
 
+            # Phase 7.0 Telemetry: prep завершен
+            prep_ms = int((time.monotonic() - prep_start) * 1000)
+
             # Проверяем что это действительно SaveNow CDN
             if "googlevideo.com" in download_host:
                 logger.warning(f"[SAVENOW] WARNING: Got googlevideo.com URL, IP may be banned!")
 
             # Шаг 3: Скачиваем файл
+            download_start = time.monotonic()
             loop = asyncio.get_running_loop()
             result = await asyncio.wait_for(
                 loop.run_in_executor(
@@ -287,6 +316,14 @@ class SaveNowDownloader:
                 ),
                 timeout=DOWNLOAD_TIMEOUT
             )
+            download_ms = int((time.monotonic() - download_start) * 1000)
+
+            # Phase 7.0 Telemetry: добавляем времена в результат
+            if result.success:
+                result.prep_ms = prep_ms
+                result.download_ms = download_ms
+                result.quota_snapshot = self._last_quota_snapshot
+                logger.info(f"[SAVENOW] Telemetry: prep={prep_ms}ms, download={download_ms}ms")
 
             return result
 

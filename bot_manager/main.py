@@ -19,6 +19,9 @@ from bot_manager.middlewares import UserTrackingMiddleware, init_bot_record
 # Import messages loader
 from bot_manager.bots.downloader.messages import load_messages_from_db, start_cache_refresh_task
 
+# Import system metrics collector
+from bot_manager.services.system_metrics import start_system_metrics_task
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -82,6 +85,9 @@ async def main():
 
     # Запускаем фоновое обновление кэша сообщений
     start_cache_refresh_task()
+
+    # Запускаем сбор системных метрик для Ops Dashboard
+    start_system_metrics_task()
 
     # Collect all bots to start
     bots_to_start = []

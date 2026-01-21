@@ -81,9 +81,17 @@ interface QuotaInfo {
 
 interface SystemMetrics {
   cpu_percent: number | null;
+  // RAM
   ram_percent: number | null;
+  ram_used_bytes: number | null;
+  ram_total_bytes: number | null;
+  // Disk
   disk_percent: number | null;
-  tmp_size_mb: number | null;
+  disk_used_bytes: number | null;
+  disk_total_bytes: number | null;
+  // /tmp
+  tmp_used_bytes: number | null;
+  // Active operations
   active_downloads: number;
   active_uploads: number;
 }
@@ -126,6 +134,14 @@ const getSuccessRateColor = (rate: number): string => {
   if (rate >= 95) return '#52c41a';
   if (rate >= 80) return '#faad14';
   return '#ff4d4f';
+};
+
+const formatBytes = (bytes: number | null): string => {
+  if (bytes === null) return '-';
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return `${gb.toFixed(1)} GB`;
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(0)} MB`;
 };
 
 const getHealthBadge = (health: string) => {
@@ -637,26 +653,31 @@ export const Ops = () => {
               <Row gutter={[16, 16]}>
                 {/* System Metrics */}
                 <Col xs={24} lg={12}>
-                  <Card title="Системные метрики">
+                  <Card title="Системные метрики (Hostkey)">
                     {systemLoading ? (
                       <Spin />
-                    ) : system ? (
+                    ) : system && system.cpu_percent !== null ? (
                       <div>
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span>CPU</span>
-                            <span>{system.cpu_percent?.toFixed(1) ?? '-'}%</span>
+                            <span>{system.cpu_percent.toFixed(1)}%</span>
                           </div>
                           <Progress
-                            percent={system.cpu_percent ?? 0}
+                            percent={system.cpu_percent}
                             showInfo={false}
-                            strokeColor={system.cpu_percent && system.cpu_percent > 80 ? '#ff4d4f' : '#1890ff'}
+                            strokeColor={system.cpu_percent > 80 ? '#ff4d4f' : '#1890ff'}
                           />
                         </div>
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span>RAM</span>
-                            <span>{system.ram_percent?.toFixed(1) ?? '-'}%</span>
+                            <span>
+                              {system.ram_used_bytes !== null && system.ram_total_bytes !== null
+                                ? `${formatBytes(system.ram_used_bytes)} / ${formatBytes(system.ram_total_bytes)}`
+                                : system.ram_percent !== null ? `${system.ram_percent.toFixed(1)}%` : 'Нет данных'
+                              }
+                            </span>
                           </div>
                           <Progress
                             percent={system.ram_percent ?? 0}
@@ -667,7 +688,12 @@ export const Ops = () => {
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                             <span>Диск</span>
-                            <span>{system.disk_percent?.toFixed(1) ?? '-'}%</span>
+                            <span>
+                              {system.disk_used_bytes !== null && system.disk_total_bytes !== null
+                                ? `${formatBytes(system.disk_used_bytes)} / ${formatBytes(system.disk_total_bytes)}`
+                                : system.disk_percent !== null ? `${system.disk_percent.toFixed(1)}%` : 'Нет данных'
+                              }
+                            </span>
                           </div>
                           <Progress
                             percent={system.disk_percent ?? 0}
@@ -677,11 +703,20 @@ export const Ops = () => {
                         </div>
                         <div>
                           <span>/tmp размер: </span>
-                          <strong>{system.tmp_size_mb?.toFixed(1) ?? '-'} MB</strong>
+                          <strong>
+                            {system.tmp_used_bytes !== null
+                              ? formatBytes(system.tmp_used_bytes)
+                              : 'Нет данных'
+                            }
+                          </strong>
                         </div>
                       </div>
                     ) : (
-                      <div style={{ color: '#888' }}>Нет данных</div>
+                      <div style={{ color: '#888', textAlign: 'center', padding: '20px' }}>
+                        Нет данных с сервера Hostkey.
+                        <br />
+                        <span style={{ fontSize: '12px' }}>Метрики обновляются каждые 30 секунд</span>
+                      </div>
                     )}
                   </Card>
                 </Col>

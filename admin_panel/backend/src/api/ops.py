@@ -79,9 +79,17 @@ class QuotaInfo(BaseModel):
 class SystemMetrics(BaseModel):
     """Системные метрики"""
     cpu_percent: Optional[float] = None
+    # RAM
     ram_percent: Optional[float] = None
+    ram_used_bytes: Optional[int] = None
+    ram_total_bytes: Optional[int] = None
+    # Disk
     disk_percent: Optional[float] = None
-    tmp_size_mb: Optional[float] = None
+    disk_used_bytes: Optional[int] = None
+    disk_total_bytes: Optional[int] = None
+    # /tmp
+    tmp_used_bytes: Optional[int] = None
+    # Active operations
     active_downloads: int = 0
     active_uploads: int = 0
 
@@ -535,20 +543,32 @@ async def get_system_metrics(
         metrics.active_downloads = int(downloads) if downloads else 0
         metrics.active_uploads = int(uploads) if uploads else 0
 
-        # System metrics (если бот их пишет)
+        # System metrics (бот пишет их каждые 30 секунд)
         cpu = await redis.get("system:cpu_percent")
-        ram = await redis.get("system:ram_percent")
-        disk = await redis.get("system:disk_percent")
-        tmp_size = await redis.get("system:tmp_size_mb")
+        ram_percent = await redis.get("system:ram_percent")
+        ram_used = await redis.get("system:ram_used_bytes")
+        ram_total = await redis.get("system:ram_total_bytes")
+        disk_percent = await redis.get("system:disk_percent")
+        disk_used = await redis.get("system:disk_used_bytes")
+        disk_total = await redis.get("system:disk_total_bytes")
+        tmp_used = await redis.get("system:tmp_used_bytes")
 
         if cpu:
             metrics.cpu_percent = float(cpu)
-        if ram:
-            metrics.ram_percent = float(ram)
-        if disk:
-            metrics.disk_percent = float(disk)
-        if tmp_size:
-            metrics.tmp_size_mb = float(tmp_size)
+        if ram_percent:
+            metrics.ram_percent = float(ram_percent)
+        if ram_used:
+            metrics.ram_used_bytes = int(ram_used)
+        if ram_total:
+            metrics.ram_total_bytes = int(ram_total)
+        if disk_percent:
+            metrics.disk_percent = float(disk_percent)
+        if disk_used:
+            metrics.disk_used_bytes = int(disk_used)
+        if disk_total:
+            metrics.disk_total_bytes = int(disk_total)
+        if tmp_used:
+            metrics.tmp_used_bytes = int(tmp_used)
 
     except Exception:
         pass  # Redis unavailable

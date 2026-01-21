@@ -9,3 +9,4 @@ instaloader>=4.15  # Instagram downloader (посты, reels, карусели)
 curl_cffi>=0.10,<0.14  # browser impersonation for TikTok (yt-dlp supports 0.10-0.13)
 aiohttp>=3.10.0  # Для корректной работы ClientTimeout
 aiofiles==23.2.1
+psutil>=5.9.0  # System metrics (CPU, RAM, Disk) for Ops Dashboard

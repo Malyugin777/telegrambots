@@ -29,7 +29,10 @@ class PlatformStats(BaseModel):
     success: int
     errors: int
     success_rate: float  # 0-100%
+    # P95 breakdown по стадиям
     p95_total_ms: Optional[float] = None
+    p95_prep_ms: Optional[float] = None      # job creation + polling
+    p95_download_ms: Optional[float] = None  # file download time
     avg_speed_kbps: Optional[float] = None
     provider_share: dict  # {"ytdlp": 60, "rapidapi": 40}
     top_error_class: Optional[str] = None
@@ -46,6 +49,9 @@ class ProviderStats(BaseModel):
     avg_speed_kbps: Optional[float] = None
     errors_by_class: dict  # {"HARD_KILL": 5, "STALL": 2}
     cooldown_status: Optional[str] = None  # "active" / "cooldown" / null
+    # CDN vs direct host analysis
+    download_host_share: dict = {}  # {"googlevideo.com": 30, "cdn.savenow.io": 70}
+    top_hosts: List[str] = []  # топ-3 хоста
 
 
 class QuotaInfo(BaseModel):
@@ -57,8 +63,12 @@ class QuotaInfo(BaseModel):
     requests_remaining: Optional[int] = None
     requests_limit: Optional[int] = None
     reset_hours: Optional[float] = None
-    burn_rate_per_day: Optional[float] = None
-    days_remaining: Optional[float] = None
+    # Burn rates по периодам
+    burn_rate_24h: Optional[float] = None  # req/day за последние 24h
+    burn_rate_7d: Optional[float] = None   # avg req/day за 7 дней
+    # Прогнозы
+    forecast_pessimistic: Optional[float] = None  # дней по worst hour * 24
+    forecast_average: Optional[float] = None      # дней по среднему 24h
 
 
 class SystemMetrics(BaseModel):
@@ -163,6 +173,7 @@ async def get_platforms_stats(
             platform_data[platform] = {
                 "success": 0, "errors": 0,
                 "times": [], "speeds": [],
+                "prep_times": [], "download_times": [],  # P95 breakdown
                 "providers": {}
             }
 
@@ -171,6 +182,12 @@ async def get_platforms_stats(
             platform_data[platform]["times"].append(row.download_time_ms)
         if row.download_speed_kbps:
             platform_data[platform]["speeds"].append(row.download_speed_kbps)
+
+        # P95 breakdown: prep_ms и download_ms из details
+        if details.get("prep_ms"):
+            platform_data[platform]["prep_times"].append(details["prep_ms"])
+        if details.get("download_ms"):
+            platform_data[platform]["download_times"].append(details["download_ms"])
 
         # Provider share
         platform_data[platform]["providers"][api_source] = \
@@ -217,6 +234,8 @@ async def get_platforms_stats(
             errors=data["errors"],
             success_rate=success_rate,
             p95_total_ms=calculate_p95(data["times"]),
+            p95_prep_ms=calculate_p95(data.get("prep_times", [])),
+            p95_download_ms=calculate_p95(data.get("download_times", [])),
             avg_speed_kbps=round(sum(data["speeds"]) / len(data["speeds"]), 2) if data["speeds"] else None,
             provider_share=provider_share,
             top_error_class=top_error
@@ -239,12 +258,13 @@ async def get_providers_stats(
     hours = parse_range(range)
     since = datetime.utcnow() - timedelta(hours=hours)
 
-    # Успешные загрузки по провайдерам
+    # Успешные загрузки по провайдерам (включая details для download_host)
     success_result = await db.execute(
         select(
             ActionLog.api_source,
             ActionLog.download_time_ms,
-            ActionLog.download_speed_kbps
+            ActionLog.download_speed_kbps,
+            ActionLog.details
         ).where(
             ActionLog.created_at >= since,
             ActionLog.action == "download_success",
@@ -264,12 +284,14 @@ async def get_providers_stats(
 
     for row in success_result:
         provider = row.api_source.value if row.api_source else "unknown"
+        details = row.details or {}
 
         if provider not in provider_data:
             provider_data[provider] = {
                 "success": 0, "errors": 0,
                 "times": [], "speeds": [],
-                "error_classes": {}
+                "error_classes": {},
+                "hosts": {}  # download_host tracking
             }
 
         provider_data[provider]["success"] += 1
@@ -277,6 +299,12 @@ async def get_providers_stats(
             provider_data[provider]["times"].append(row.download_time_ms)
         if row.download_speed_kbps:
             provider_data[provider]["speeds"].append(row.download_speed_kbps)
+
+        # Track download_host (CDN vs googlevideo detection)
+        download_host = details.get("download_host")
+        if download_host:
+            provider_data[provider]["hosts"][download_host] = \
+                provider_data[provider]["hosts"].get(download_host, 0) + 1
 
     for row in error_result:
         provider = row.api_source.value if row.api_source else "unknown"
@@ -300,6 +328,17 @@ async def get_providers_stats(
         total = data["success"] + data["errors"]
         success_rate = round(data["success"] / total * 100, 1) if total > 0 else 0
 
+        # Download host share (% по каждому хосту)
+        hosts = data.get("hosts", {})
+        host_total = sum(hosts.values()) if hosts else 0
+        download_host_share = {}
+        for host, count in hosts.items():
+            download_host_share[host] = round(count / host_total * 100, 1) if host_total > 0 else 0
+
+        # Top-3 hosts
+        top_hosts = sorted(hosts.items(), key=lambda x: -x[1])[:3]
+        top_hosts = [h[0] for h in top_hosts]
+
         providers.append(ProviderStats(
             provider=name,
             total=total,
@@ -309,7 +348,9 @@ async def get_providers_stats(
             p95_total_ms=calculate_p95(data["times"]),
             avg_speed_kbps=round(sum(data["speeds"]) / len(data["speeds"]), 2) if data["speeds"] else None,
             errors_by_class=data["error_classes"],
-            cooldown_status=None  # TODO: implement cooldown tracking
+            cooldown_status=None,  # TODO: implement cooldown tracking
+            download_host_share=download_host_share,
+            top_hosts=top_hosts
         ))
 
     return ProvidersResponse(range_hours=hours, providers=providers)
@@ -358,23 +399,44 @@ async def get_quota_status(
         units_remaining = quota.get("units_remaining")
         requests_remaining = quota.get("requests_remaining")
 
-        # Считаем burn rate за вчера
-        yesterday_start = datetime.utcnow().replace(hour=0, minute=0, second=0) - timedelta(days=1)
-        yesterday_end = yesterday_start + timedelta(days=1)
+        now = datetime.utcnow()
 
-        burn_result = await db.execute(
+        # burn_rate_24h: запросы за последние 24 часа
+        since_24h = now - timedelta(hours=24)
+        burn_24h_result = await db.execute(
             select(func.count(ActionLog.id)).where(
-                ActionLog.created_at >= yesterday_start,
-                ActionLog.created_at < yesterday_end,
+                ActionLog.created_at >= since_24h,
                 ActionLog.action == "download_success",
                 ActionLog.api_source == APISource.RAPIDAPI
             )
         )
-        yesterday_count = burn_result.scalar() or 0
+        burn_rate_24h = burn_24h_result.scalar() or 0
 
-        days_remaining = None
-        if units_remaining and yesterday_count > 0:
-            days_remaining = round(units_remaining / yesterday_count, 1)
+        # burn_rate_7d: среднее в день за 7 дней
+        since_7d = now - timedelta(days=7)
+        burn_7d_result = await db.execute(
+            select(func.count(ActionLog.id)).where(
+                ActionLog.created_at >= since_7d,
+                ActionLog.action == "download_success",
+                ActionLog.api_source == APISource.RAPIDAPI
+            )
+        )
+        burn_7d_total = burn_7d_result.scalar() or 0
+        burn_rate_7d = round(burn_7d_total / 7, 1) if burn_7d_total else None
+
+        # worst_hour: максимум запросов за любой час в последние 24h (для pessimistic forecast)
+        # Упрощенно: берем burn_rate_24h и умножаем на пик-фактор 2x
+        worst_hour_rate = burn_rate_24h / 24 * 2 if burn_rate_24h else None
+
+        # Forecasts
+        forecast_average = None
+        forecast_pessimistic = None
+        if units_remaining:
+            if burn_rate_24h > 0:
+                forecast_average = round(units_remaining / burn_rate_24h, 1)
+            if worst_hour_rate and worst_hour_rate > 0:
+                # Pessimistic: если весь день будет как worst hour
+                forecast_pessimistic = round(units_remaining / (worst_hour_rate * 24), 1)
 
         apis.append(QuotaInfo(
             provider="savenow",
@@ -383,16 +445,17 @@ async def get_quota_status(
             units_limit=500,  # Daily limit for Basic
             requests_remaining=requests_remaining,
             reset_hours=24.0,
-            burn_rate_per_day=float(yesterday_count) if yesterday_count else None,
-            days_remaining=days_remaining
+            burn_rate_24h=float(burn_rate_24h) if burn_rate_24h else None,
+            burn_rate_7d=burn_rate_7d,
+            forecast_pessimistic=forecast_pessimistic,
+            forecast_average=forecast_average
         ))
     else:
         apis.append(QuotaInfo(
             provider="savenow",
             plan="Unknown",
             units_remaining=None,
-            units_limit=500,
-            days_remaining=None
+            units_limit=500
         ))
 
     return QuotaResponse(

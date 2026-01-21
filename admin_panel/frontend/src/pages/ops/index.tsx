@@ -28,6 +28,11 @@ import {
   WarningOutlined,
   ReloadOutlined,
   PauseCircleOutlined,
+  ArrowUpOutlined,
+  ArrowDownOutlined,
+  SaveOutlined,
+  UndoOutlined,
+  BranchesOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -118,6 +123,52 @@ interface SystemResponse {
   timestamp: string;
   metrics: SystemMetrics;
 }
+
+// Routing types
+interface ProviderConfig {
+  name: string;
+  enabled: boolean;
+  timeout_sec: number;
+}
+
+interface RoutingConfig {
+  source: string;
+  chain: ProviderConfig[];
+  available_providers: string[];
+  has_override: boolean;
+  override_expires_at: string | null;
+}
+
+interface RoutingListResponse {
+  sources: RoutingConfig[];
+}
+
+// Human-readable source names
+const SOURCE_LABELS: Record<string, string> = {
+  youtube_full: 'YouTube (Full)',
+  youtube_shorts: 'YouTube Shorts',
+  instagram_reel: 'Instagram Reels',
+  instagram_post: 'Instagram Post',
+  instagram_story: 'Instagram Story',
+  instagram_carousel: 'Instagram Carousel',
+  tiktok: 'TikTok',
+  pinterest: 'Pinterest',
+};
+
+// Provider labels
+const PROVIDER_LABELS: Record<string, string> = {
+  ytdlp: 'yt-dlp',
+  pytubefix: 'pytubefix',
+  savenow: 'SaveNow API',
+  rapidapi: 'RapidAPI',
+};
+
+const PROVIDER_COLORS: Record<string, string> = {
+  ytdlp: 'purple',
+  pytubefix: 'blue',
+  savenow: 'orange',
+  rapidapi: 'green',
+};
 
 // ============ Helper Functions ============
 
@@ -273,10 +324,23 @@ export const Ops = () => {
     queryOptions: { queryKey: ['ops-system', refreshKey] },
   });
 
+  // Routing data
+  const { data: routingData, isLoading: routingLoading, refetch: refetchRouting } = useCustom<RoutingListResponse>({
+    url: '/ops/routing',
+    method: 'get',
+    queryOptions: { queryKey: ['ops-routing', refreshKey] },
+  });
+
+  // State for routing editor
+  const [selectedSource, setSelectedSource] = useState<string>('youtube_full');
+  const [editedChain, setEditedChain] = useState<ProviderConfig[] | null>(null);
+  const [routingSaving, setRoutingSaving] = useState(false);
+
   const platforms = platformsData?.data?.platforms || [];
   const providers = providersData?.data?.providers || [];
   const quotas = quotaData?.data?.apis || [];
   const system = systemData?.data?.metrics;
+  const routingSources = routingData?.data?.sources || [];
 
   // Calculate KPIs
   const totalSuccess = platforms.reduce((sum, p) => sum + p.success, 0);
@@ -335,6 +399,78 @@ export const Ops = () => {
       refetchProviders();
     } catch {
       message.error('Failed to set cooldown');
+    }
+  };
+
+  // Routing handlers
+  const currentRouting = routingSources.find(r => r.source === selectedSource);
+  const displayChain = editedChain || currentRouting?.chain || [];
+
+  const handleMoveProvider = (index: number, direction: 'up' | 'down') => {
+    const chain = [...displayChain];
+    const newIndex = direction === 'up' ? index - 1 : index + 1;
+    if (newIndex < 0 || newIndex >= chain.length) return;
+    [chain[index], chain[newIndex]] = [chain[newIndex], chain[index]];
+    setEditedChain(chain);
+  };
+
+  const handleToggleProviderInChain = (index: number) => {
+    const chain = [...displayChain];
+    chain[index] = { ...chain[index], enabled: !chain[index].enabled };
+    setEditedChain(chain);
+  };
+
+  const handleSaveRouting = async () => {
+    if (!editedChain) return;
+    setRoutingSaving(true);
+    try {
+      await fetch(`${apiUrl}/ops/routing/${selectedSource}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ chain: editedChain }),
+      });
+      message.success('Routing saved');
+      setEditedChain(null);
+      refetchRouting();
+    } catch {
+      message.error('Failed to save routing');
+    }
+    setRoutingSaving(false);
+  };
+
+  const handleResetRouting = async () => {
+    setRoutingSaving(true);
+    try {
+      await fetch(`${apiUrl}/ops/routing/${selectedSource}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      message.success('Routing reset to default');
+      setEditedChain(null);
+      refetchRouting();
+    } catch {
+      message.error('Failed to reset routing');
+    }
+    setRoutingSaving(false);
+  };
+
+  const handleClearOverride = async () => {
+    try {
+      await fetch(`${apiUrl}/ops/routing/${selectedSource}/override`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      message.success('Override cleared');
+      refetchRouting();
+    } catch {
+      message.error('Failed to clear override');
     }
   };
 
@@ -967,6 +1103,161 @@ export const Ops = () => {
                   </Card>
                 </Col>
               </Row>
+            ),
+          },
+          {
+            key: 'routing',
+            label: (
+              <span>
+                <BranchesOutlined /> Routing
+              </span>
+            ),
+            children: (
+              <Card title="Настройка маршрутизации провайдеров">
+                {routingLoading ? (
+                  <div style={{ textAlign: 'center', padding: '40px' }}><Spin /></div>
+                ) : (
+                  <Row gutter={[24, 24]}>
+                    {/* Source selector */}
+                    <Col span={24}>
+                      <div style={{ marginBottom: '16px' }}>
+                        <span style={{ marginRight: '12px', fontWeight: 'bold' }}>Источник:</span>
+                        <Select
+                          value={selectedSource}
+                          onChange={(val) => {
+                            setSelectedSource(val);
+                            setEditedChain(null);
+                          }}
+                          style={{ width: 200 }}
+                          options={routingSources.map(r => ({
+                            value: r.source,
+                            label: SOURCE_LABELS[r.source] || r.source,
+                          }))}
+                        />
+                        {currentRouting?.has_override && (
+                          <Tag color="orange" style={{ marginLeft: '12px' }}>
+                            Override активен до {new Date(currentRouting.override_expires_at!).toLocaleTimeString()}
+                            <Button
+                              type="link"
+                              size="small"
+                              onClick={handleClearOverride}
+                              style={{ padding: '0 4px' }}
+                            >
+                              Снять
+                            </Button>
+                          </Tag>
+                        )}
+                      </div>
+                    </Col>
+
+                    {/* Chain editor */}
+                    <Col xs={24} lg={12}>
+                      <Card
+                        size="small"
+                        title="Порядок провайдеров"
+                        extra={
+                          <div>
+                            {editedChain && (
+                              <>
+                                <Button
+                                  type="primary"
+                                  size="small"
+                                  icon={<SaveOutlined />}
+                                  onClick={handleSaveRouting}
+                                  loading={routingSaving}
+                                  style={{ marginRight: '8px' }}
+                                >
+                                  Сохранить
+                                </Button>
+                                <Button
+                                  size="small"
+                                  onClick={() => setEditedChain(null)}
+                                >
+                                  Отмена
+                                </Button>
+                              </>
+                            )}
+                            {!editedChain && (
+                              <Button
+                                size="small"
+                                icon={<UndoOutlined />}
+                                onClick={handleResetRouting}
+                                loading={routingSaving}
+                              >
+                                Сбросить
+                              </Button>
+                            )}
+                          </div>
+                        }
+                      >
+                        {displayChain.map((provider, index) => (
+                          <div
+                            key={provider.name}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              padding: '8px 12px',
+                              marginBottom: '8px',
+                              backgroundColor: provider.enabled ? '#fafafa' : '#f5f5f5',
+                              borderRadius: '4px',
+                              border: '1px solid #d9d9d9',
+                              opacity: provider.enabled ? 1 : 0.6,
+                            }}
+                          >
+                            <span style={{ marginRight: '12px', color: '#888', minWidth: '20px' }}>
+                              {index + 1}.
+                            </span>
+                            <Tag color={PROVIDER_COLORS[provider.name] || 'default'}>
+                              {PROVIDER_LABELS[provider.name] || provider.name}
+                            </Tag>
+                            <div style={{ flex: 1 }} />
+                            <Switch
+                              size="small"
+                              checked={provider.enabled}
+                              onChange={() => handleToggleProviderInChain(index)}
+                              style={{ marginRight: '8px' }}
+                            />
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<ArrowUpOutlined />}
+                              disabled={index === 0}
+                              onClick={() => handleMoveProvider(index, 'up')}
+                            />
+                            <Button
+                              type="text"
+                              size="small"
+                              icon={<ArrowDownOutlined />}
+                              disabled={index === displayChain.length - 1}
+                              onClick={() => handleMoveProvider(index, 'down')}
+                            />
+                          </div>
+                        ))}
+                        {displayChain.length === 0 && (
+                          <div style={{ color: '#888', textAlign: 'center', padding: '20px' }}>
+                            Нет провайдеров
+                          </div>
+                        )}
+                      </Card>
+                    </Col>
+
+                    {/* Info */}
+                    <Col xs={24} lg={12}>
+                      <Card size="small" title="Как это работает">
+                        <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                          <li>Бот пробует провайдеров <b>сверху вниз</b></li>
+                          <li>Если первый упал — пробует второго, и т.д.</li>
+                          <li>Выключенные провайдеры пропускаются</li>
+                          <li>Изменения применяются <b>мгновенно</b></li>
+                        </ul>
+                        <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f6ffed', borderRadius: '4px', border: '1px solid #b7eb8f' }}>
+                          <b>Совет:</b> Если YouTube банит — поставь SaveNow первым.
+                        </div>
+                      </Card>
+                    </Col>
+                  </Row>
+                )}
+              </Card>
             ),
           },
         ]}

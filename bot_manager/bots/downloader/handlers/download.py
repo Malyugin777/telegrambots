@@ -1,10 +1,11 @@
 """
 Обработчик ссылок - скачивание видео и аудио
 
-Провайдеры:
-- Instagram: RapidAPI (primary)
-- YouTube: yt-dlp → pytubefix → SaveNow API (CDN fallback)
-- TikTok, Pinterest: yt-dlp → RapidAPI (fallback)
+Провайдеры (порядок настраивается через админку /ops → Routing):
+- Instagram: RapidAPI
+- YouTube: динамический chain из Redis (default: yt-dlp → pytubefix → SaveNow)
+- TikTok: динамический chain из Redis (default: yt-dlp → RapidAPI)
+- Pinterest: динамический chain из Redis (default: yt-dlp → RapidAPI)
 """
 import re
 import os
@@ -20,6 +21,7 @@ from ..services.rapidapi_downloader import RapidAPIDownloader
 from ..services.pytubefix_downloader import PytubeDownloader
 from ..services.instaloader_downloader import InstaloaderDownloader
 from ..services.savenow_downloader import SaveNowDownloader
+from ..services.routing import get_routing_chain, get_source_key
 from ..services.cache import (
     get_cached_file_ids,
     cache_file_ids,
@@ -686,52 +688,71 @@ async def handle_url(message: types.Message):
                 quota_snapshot=carousel.quota_snapshot.to_dict() if carousel.quota_snapshot else None
             )
 
-        # YOUTUBE: yt-dlp (primary) -> pytubefix (fallback #1) -> SaveNow (fallback #2, CDN)
+        # YOUTUBE: Dynamic routing from Redis (default: yt-dlp → pytubefix → SaveNow)
         elif is_youtube:
             from ..services.downloader import DownloadResult, MediaInfo
 
-            # Step 1: yt-dlp (быстрый, бесплатный)
-            logger.info(f"[YOUTUBE] Trying yt-dlp: {url}")
-            result = await downloader.download(url, progress_callback=progress_callback)
-            api_source = "ytdlp"
+            # Определяем bucket (shorts/full) для роутинга
+            duration_hint = 0
+            try:
+                info = await pytubefix.get_video_info(url)
+                if info.success:
+                    duration_hint = info.duration
+            except:
+                pass
 
-            if not result.success:
-                # Step 2: pytubefix (иногда работает когда yt-dlp нет)
-                logger.warning(f"[YOUTUBE] yt-dlp failed: {result.error}, trying pytubefix")
-                pytube_result = await pytubefix.download(url, quality="720p")
+            yt_bucket = "shorts" if duration_hint < 300 else "full"  # <5 мин = shorts
+            source_key = get_source_key("youtube", yt_bucket)
 
-                if pytube_result.success:
-                    api_source = "pytubefix"
-                    result = DownloadResult(
-                        success=True,
-                        file_path=pytube_result.file_path,
-                        filename=pytube_result.filename,
-                        file_size=pytube_result.file_size,
-                        is_photo=False,
-                        send_as_document=pytube_result.file_size > 50_000_000,
-                        info=MediaInfo(
-                            title=pytube_result.title or "video",
-                            author=pytube_result.author or "unknown",
-                            thumbnail=pytube_result.thumbnail_url,
-                            platform=platform
-                        ),
-                        download_host=pytube_result.download_host
-                    )
-                else:
-                    # Step 3: SaveNow API (CDN, платный, но IP не банится)
-                    logger.warning(f"[YOUTUBE] pytubefix failed: {pytube_result.error}, trying SaveNow API")
+            # Получаем chain провайдеров из Redis (или дефолт)
+            routing_chain = await get_routing_chain(source_key)
+            providers = routing_chain.get_enabled_providers()
+            logger.info(f"[YOUTUBE] Routing chain for {source_key}: {providers}")
+
+            result = None
+            api_source = None
+            errors = {}  # provider -> error message
+
+            for provider_name in providers:
+                if provider_name == "ytdlp":
+                    logger.info(f"[YOUTUBE] Trying yt-dlp: {url}")
+                    ytdlp_result = await downloader.download(url, progress_callback=progress_callback)
+                    if ytdlp_result.success:
+                        result = ytdlp_result
+                        api_source = "ytdlp"
+                        break
+                    errors["ytdlp"] = ytdlp_result.error
+                    logger.warning(f"[YOUTUBE] yt-dlp failed: {ytdlp_result.error}")
+
+                elif provider_name == "pytubefix":
+                    logger.info(f"[YOUTUBE] Trying pytubefix: {url}")
+                    pytube_result = await pytubefix.download(url, quality="720p")
+                    if pytube_result.success:
+                        api_source = "pytubefix"
+                        result = DownloadResult(
+                            success=True,
+                            file_path=pytube_result.file_path,
+                            filename=pytube_result.filename,
+                            file_size=pytube_result.file_size,
+                            is_photo=False,
+                            send_as_document=pytube_result.file_size > 50_000_000,
+                            info=MediaInfo(
+                                title=pytube_result.title or "video",
+                                author=pytube_result.author or "unknown",
+                                thumbnail=pytube_result.thumbnail_url,
+                                platform=platform
+                            ),
+                            download_host=pytube_result.download_host
+                        )
+                        break
+                    errors["pytubefix"] = pytube_result.error
+                    logger.warning(f"[YOUTUBE] pytubefix failed: {pytube_result.error}")
+
+                elif provider_name == "savenow":
+                    logger.info(f"[YOUTUBE] Trying SaveNow API: {url}")
                     await status_msg.edit_text("⏳ Пробую альтернативный способ...")
 
-                    duration_hint = 0
-                    try:
-                        info = await pytubefix.get_video_info(url)
-                        if info.success:
-                            duration_hint = info.duration
-                    except:
-                        pass
-
                     file_result = await savenow.download_adaptive(url, duration_hint=duration_hint)
-
                     if file_result.success:
                         api_source = "savenow"
                         logger.info(f"[YOUTUBE] SaveNow succeeded: {file_result.filename}, host={file_result.download_host}")
@@ -759,46 +780,63 @@ async def handle_url(message: types.Message):
                             download_host=file_result.download_host,
                             quota_snapshot=file_result.quota_snapshot.to_dict() if file_result.quota_snapshot else None
                         )
-                    else:
-                        # Все 3 способа упали
-                        error_class = classify_error(result.error)
-                        logger.error(f"[YOUTUBE] All 3 methods failed: yt-dlp, pytubefix, SaveNow, class={error_class}")
-                        await error_logger.log_error_by_telegram_id(
-                            telegram_id=user_id,
-                            bot_username="SaveNinja_bot",
-                            platform=platform,
-                            url=url,
-                            error_type="download_failed",
-                            error_message=f"yt-dlp: {result.error}, pytubefix: {pytube_result.error}, SaveNow: {file_result.error}",
-                            error_details={
-                                "source": "all_three",
-                                "error_class": error_class,
-                                "ytdlp_class": classify_error(result.error),
-                                "pytubefix_class": classify_error(pytube_result.error),
-                                "savenow_class": classify_error(file_result.error),
-                            }
-                        )
-                        await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
-                        return
+                        break
+                    errors["savenow"] = file_result.error
+                    logger.warning(f"[YOUTUBE] SaveNow failed: {file_result.error}")
 
-        # TikTok, Pinterest -> yt-dlp (primary) -> RapidAPI (fallback)
+            # Если все провайдеры упали
+            if result is None or not result.success:
+                first_error = list(errors.values())[0] if errors else "Unknown error"
+                error_class = classify_error(first_error)
+                logger.error(f"[YOUTUBE] All providers failed: {list(errors.keys())}, class={error_class}")
+                await error_logger.log_error_by_telegram_id(
+                    telegram_id=user_id,
+                    bot_username="SaveNinja_bot",
+                    platform=platform,
+                    url=url,
+                    error_type="download_failed",
+                    error_message=", ".join([f"{k}: {v}" for k, v in errors.items()]),
+                    error_details={
+                        "source": "all_providers",
+                        "error_class": error_class,
+                        "providers_tried": list(errors.keys()),
+                        **{f"{k}_class": classify_error(v) for k, v in errors.items()}
+                    }
+                )
+                await status_msg.edit_text(f"❌ {make_user_friendly_error(first_error)}")
+                return
+
+        # TikTok, Pinterest -> Dynamic routing from Redis (default: yt-dlp → RapidAPI)
         else:
-            result = await downloader.download(url, progress_callback=progress_callback)
-            api_source = "ytdlp"
+            from ..services.downloader import DownloadResult, MediaInfo
 
-            if not result.success:
-                logger.warning(f"yt-dlp failed: user={user_id}, error={result.error}")
+            source_key = get_source_key(platform)  # "tiktok" or "pinterest"
+            routing_chain = await get_routing_chain(source_key)
+            providers = routing_chain.get_enabled_providers()
+            logger.info(f"[{platform.upper()}] Routing chain: {providers}")
 
-                # FALLBACK: RapidAPI
-                if supports_rapidapi_fallback(url):
-                    logger.info(f"Trying RapidAPI fallback for: {url}")
+            result = None
+            api_source = None
+            errors = {}
+
+            for provider_name in providers:
+                if provider_name == "ytdlp":
+                    logger.info(f"[{platform.upper()}] Trying yt-dlp: {url}")
+                    ytdlp_result = await downloader.download(url, progress_callback=progress_callback)
+                    if ytdlp_result.success:
+                        result = ytdlp_result
+                        api_source = "ytdlp"
+                        break
+                    errors["ytdlp"] = ytdlp_result.error
+                    logger.warning(f"[{platform.upper()}] yt-dlp failed: {ytdlp_result.error}")
+
+                elif provider_name == "rapidapi":
+                    logger.info(f"[{platform.upper()}] Trying RapidAPI: {url}")
                     await status_msg.edit_text("⏳ Пробую альтернативный способ...")
 
-                    from ..services.downloader import DownloadResult, MediaInfo
                     file_result = await rapidapi.download(url, adaptive_quality=False)
-
                     if file_result.success:
-                        logger.info(f"RapidAPI fallback succeeded: {file_result.filename}")
+                        logger.info(f"[{platform.upper()}] RapidAPI succeeded: {file_result.filename}")
                         api_source = "rapidapi"
 
                         if file_result.file_size > 2_000_000_000:
@@ -820,38 +858,31 @@ async def handle_url(message: types.Message):
                                 platform=platform
                             )
                         )
-                    else:
-                        error_class = classify_error(result.error)
-                        logger.error(f"Both yt-dlp and RapidAPI failed for: {url}, class={error_class}")
-                        await error_logger.log_error_by_telegram_id(
-                            telegram_id=user_id,
-                            bot_username="SaveNinja_bot",
-                            platform=platform,
-                            url=url,
-                            error_type="download_failed",
-                            error_message=f"yt-dlp: {result.error}, RapidAPI: {file_result.error}",
-                            error_details={
-                                "source": "both",
-                                "error_class": error_class,
-                                "ytdlp_class": classify_error(result.error),
-                                "rapidapi_class": classify_error(file_result.error),
-                            }
-                        )
-                        await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
-                        return
-                else:
-                    error_class = classify_error(result.error)
-                    await error_logger.log_error_by_telegram_id(
-                        telegram_id=user_id,
-                        bot_username="SaveNinja_bot",
-                        platform=platform,
-                        url=url,
-                        error_type="download_failed",
-                        error_message=result.error,
-                        error_details={"source": "yt-dlp", "error_class": error_class}
-                    )
-                    await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
-                    return
+                        break
+                    errors["rapidapi"] = file_result.error
+                    logger.warning(f"[{platform.upper()}] RapidAPI failed: {file_result.error}")
+
+            # Если все провайдеры упали
+            if result is None or not result.success:
+                first_error = list(errors.values())[0] if errors else "Unknown error"
+                error_class = classify_error(first_error)
+                logger.error(f"[{platform.upper()}] All providers failed: {list(errors.keys())}, class={error_class}")
+                await error_logger.log_error_by_telegram_id(
+                    telegram_id=user_id,
+                    bot_username="SaveNinja_bot",
+                    platform=platform,
+                    url=url,
+                    error_type="download_failed",
+                    error_message=", ".join([f"{k}: {v}" for k, v in errors.items()]),
+                    error_details={
+                        "source": "all_providers",
+                        "error_class": error_class,
+                        "providers_tried": list(errors.keys()),
+                        **{f"{k}_class": classify_error(v) for k, v in errors.items()}
+                    }
+                )
+                await status_msg.edit_text(f"❌ {make_user_friendly_error(first_error)}")
+                return
 
         # Отправляем медиа
         await status_msg.edit_text(get_uploading_message())

@@ -721,3 +721,258 @@ async def set_provider_cooldown(
         cooldown_until=until,
         message=f"Provider {provider} in cooldown until {until.isoformat()}"
     )
+
+
+# ============ Routing Management ============
+
+# Дефолтные chains для каждого источника (fallback если нет в Redis)
+DEFAULT_ROUTING = {
+    "youtube_full": ["ytdlp", "pytubefix", "savenow"],
+    "youtube_shorts": ["ytdlp", "pytubefix", "savenow"],
+    "instagram_reel": ["rapidapi"],
+    "instagram_post": ["rapidapi"],
+    "instagram_story": ["rapidapi"],
+    "instagram_carousel": ["rapidapi"],
+    "tiktok": ["ytdlp", "rapidapi"],
+    "pinterest": ["ytdlp", "rapidapi"],
+}
+
+# Доступные провайдеры для каждого источника
+AVAILABLE_PROVIDERS = {
+    "youtube_full": ["ytdlp", "pytubefix", "savenow"],
+    "youtube_shorts": ["ytdlp", "pytubefix", "savenow"],
+    "instagram_reel": ["rapidapi", "ytdlp"],
+    "instagram_post": ["rapidapi", "ytdlp"],
+    "instagram_story": ["rapidapi"],
+    "instagram_carousel": ["rapidapi"],
+    "tiktok": ["ytdlp", "rapidapi"],
+    "pinterest": ["ytdlp", "rapidapi"],
+}
+
+
+class ProviderConfig(BaseModel):
+    """Конфиг провайдера в chain"""
+    name: str
+    enabled: bool = True
+    timeout_sec: int = 60
+
+
+class RoutingConfig(BaseModel):
+    """Конфиг роутинга для источника"""
+    source: str
+    chain: List[ProviderConfig]
+    available_providers: List[str]
+    has_override: bool = False
+    override_expires_at: Optional[datetime] = None
+
+
+class RoutingListResponse(BaseModel):
+    """Ответ со списком всех routing configs"""
+    sources: List[RoutingConfig]
+
+
+class RoutingSaveRequest(BaseModel):
+    """Запрос на сохранение routing"""
+    chain: List[ProviderConfig]
+
+
+class RoutingOverrideRequest(BaseModel):
+    """Запрос на override routing"""
+    chain: List[str]  # просто список имён провайдеров
+    minutes: int = 30
+
+
+@router.get("/routing", response_model=RoutingListResponse)
+async def get_all_routing(
+    _=Depends(get_current_user),
+):
+    """
+    GET /api/v1/ops/routing
+
+    Получить routing configs для всех источников
+    """
+    import json
+    redis = await get_redis()
+    sources = []
+
+    for source, default_chain in DEFAULT_ROUTING.items():
+        # Читаем chain из Redis
+        chain_json = await redis.get(f"routing:{source}")
+        if chain_json:
+            chain_data = json.loads(chain_json)
+        else:
+            # Дефолтный chain
+            chain_data = [{"name": p, "enabled": True, "timeout_sec": 60} for p in default_chain]
+
+        # Проверяем override
+        override_json = await redis.get(f"routing_override:{source}")
+        has_override = False
+        override_expires = None
+        if override_json:
+            override_data = json.loads(override_json)
+            expires_at = datetime.fromisoformat(override_data["expires_at"])
+            if expires_at > datetime.utcnow():
+                has_override = True
+                override_expires = expires_at
+                # При активном override показываем его chain
+                chain_data = [{"name": p, "enabled": True, "timeout_sec": 60} for p in override_data["chain"]]
+
+        sources.append(RoutingConfig(
+            source=source,
+            chain=[ProviderConfig(**p) if isinstance(p, dict) else ProviderConfig(name=p) for p in chain_data],
+            available_providers=AVAILABLE_PROVIDERS.get(source, []),
+            has_override=has_override,
+            override_expires_at=override_expires
+        ))
+
+    return RoutingListResponse(sources=sources)
+
+
+@router.get("/routing/{source}", response_model=RoutingConfig)
+async def get_routing(
+    source: str,
+    _=Depends(get_current_user),
+):
+    """
+    GET /api/v1/ops/routing/{source}
+
+    Получить routing config для конкретного источника
+    """
+    import json
+
+    if source not in DEFAULT_ROUTING:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown source: {source}")
+
+    redis = await get_redis()
+
+    # Читаем chain из Redis
+    chain_json = await redis.get(f"routing:{source}")
+    if chain_json:
+        chain_data = json.loads(chain_json)
+    else:
+        chain_data = [{"name": p, "enabled": True, "timeout_sec": 60} for p in DEFAULT_ROUTING[source]]
+
+    # Проверяем override
+    override_json = await redis.get(f"routing_override:{source}")
+    has_override = False
+    override_expires = None
+    if override_json:
+        override_data = json.loads(override_json)
+        expires_at = datetime.fromisoformat(override_data["expires_at"])
+        if expires_at > datetime.utcnow():
+            has_override = True
+            override_expires = expires_at
+            chain_data = [{"name": p, "enabled": True, "timeout_sec": 60} for p in override_data["chain"]]
+
+    return RoutingConfig(
+        source=source,
+        chain=[ProviderConfig(**p) if isinstance(p, dict) else ProviderConfig(name=p) for p in chain_data],
+        available_providers=AVAILABLE_PROVIDERS.get(source, []),
+        has_override=has_override,
+        override_expires_at=override_expires
+    )
+
+
+@router.post("/routing/{source}")
+async def save_routing(
+    source: str,
+    request: RoutingSaveRequest,
+    _=Depends(get_current_user),
+):
+    """
+    POST /api/v1/ops/routing/{source}
+
+    Сохранить routing config для источника
+    """
+    import json
+
+    if source not in DEFAULT_ROUTING:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown source: {source}")
+
+    redis = await get_redis()
+
+    # Сохраняем chain
+    chain_data = [{"name": p.name, "enabled": p.enabled, "timeout_sec": p.timeout_sec} for p in request.chain]
+    await redis.set(f"routing:{source}", json.dumps(chain_data))
+
+    return {"status": "ok", "source": source, "chain": chain_data}
+
+
+@router.delete("/routing/{source}")
+async def reset_routing(
+    source: str,
+    _=Depends(get_current_user),
+):
+    """
+    DELETE /api/v1/ops/routing/{source}
+
+    Сбросить routing на дефолтный
+    """
+    if source not in DEFAULT_ROUTING:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown source: {source}")
+
+    redis = await get_redis()
+    await redis.delete(f"routing:{source}")
+    await redis.delete(f"routing_override:{source}")
+
+    return {"status": "ok", "source": source, "message": "Reset to default"}
+
+
+@router.post("/routing/{source}/override")
+async def set_routing_override(
+    source: str,
+    request: RoutingOverrideRequest,
+    _=Depends(get_current_user),
+):
+    """
+    POST /api/v1/ops/routing/{source}/override
+
+    Установить временный override routing (например, "только SaveNow на 30 минут")
+    """
+    import json
+
+    if source not in DEFAULT_ROUTING:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown source: {source}")
+
+    redis = await get_redis()
+
+    expires_at = datetime.utcnow() + timedelta(minutes=request.minutes)
+    override_data = {
+        "chain": request.chain,
+        "expires_at": expires_at.isoformat()
+    }
+
+    await redis.set(f"routing_override:{source}", json.dumps(override_data))
+    await redis.expire(f"routing_override:{source}", request.minutes * 60)
+
+    return {
+        "status": "ok",
+        "source": source,
+        "chain": request.chain,
+        "expires_at": expires_at.isoformat(),
+        "message": f"Override set for {request.minutes} minutes"
+    }
+
+
+@router.delete("/routing/{source}/override")
+async def clear_routing_override(
+    source: str,
+    _=Depends(get_current_user),
+):
+    """
+    DELETE /api/v1/ops/routing/{source}/override
+
+    Снять override routing
+    """
+    if source not in DEFAULT_ROUTING:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail=f"Unknown source: {source}")
+
+    redis = await get_redis()
+    await redis.delete(f"routing_override:{source}")
+
+    return {"status": "ok", "source": source, "message": "Override cleared"}

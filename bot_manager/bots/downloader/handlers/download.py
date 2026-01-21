@@ -911,6 +911,16 @@ async def handle_url(message: types.Message):
             download_host = getattr(result, 'download_host', None)
             quota_snapshot = getattr(result, 'quota_snapshot', None)
 
+            # Fallback download_host по платформе (для yt-dlp который не трекает host)
+            if not download_host:
+                platform_hosts = {
+                    "youtube": "googlevideo.com",
+                    "tiktok": "tiktokcdn.com",
+                    "pinterest": "pinimg.com",
+                    "instagram": "cdninstagram.com",
+                }
+                download_host = platform_hosts.get(platform, "unknown")
+
             # Telemetry details для Ops API
             telemetry = {
                 "type": "video",

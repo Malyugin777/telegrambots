@@ -432,6 +432,9 @@ async def handle_url(message: types.Message):
         'downloaded_bytes': 0,
         'total_bytes': 0,
         'speed': 0,
+        # Phase 7.0 Telemetry: stage breakdown
+        'first_byte_time': None,  # Время когда начали получать данные
+        'download_end_time': None,  # Время завершения скачивания
     }
 
     # Callback для прогресса yt-dlp
@@ -442,8 +445,11 @@ async def handle_url(message: types.Message):
             progress_data['total_bytes'] = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
             progress_data['speed'] = d.get('speed', 0)
 
+            # Phase 7.0 Telemetry: фиксируем момент первого байта
+            if progress_data['first_byte_time'] is None and progress_data['downloaded_bytes'] > 0:
+                progress_data['first_byte_time'] = time.time()
+
             # Логируем прогресс раз в 60 секунд (для отладки)
-            import time
             now = time.time()
             if now - last_log_time[0] >= 60:
                 downloaded_mb = progress_data['downloaded_bytes'] / (1024 * 1024)
@@ -451,6 +457,10 @@ async def handle_url(message: types.Message):
                 speed_kbps = (progress_data['speed'] or 0) / 1024
                 logger.info(f"[PROGRESS] {downloaded_mb:.1f}MB / {total_mb:.1f}MB, speed={speed_kbps:.1f}KB/s")
                 last_log_time[0] = now
+
+        elif d['status'] == 'finished':
+            # Phase 7.0 Telemetry: фиксируем момент завершения скачивания
+            progress_data['download_end_time'] = time.time()
 
     # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
     download_start = time.time()
@@ -910,6 +920,18 @@ async def handle_url(message: types.Message):
             download_ms = getattr(result, 'download_ms', None) or 0
             download_host = getattr(result, 'download_host', None)
             quota_snapshot = getattr(result, 'quota_snapshot', None)
+
+            # Phase 7.0 Telemetry: stage breakdown из progress_callback (для yt-dlp)
+            # Если result не имеет prep_ms/download_ms, вычисляем из progress_data
+            if prep_ms == 0 and progress_data.get('first_byte_time'):
+                # prep = время от старта до первого байта
+                prep_ms = int((progress_data['first_byte_time'] - download_start) * 1000)
+            if download_ms == 0 and progress_data.get('first_byte_time') and progress_data.get('download_end_time'):
+                # download = время от первого байта до завершения
+                download_ms = int((progress_data['download_end_time'] - progress_data['first_byte_time']) * 1000)
+            elif download_ms == 0 and progress_data.get('first_byte_time'):
+                # fallback: download = total - prep - upload (приблизительно)
+                download_ms = max(0, total_ms - prep_ms - upload_ms)
 
             # Fallback download_host по платформе (для yt-dlp который не трекает host)
             if not download_host:

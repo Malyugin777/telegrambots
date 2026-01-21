@@ -293,14 +293,33 @@ def extract_url_from_text(text: str) -> str | None:
 
 
 async def resolve_short_url(url: str) -> str:
-    """Разрезолвить короткую ссылку Pinterest (pin.it) в полную"""
-    if 'pin.it' in url.lower():
+    """
+    Разрезолвить короткие ссылки в полные URL.
+
+    Поддерживает:
+    - Pinterest: pin.it -> pinterest.com
+    - TikTok: vt.tiktok.com, vm.tiktok.com -> tiktok.com/@user/video/ID
+    """
+    url_lower = url.lower()
+
+    # Паттерны коротких URL которые нужно резолвить
+    short_url_patterns = [
+        'pin.it',           # Pinterest
+        'vt.tiktok.com',    # TikTok short
+        'vm.tiktok.com',    # TikTok mobile short
+        'tiktok.com/t/',    # TikTok another short format
+    ]
+
+    needs_resolution = any(pattern in url_lower for pattern in short_url_patterns)
+
+    if needs_resolution:
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.head(url, allow_redirects=True, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     resolved_url = str(resp.url)
-                    logger.info(f"Resolved short URL: {url} -> {resolved_url}")
-                    return resolved_url
+                    if resolved_url != url:
+                        logger.info(f"Resolved short URL: {url} -> {resolved_url}")
+                        return resolved_url
         except Exception as e:
             logger.warning(f"Failed to resolve short URL {url}: {e}")
             return url
@@ -415,7 +434,7 @@ async def handle_url(message: types.Message):
 
     user_id = message.from_user.id
 
-    # Резолвим короткие ссылки Pinterest (pin.it -> pinterest.com)
+    # Резолвим короткие ссылки (pin.it, vt.tiktok.com, vm.tiktok.com)
     url = await resolve_short_url(url)
 
     logger.info(f"Download request: user={user_id}, url={url}")

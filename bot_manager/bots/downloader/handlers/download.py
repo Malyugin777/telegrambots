@@ -853,23 +853,33 @@ async def handle_url(message: types.Message):
                     # TikTok/Pinterest "флапают" — retry 1 раз для transient ошибок
                     error_str = ytdlp_result.error or ""
                     error_lower = error_str.lower()
+
+                    # НЕ ретраить если контент реально недоступен
+                    no_retry_keywords = [
+                        "private", "login", "sign in", "age", "region",
+                        "not available", "copyright", "removed", "deleted",
+                        "unavailable", "blocked", "restricted", "nsfw"
+                    ]
+                    is_permanent_error = any(kw in error_lower for kw in no_retry_keywords)
+
                     is_transient_error = (
                         platform in ("tiktok", "pinterest") and
+                        not is_permanent_error and
                         ("unable to extract" in error_lower or
                          "no video formats" in error_lower or
                          "connection reset" in error_lower or
                          "timed out" in error_lower)
                     )
                     if is_transient_error:
-                        logger.info(f"[{platform.upper()}] Retrying yt-dlp in 3s (transient error detected)")
+                        logger.info(f"[{platform.upper()}] yt-dlp attempt=1 failed, retry_reason={error_lower[:50]}")
                         await asyncio.sleep(3)
                         ytdlp_result = await downloader.download(url, progress_callback=progress_callback)
                         if ytdlp_result.success:
                             result = ytdlp_result
                             api_source = "ytdlp"
-                            logger.info(f"[{platform.upper()}] yt-dlp retry succeeded!")
+                            logger.info(f"[{platform.upper()}] yt-dlp attempt=2 SUCCESS!")
                             break
-                        logger.warning(f"[{platform.upper()}] yt-dlp retry also failed: {ytdlp_result.error}")
+                        logger.warning(f"[{platform.upper()}] yt-dlp attempt=2 failed: {ytdlp_result.error[:100]}")
 
                     errors["ytdlp"] = ytdlp_result.error
                     logger.warning(f"[{platform.upper()}] yt-dlp failed: {ytdlp_result.error}")

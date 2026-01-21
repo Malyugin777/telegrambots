@@ -93,7 +93,8 @@
       "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDM5NzcyfQ.c8vGljwvFhVeN6P3BY138mPpJTOMIhZ1E224VHegMPU\")",
       "Bash(medium)",
       "Bash(long\",\n  \"prep_ms\": 5000,\n  \"download_ms\": 15000,\n  \"upload_ms\": 8000,\n  \"total_ms\": 28000,\n  \"download_host\": \"cdn.savenow.to\",\n  \"quota\": {...}\n}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
-      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDYxNzkzfQ.7kZHXpM2CxF8BHNoK4BubRYtyJEMVQMP9YBAj3RRqM8\")"
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDYxNzkzfQ.7kZHXpM2CxF8BHNoK4BubRYtyJEMVQMP9YBAj3RRqM8\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDcyNTAyfQ.zt29QCF46wul4_pXHcKOB_1pYYzjtIcuvtgZPkquM3g\")"
     ]
   }
 }

@@ -539,7 +539,11 @@ async def handle_url(message: types.Message):
                     error_message=carousel.error,
                     error_details={"source": "rapidapi", "error_class": error_class}
                 )
-                await status_msg.edit_text(f"❌ {make_user_friendly_error(carousel.error)}")
+                # Специальная ошибка для Stories (истекли, приватные, удалены)
+                if "/stories/" in url.lower():
+                    await status_msg.edit_text(get_error_message("story"))
+                else:
+                    await status_msg.edit_text(f"❌ {make_user_friendly_error(carousel.error)}")
                 return
 
             # === КАРУСЕЛЬ (несколько файлов) ===

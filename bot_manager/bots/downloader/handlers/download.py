@@ -54,8 +54,9 @@ logger = logging.getLogger(__name__)
 # === Per-Request Timeouts для больших файлов ===
 # aiogram 3.24.0 НЕ поддерживает ClientTimeout в request_timeout (баг/ограничение)
 # Используем числовые таймауты (в секундах) вместо ClientTimeout
-TIMEOUT_DOCUMENT = 1800  # 30 минут для 2GB файлов
-TIMEOUT_VIDEO = 900      # 15 минут для видео
+# Local Bot API Server поддерживает до 2GB - увеличиваем таймауты
+TIMEOUT_DOCUMENT = 2700  # 45 минут для 2GB файлов
+TIMEOUT_VIDEO = 2700     # 45 минут для видео до 2GB (Local Bot API)
 TIMEOUT_PHOTO = 300      # 5 минут для фото
 TIMEOUT_CAROUSEL = 1200  # 20 минут для каруселей
 TIMEOUT_AUDIO = 600      # 10 минут для аудио

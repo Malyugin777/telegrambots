@@ -47,6 +47,8 @@ from ..messages import (
 from bot_manager.middlewares import log_action
 from bot_manager.services.error_logger import error_logger
 from shared.utils.video_fixer import get_video_dimensions, get_video_duration, download_thumbnail, ensure_faststart
+from shared.database import AsyncSessionLocal
+from ..services.flyer_checker import check_and_allow
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -156,9 +158,9 @@ def get_content_bucket(platform: str, content_type: str = None, duration_sec: in
         - tiktok: 'video'
         - pinterest: 'photo' / 'video'
     """
-    if platform == "youtube":
+    if platform == "youtube" or platform.startswith("youtube_"):
         return "shorts" if duration_sec < 300 else "full"
-    elif platform == "instagram":
+    elif platform == "instagram" or platform.startswith("instagram_"):
         return content_type or "post"
     elif platform == "tiktok":
         return "video"
@@ -395,33 +397,55 @@ def supports_rapidapi_fallback(url: str) -> bool:
 
 
 def make_user_friendly_error(error: str) -> str:
-    """Преобразует техническую ошибку в человекочитаемую"""
+    """Преобразует техническую ошибку в человекочитаемую.
+
+    ВАЖНО: Никакие технические детали (str(e), provider, host, SSL, HTTP Error)
+    не должны попадать к пользователю. Только user-friendly тексты из messages.py.
+    """
     if not error:
         return get_error_message("unknown")
 
     error_lower = error.lower()
 
     # Уже человеческие ошибки (начинаются с эмодзи) - возвращаем как есть
-    if error.startswith(("❌", "⏱", "📦", "🔒", "🌍", "⚠️", "📡", "⚙️", "📤", "🔗")):
+    if error.startswith(("❌", "⏱", "📦", "🔒", "🌍", "⚠️", "📡", "⚙️", "📤", "🔗", "📖")):
         return error
 
     # Технические ошибки -> человеческие (используем messages.py)
-    if "too large" in error_lower or "слишком большое" in error_lower:
+    # Приватный контент / требует логин
+    if "private" in error_lower or "login" in error_lower or "sign in" in error_lower:
+        return get_error_message("private")
+    # Возрастное ограничение
+    elif "age" in error_lower or "confirm your age" in error_lower:
+        return get_error_message("private")  # Для юзера это тоже "недоступно"
+    # Размер файла
+    elif "too large" in error_lower or "слишком больш" in error_lower or ">2gb" in error_lower:
         return get_error_message("too_large")
-    elif "no media" in error_lower or "no suitable" in error_lower or "not found" in error_lower:
+    # Контент не найден / удалён
+    elif any(s in error_lower for s in ["no media", "no suitable", "not found", "does not exist", "deleted", "removed"]):
         return get_error_message("not_found")
+    # Таймаут
     elif "timeout" in error_lower or "timed out" in error_lower:
         return get_error_message("timeout")
+    # Недоступен (generic)
     elif "unavailable" in error_lower or "not available" in error_lower:
         return get_error_message("unavailable")
-    elif "private" in error_lower or "login" in error_lower:
-        return get_error_message("private")
-    elif "region" in error_lower or "country" in error_lower:
+    # Региональные ограничения
+    elif any(s in error_lower for s in ["region", "country", "geo", "blocked"]):
         return get_error_message("region")
-    elif "api error" in error_lower or "api" in error_lower:
-        return get_error_message("api")
-    elif "connection" in error_lower or "network" in error_lower:
+    # Ошибки ffmpeg/обработки
+    elif any(s in error_lower for s in ["ffmpeg", "codec", "encode", "processing", "corrupt"]):
+        return get_error_message("processing")
+    # Сетевые ошибки
+    elif any(s in error_lower for s in ["connection", "network", "ssl", "socket", "reset", "refused"]):
         return get_error_message("connection")
+    # HTTP ошибки от провайдеров (500, 403, 429 etc) - скрываем детали
+    elif any(s in error_lower for s in ["http error", "http 5", "http 4", "rate limit", "quota"]):
+        return get_error_message("api")
+    # API ошибки (generic)
+    elif "api" in error_lower or "unable to extract" in error_lower:
+        return get_error_message("api")
+    # Всё остальное - generic ошибка
     else:
         return get_error_message("unknown")
 
@@ -448,12 +472,25 @@ async def handle_url(message: types.Message):
     elif "tiktok" in url.lower():
         platform = "tiktok"
     elif "youtube" in url.lower() or "youtu.be" in url.lower():
-        platform = "youtube"
+        # Определяем shorts vs full по URL
+        if "/shorts/" in url.lower():
+            platform = "youtube_shorts"
+        else:
+            platform = "youtube_full"
     elif "pinterest" in url.lower() or "pin.it" in url.lower():
         platform = "pinterest"
 
     # Логируем запрос на скачивание
     await log_action(user_id, "download_request", {"platform": platform, "url": url[:200]})
+
+    # === ПРОВЕРКА ПОДПИСКИ (FlyerService) ===
+    # Проверяем нужно ли показать задания на подписку
+    async with AsyncSessionLocal() as session:
+        language_code = message.from_user.language_code or "ru"
+        if not await check_and_allow(session, user_id, platform, language_code):
+            # Юзер не подписан — FlyerAPI уже показал ему сообщение с заданиями
+            logger.info(f"[FLYER] User {user_id} blocked for {platform}, showing subscription tasks")
+            return
 
     # === ПРОВЕРЯЕМ КЭШ (мгновенная отправка) ===
     cached_video, cached_audio = await get_cached_file_ids(url)
@@ -1049,7 +1086,7 @@ async def handle_url(message: types.Message):
             download_speed = int(file_size / total_ms * 1000 / 1024) if total_ms > 0 else 0
 
             # Phase 7.1 Telemetry: content bucket для аналитики по подтипам
-            if platform == "instagram":
+            if platform == "instagram" or platform.startswith("instagram_"):
                 # Для Instagram определяем тип из URL (reel/post/story)
                 content_bucket = detect_instagram_bucket(url)
             else:
@@ -1209,6 +1246,6 @@ async def handle_text(message: types.Message):
     else:
         # Просто текст без ссылки
         await message.answer(
-            "📎 Отправь мне ссылку на видео.\n\n"
-            "Поддерживаю: TikTok, Instagram, YouTube Shorts, Pinterest"
+            f"📎 Отправь мне ссылку на видео.\n\n"
+            f"{get_message('unsupported_hint')}"
         )

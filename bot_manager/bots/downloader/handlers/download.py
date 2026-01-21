@@ -847,6 +847,24 @@ async def handle_url(message: types.Message):
                         result = ytdlp_result
                         api_source = "ytdlp"
                         break
+
+                    # TikTok "флапает" — retry 1 раз для transient ошибок
+                    error_str = ytdlp_result.error or ""
+                    is_tiktok_flap = (
+                        platform == "tiktok" and
+                        "unable to extract" in error_str.lower()
+                    )
+                    if is_tiktok_flap:
+                        logger.info(f"[TIKTOK] Retrying yt-dlp in 3s (TikTok flap detected)")
+                        await asyncio.sleep(3)
+                        ytdlp_result = await downloader.download(url, progress_callback=progress_callback)
+                        if ytdlp_result.success:
+                            result = ytdlp_result
+                            api_source = "ytdlp"
+                            logger.info(f"[TIKTOK] yt-dlp retry succeeded!")
+                            break
+                        logger.warning(f"[TIKTOK] yt-dlp retry also failed: {ytdlp_result.error}")
+
                     errors["ytdlp"] = ytdlp_result.error
                     logger.warning(f"[{platform.upper()}] yt-dlp failed: {ytdlp_result.error}")
 

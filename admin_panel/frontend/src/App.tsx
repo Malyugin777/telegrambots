@@ -16,6 +16,7 @@ import {
   WarningOutlined,
   DollarOutlined,
   MessageOutlined,
+  MonitorOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -30,6 +31,7 @@ import { LogList } from './pages/activity-logs';
 import { ErrorList } from './pages/errors';
 import { SubscriptionList, SubscriptionCreate, SubscriptionEdit } from './pages/subscriptions';
 import { BotMessageList } from './pages/bot-messages';
+import { Ops } from './pages/ops';
 import { Login } from './pages/login';
 import { LanguageSwitcher, Footer } from './components';
 
@@ -132,6 +134,14 @@ function App() {
                   icon: <MessageOutlined />,
                 },
               },
+              {
+                name: 'ops',
+                list: '/ops',
+                meta: {
+                  label: 'Ops',
+                  icon: <MonitorOutlined />,
+                },
+              },
             ]}
             options={{
               syncWithLocation: true,
@@ -216,6 +226,10 @@ function App() {
 
                 <Route path="/bot-messages">
                   <Route index element={<BotMessageList />} />
+                </Route>
+
+                <Route path="/ops">
+                  <Route index element={<Ops />} />
                 </Route>
               </Route>
 

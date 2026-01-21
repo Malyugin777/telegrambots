@@ -3,7 +3,7 @@
 
 Провайдеры:
 - Instagram: RapidAPI (primary)
-- YouTube: SaveNow API (CDN, IP не банится!) → pytubefix → yt-dlp
+- YouTube: yt-dlp → pytubefix → SaveNow API (CDN fallback)
 - TikTok, Pinterest: yt-dlp → RapidAPI (fallback)
 """
 import re
@@ -686,56 +686,18 @@ async def handle_url(message: types.Message):
                 quota_snapshot=carousel.quota_snapshot.to_dict() if carousel.quota_snapshot else None
             )
 
-        # YOUTUBE: SaveNow (primary, CDN) -> pytubefix (fallback #1) -> yt-dlp (fallback #2)
+        # YOUTUBE: yt-dlp (primary) -> pytubefix (fallback #1) -> SaveNow (fallback #2, CDN)
         elif is_youtube:
             from ..services.downloader import DownloadResult, MediaInfo
 
-            # Step 1: SaveNow API (CDN проксирует, IP не банится, платный но надёжный)
-            logger.info(f"[YOUTUBE] Trying SaveNow API: {url}")
+            # Step 1: yt-dlp (быстрый, бесплатный)
+            logger.info(f"[YOUTUBE] Trying yt-dlp: {url}")
+            result = await downloader.download(url, progress_callback=progress_callback)
+            api_source = "ytdlp"
 
-            # Получаем примерную длительность для адаптивного качества
-            duration_hint = 0
-            try:
-                info = await pytubefix.get_video_info(url)
-                if info.success:
-                    duration_hint = info.duration
-            except:
-                pass
-
-            file_result = await savenow.download_adaptive(url, duration_hint=duration_hint)
-
-            if file_result.success:
-                api_source = "savenow"
-                logger.info(f"[YOUTUBE] SaveNow succeeded: {file_result.filename}, host={file_result.download_host}")
-
-                # Проверяем размер
-                if file_result.file_size > 2_000_000_000:
-                    await status_msg.edit_text("❌ Видео слишком большое (>2GB)")
-                    await savenow.cleanup(file_result.file_path)
-                    return
-
-                result = DownloadResult(
-                    success=True,
-                    file_path=file_result.file_path,
-                    filename=file_result.filename,
-                    file_size=file_result.file_size,
-                    is_photo=False,
-                    send_as_document=file_result.file_size > 50_000_000,
-                    info=MediaInfo(
-                        title=file_result.title or "video",
-                        author=file_result.author or "unknown",
-                        thumbnail=file_result.thumbnail_path,  # SaveNow возвращает локальный путь
-                        platform=platform
-                    ),
-                    # Phase 7.0 Telemetry: передаем данные из SaveNowResult
-                    prep_ms=file_result.prep_ms,
-                    download_ms=file_result.download_ms,
-                    download_host=file_result.download_host,
-                    quota_snapshot=file_result.quota_snapshot.to_dict() if file_result.quota_snapshot else None
-                )
-            else:
-                # Step 2: pytubefix (бесплатный, напрямую с YouTube)
-                logger.warning(f"[YOUTUBE] SaveNow failed: {file_result.error}, trying pytubefix")
+            if not result.success:
+                # Step 2: pytubefix (иногда работает когда yt-dlp нет)
+                logger.warning(f"[YOUTUBE] yt-dlp failed: {result.error}, trying pytubefix")
                 pytube_result = await pytubefix.download(url, quality="720p")
 
                 if pytube_result.success:
@@ -753,37 +715,70 @@ async def handle_url(message: types.Message):
                             thumbnail=pytube_result.thumbnail_url,
                             platform=platform
                         ),
-                        # Phase 7.0 Telemetry
                         download_host=pytube_result.download_host
                     )
                 else:
-                    # Step 3: yt-dlp (последняя надежда)
-                    logger.warning(f"[YOUTUBE] pytubefix failed: {pytube_result.error}, trying yt-dlp")
+                    # Step 3: SaveNow API (CDN, платный, но IP не банится)
+                    logger.warning(f"[YOUTUBE] pytubefix failed: {pytube_result.error}, trying SaveNow API")
                     await status_msg.edit_text("⏳ Пробую альтернативный способ...")
 
-                    result = await downloader.download(url, progress_callback=progress_callback)
-                    api_source = "ytdlp"
+                    duration_hint = 0
+                    try:
+                        info = await pytubefix.get_video_info(url)
+                        if info.success:
+                            duration_hint = info.duration
+                    except:
+                        pass
 
-                    if not result.success:
+                    file_result = await savenow.download_adaptive(url, duration_hint=duration_hint)
+
+                    if file_result.success:
+                        api_source = "savenow"
+                        logger.info(f"[YOUTUBE] SaveNow succeeded: {file_result.filename}, host={file_result.download_host}")
+
+                        if file_result.file_size > 2_000_000_000:
+                            await status_msg.edit_text("❌ Видео слишком большое (>2GB)")
+                            await savenow.cleanup(file_result.file_path)
+                            return
+
+                        result = DownloadResult(
+                            success=True,
+                            file_path=file_result.file_path,
+                            filename=file_result.filename,
+                            file_size=file_result.file_size,
+                            is_photo=False,
+                            send_as_document=file_result.file_size > 50_000_000,
+                            info=MediaInfo(
+                                title=file_result.title or "video",
+                                author=file_result.author or "unknown",
+                                thumbnail=file_result.thumbnail_path,
+                                platform=platform
+                            ),
+                            prep_ms=file_result.prep_ms,
+                            download_ms=file_result.download_ms,
+                            download_host=file_result.download_host,
+                            quota_snapshot=file_result.quota_snapshot.to_dict() if file_result.quota_snapshot else None
+                        )
+                    else:
                         # Все 3 способа упали
-                        error_class = classify_error(file_result.error)  # Классифицируем по первой ошибке (SaveNow)
-                        logger.error(f"[YOUTUBE] All 3 methods failed: SaveNow, pytubefix, yt-dlp, class={error_class}")
+                        error_class = classify_error(result.error)
+                        logger.error(f"[YOUTUBE] All 3 methods failed: yt-dlp, pytubefix, SaveNow, class={error_class}")
                         await error_logger.log_error_by_telegram_id(
                             telegram_id=user_id,
                             bot_username="SaveNinja_bot",
                             platform=platform,
                             url=url,
                             error_type="download_failed",
-                            error_message=f"SaveNow: {file_result.error}, pytubefix: {pytube_result.error}, yt-dlp: {result.error}",
+                            error_message=f"yt-dlp: {result.error}, pytubefix: {pytube_result.error}, SaveNow: {file_result.error}",
                             error_details={
                                 "source": "all_three",
                                 "error_class": error_class,
-                                "savenow_class": classify_error(file_result.error),
-                                "pytubefix_class": classify_error(pytube_result.error),
                                 "ytdlp_class": classify_error(result.error),
+                                "pytubefix_class": classify_error(pytube_result.error),
+                                "savenow_class": classify_error(file_result.error),
                             }
                         )
-                        await status_msg.edit_text(f"❌ {make_user_friendly_error(file_result.error)}")
+                        await status_msg.edit_text(f"❌ {make_user_friendly_error(result.error)}")
                         return
 
         # TikTok, Pinterest -> yt-dlp (primary) -> RapidAPI (fallback)

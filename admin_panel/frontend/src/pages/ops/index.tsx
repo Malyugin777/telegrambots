@@ -289,6 +289,22 @@ export const Ops = () => {
     p.p95_total_ms && p.p95_total_ms > max ? p.p95_total_ms : max, 0);
 
   const savenowQuota = quotas.find(q => q.provider === 'savenow');
+  const socialQuota = quotas.find(q => q.provider === 'social_download');
+
+  // Calculate projected usage for social_download (main API)
+  const socialRemaining = socialQuota?.requests_remaining;
+  const socialLimit = socialQuota?.requests_limit;
+  const socialResetHours = socialQuota?.reset_hours;
+  const socialDaysUntilReset = socialResetHours ? Math.ceil(socialResetHours / 24) : null;
+  const socialProjectedUsage = socialQuota?.burn_rate_24h && socialDaysUntilReset
+    ? Math.round(socialQuota.burn_rate_24h * socialDaysUntilReset)
+    : null;
+  const socialProjectedPercent = socialProjectedUsage && socialLimit
+    ? Math.round((socialProjectedUsage / socialLimit) * 100)
+    : null;
+  const socialUsedPercent = socialRemaining !== null && socialRemaining !== undefined && socialLimit
+    ? Math.round(((socialLimit - socialRemaining) / socialLimit) * 100)
+    : null;
 
   // Provider control handlers
   const handleToggleProvider = async (provider: string, enabled: boolean) => {
@@ -622,18 +638,24 @@ export const Ops = () => {
 
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic
-              title="Прогноз квоты"
-              value={savenowQuota?.forecast_average ?? '-'}
-              suffix={savenowQuota?.forecast_average ? ' дней' : ''}
-              valueStyle={{
-                color: (savenowQuota?.forecast_average ?? 999) < 3 ? '#ff4d4f' :
-                       (savenowQuota?.forecast_average ?? 999) < 7 ? '#faad14' : '#52c41a'
-              }}
-              prefix={<DatabaseOutlined />}
-            />
+            <Tooltip title="Instagram, TikTok, Pinterest - 1 скачивание = 1 запрос">
+              <Statistic
+                title="Квота IG/TT/Pin"
+                value={socialUsedPercent !== null ? socialUsedPercent : '-'}
+                suffix={socialUsedPercent !== null ? '% потрачено' : ''}
+                valueStyle={{
+                  color: socialUsedPercent !== null
+                    ? (socialUsedPercent > 80 ? '#ff4d4f' : socialUsedPercent > 50 ? '#faad14' : '#52c41a')
+                    : '#888'
+                }}
+                prefix={<DatabaseOutlined />}
+              />
+            </Tooltip>
             <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-              SaveNow @ {savenowQuota?.burn_rate_24h ?? 0} req/day
+              {socialRemaining !== null && socialRemaining !== undefined && socialLimit
+                ? `${socialRemaining.toLocaleString()} из ${socialLimit.toLocaleString()} шт`
+                : 'Нет данных'
+              }
             </div>
           </Card>
         </Col>
@@ -824,70 +846,107 @@ export const Ops = () => {
                               </span>
                             }
                           >
-                            <Row gutter={[16, 8]}>
-                              <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Осталось</div>
-                                <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                                  {quota.units_remaining !== null ? (
-                                    <>
-                                      {quota.units_remaining}
-                                      {quota.units_limit && (
-                                        <span style={{ fontSize: '12px', color: '#888' }}> / {quota.units_limit}</span>
+                            {(() => {
+                              // Выбираем правильные поля: units для savenow, requests для social_download
+                              const remaining = quota.units_remaining ?? quota.requests_remaining;
+                              const limit = quota.units_limit ?? quota.requests_limit;
+                              const resetHours = quota.reset_hours;
+                              const daysUntilReset = resetHours ? Math.ceil(resetHours / 24) : null;
+                              const isSavenow = quota.provider === 'savenow';
+                              const unitLabel = isSavenow ? 'токенов' : 'шт';
+
+                              // Прогноз использования к концу месяца
+                              const projectedUsage = quota.burn_rate_24h && daysUntilReset
+                                ? Math.round(quota.burn_rate_24h * daysUntilReset)
+                                : null;
+                              const projectedPercent = projectedUsage && limit
+                                ? Math.round((projectedUsage / limit) * 100)
+                                : null;
+
+                              return (
+                                <Row gutter={[16, 8]}>
+                                  <Col span={12}>
+                                    <Tooltip title={isSavenow ? 'Токены (длинные видео = больше токенов)' : '1 скачивание = 1 запрос'}>
+                                      <div style={{ fontSize: '12px', color: '#888' }}>
+                                        Осталось {unitLabel}
+                                      </div>
+                                    </Tooltip>
+                                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                                      {remaining !== null ? (
+                                        <>
+                                          {remaining.toLocaleString()}
+                                          {limit && (
+                                            <span style={{ fontSize: '12px', color: '#888' }}> / {limit.toLocaleString()}</span>
+                                          )}
+                                        </>
+                                      ) : (
+                                        <span style={{ fontSize: '14px', color: '#888' }}>Нет данных</span>
                                       )}
-                                    </>
-                                  ) : (
-                                    <span style={{ fontSize: '14px', color: '#888' }}>Нет данных</span>
-                                  )}
-                                </div>
-                              </Col>
-                              <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Расход (24ч)</div>
-                                <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                                  {quota.burn_rate_24h !== null ? (
-                                    <>{quota.burn_rate_24h} <span style={{ fontSize: '12px' }}>req/day</span></>
-                                  ) : (
-                                    <span style={{ fontSize: '14px', color: '#888' }}>Мало данных</span>
-                                  )}
-                                </div>
-                              </Col>
-                              <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Прогноз (avg)</div>
-                                <div style={{
-                                  fontSize: '18px',
-                                  fontWeight: 'bold',
-                                  color: quota.forecast_average !== null
-                                    ? (quota.forecast_average < 3 ? '#ff4d4f' : quota.forecast_average < 7 ? '#faad14' : '#52c41a')
-                                    : '#888'
-                                }}>
-                                  {quota.forecast_average !== null ? (
-                                    <>{quota.forecast_average} <span style={{ fontSize: '12px' }}>дней</span></>
-                                  ) : (
-                                    <span style={{ fontSize: '14px', color: '#888' }}>Появится после 10+ запросов</span>
-                                  )}
-                                </div>
-                              </Col>
-                              <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Прогноз (pessim)</div>
-                                <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#faad14' }}>
-                                  {quota.forecast_pessimistic !== null ? (
-                                    <>{quota.forecast_pessimistic} <span style={{ fontSize: '12px' }}>дней</span></>
-                                  ) : (
-                                    <span style={{ fontSize: '14px', color: '#888' }}>-</span>
-                                  )}
-                                </div>
-                              </Col>
-                            </Row>
-                            {quota.units_remaining !== null && quota.units_limit && (
-                              <Progress
-                                percent={Math.round((quota.units_remaining / quota.units_limit) * 100)}
-                                strokeColor={{
-                                  '0%': '#ff4d4f',
-                                  '50%': '#faad14',
-                                  '100%': '#52c41a',
-                                }}
-                                style={{ marginTop: '12px' }}
-                              />
-                            )}
+                                    </div>
+                                  </Col>
+                                  <Col span={12}>
+                                    <Tooltip title="Сколько скачиваний сделано за последние 24 часа">
+                                      <div style={{ fontSize: '12px', color: '#888' }}>Скачано за 24ч</div>
+                                    </Tooltip>
+                                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                                      {quota.burn_rate_24h !== null ? (
+                                        <>{quota.burn_rate_24h} <span style={{ fontSize: '12px' }}>{isSavenow ? 'токенов' : 'шт'}</span></>
+                                      ) : (
+                                        <span style={{ fontSize: '14px', color: '#888' }}>-</span>
+                                      )}
+                                    </div>
+                                  </Col>
+                                  <Col span={12}>
+                                    <Tooltip title="Когда квота обнулится и начнётся новый месяц">
+                                      <div style={{ fontSize: '12px', color: '#888' }}>Новый месяц через</div>
+                                    </Tooltip>
+                                    <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
+                                      {daysUntilReset !== null ? (
+                                        <>{daysUntilReset} <span style={{ fontSize: '12px' }}>дней</span></>
+                                      ) : (
+                                        <span style={{ fontSize: '14px', color: '#888' }}>-</span>
+                                      )}
+                                    </div>
+                                  </Col>
+                                  <Col span={12}>
+                                    <Tooltip title="Сколько % квоты потратим к концу месяца при текущем темпе">
+                                      <div style={{ fontSize: '12px', color: '#888' }}>Прогноз на месяц</div>
+                                    </Tooltip>
+                                    <div style={{
+                                      fontSize: '18px',
+                                      fontWeight: 'bold',
+                                      color: projectedPercent !== null
+                                        ? (projectedPercent > 90 ? '#ff4d4f' : projectedPercent > 70 ? '#faad14' : '#52c41a')
+                                        : '#888'
+                                    }}>
+                                      {projectedPercent !== null ? (
+                                        <>{projectedPercent}%</>
+                                      ) : (
+                                        <span style={{ fontSize: '14px', color: '#888' }}>-</span>
+                                      )}
+                                    </div>
+                                  </Col>
+                                </Row>
+                              );
+                            })()}
+                            {(() => {
+                              const remaining = quota.units_remaining ?? quota.requests_remaining;
+                              const limit = quota.units_limit ?? quota.requests_limit;
+                              if (remaining === null || !limit) return null;
+                              const percent = Math.round((remaining / limit) * 100);
+                              return (
+                                <Progress
+                                  percent={percent}
+                                  strokeColor={{
+                                    '0%': '#ff4d4f',
+                                    '50%': '#faad14',
+                                    '100%': '#52c41a',
+                                  }}
+                                  style={{ marginTop: '12px' }}
+                                  format={() => `${percent}% осталось`}
+                                />
+                              );
+                            })()}
                           </Card>
                         ))}
                       </div>

@@ -203,3 +203,48 @@ async def release_ffmpeg_slot():
         await r.decr("ffmpeg:active")
     except Exception as e:
         logger.warning(f"Release ffmpeg slot error: {e}")
+
+
+# === ACTIVE OPERATIONS COUNTERS (for Ops Dashboard) ===
+
+async def increment_active_downloads():
+    """Увеличить счётчик активных скачиваний"""
+    try:
+        r = await get_redis()
+        await r.incr("counter:active_downloads")
+        await r.expire("counter:active_downloads", 300)  # TTL 5 минут
+    except Exception as e:
+        logger.warning(f"Increment active downloads error: {e}")
+
+
+async def decrement_active_downloads():
+    """Уменьшить счётчик активных скачиваний"""
+    try:
+        r = await get_redis()
+        count = await r.decr("counter:active_downloads")
+        # Не даём уйти в минус
+        if count < 0:
+            await r.set("counter:active_downloads", "0", ex=300)
+    except Exception as e:
+        logger.warning(f"Decrement active downloads error: {e}")
+
+
+async def increment_active_uploads():
+    """Увеличить счётчик активных загрузок в Telegram"""
+    try:
+        r = await get_redis()
+        await r.incr("counter:active_uploads")
+        await r.expire("counter:active_uploads", 300)
+    except Exception as e:
+        logger.warning(f"Increment active uploads error: {e}")
+
+
+async def decrement_active_uploads():
+    """Уменьшить счётчик активных загрузок"""
+    try:
+        r = await get_redis()
+        count = await r.decr("counter:active_uploads")
+        if count < 0:
+            await r.set("counter:active_uploads", "0", ex=300)
+    except Exception as e:
+        logger.warning(f"Decrement active uploads error: {e}")

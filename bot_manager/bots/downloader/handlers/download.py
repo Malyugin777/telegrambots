@@ -25,6 +25,10 @@ from ..services.cache import (
     cache_file_ids,
     acquire_user_slot,
     release_user_slot,
+    increment_active_downloads,
+    decrement_active_downloads,
+    increment_active_uploads,
+    decrement_active_uploads,
 )
 from ..messages import (
     CAPTION,
@@ -449,6 +453,9 @@ async def handle_url(message: types.Message):
     if not await acquire_user_slot(user_id):
         await message.answer(get_rate_limit_message())
         return
+
+    # Ops Dashboard: увеличиваем счётчик активных скачиваний
+    await increment_active_downloads()
 
     # Статус сообщение
     status_msg = await message.answer(get_downloading_message())
@@ -1078,6 +1085,9 @@ async def handle_url(message: types.Message):
 
         # Освобождаем слот юзера
         await release_user_slot(user_id)
+
+        # Ops Dashboard: уменьшаем счётчик активных скачиваний
+        await decrement_active_downloads()
 
 
 @router.message(F.text)

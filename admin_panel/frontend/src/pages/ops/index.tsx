@@ -63,6 +63,9 @@ interface ProviderStats {
   health: string;
   download_host_share: Record<string, number>;
   top_hosts: string[];
+  last_success_at: string | null;
+  last_error_at: string | null;
+  last_error_class: string | null;
 }
 
 interface QuotaInfo {
@@ -142,6 +145,70 @@ const formatBytes = (bytes: number | null): string => {
   if (gb >= 1) return `${gb.toFixed(1)} GB`;
   const mb = bytes / (1024 * 1024);
   return `${mb.toFixed(0)} MB`;
+};
+
+// Human-readable source labels for platform:bucket combinations
+const getSourceLabel = (platform: string, bucket: string | null): string => {
+  if (!bucket) {
+    // Platform-only mode
+    const platformLabels: Record<string, string> = {
+      youtube: 'YouTube',
+      instagram: 'Instagram',
+      tiktok: 'TikTok',
+      pinterest: 'Pinterest',
+    };
+    return platformLabels[platform] || platform;
+  }
+
+  // Platform + bucket mode - human-readable labels
+  const labels: Record<string, Record<string, string>> = {
+    youtube: {
+      shorts: 'YouTube Shorts',
+      full: 'YouTube (Full)',
+      long: 'YouTube (Full)',  // legacy bucket name
+      medium: 'YouTube (Medium)',
+    },
+    instagram: {
+      reel: 'Instagram Reels',
+      post: 'Instagram Post',
+      carousel: 'Instagram Carousel',
+      story: 'Instagram Story',
+      photo: 'Instagram Photo',
+    },
+    tiktok: {
+      video: 'TikTok',
+    },
+    pinterest: {
+      video: 'Pinterest Video',
+      photo: 'Pinterest Photo',
+    },
+  };
+
+  return labels[platform]?.[bucket] || `${platform}:${bucket}`;
+};
+
+const getSourceColor = (platform: string): string => {
+  const colors: Record<string, string> = {
+    youtube: 'red',
+    instagram: 'magenta',
+    tiktok: 'cyan',
+    pinterest: 'volcano',
+  };
+  return colors[platform] || 'default';
+};
+
+const formatTimeAgo = (isoDate: string | null): string => {
+  if (!isoDate) return '-';
+  const date = new Date(isoDate);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMin = Math.floor(diffMs / 60000);
+  const diffHour = Math.floor(diffMin / 60);
+
+  if (diffMin < 1) return 'только что';
+  if (diffMin < 60) return `${diffMin}м назад`;
+  if (diffHour < 24) return `${diffHour}ч назад`;
+  return `${Math.floor(diffHour / 24)}д назад`;
 };
 
 const getHealthBadge = (health: string) => {
@@ -259,25 +326,13 @@ export const Ops = () => {
 
   const platformColumns: ColumnsType<PlatformStats> = [
     {
-      title: groupBy === 'bucket' ? 'Платформа:Тип' : 'Платформа',
+      title: 'Источник',
       dataIndex: 'platform',
       key: 'platform',
       render: (platform: string, record: PlatformStats) => (
-        <div>
-          <Tag color={
-            platform === 'youtube' ? 'red' :
-            platform === 'instagram' ? 'magenta' :
-            platform === 'tiktok' ? 'cyan' :
-            platform === 'pinterest' ? 'volcano' : 'default'
-          }>
-            {platform.toUpperCase()}
-          </Tag>
-          {record.bucket && (
-            <Tag color="blue" style={{ marginLeft: '4px' }}>
-              {record.bucket}
-            </Tag>
-          )}
-        </div>
+        <Tag color={getSourceColor(platform)}>
+          {getSourceLabel(platform, record.bucket)}
+        </Tag>
       ),
     },
     {
@@ -465,16 +520,37 @@ export const Ops = () => {
       ),
     },
     {
-      title: 'Ошибки',
-      dataIndex: 'errors_by_class',
-      key: 'errors_by_class',
-      render: (errors: Record<string, number>) => (
+      title: 'Последний успех',
+      dataIndex: 'last_success_at',
+      key: 'last_success_at',
+      width: 100,
+      render: (ts: string | null) => (
+        <span style={{ color: ts ? '#52c41a' : '#888', fontSize: '12px' }}>
+          {formatTimeAgo(ts)}
+        </span>
+      ),
+    },
+    {
+      title: 'Последняя ошибка',
+      dataIndex: 'last_error_at',
+      key: 'last_error_at',
+      width: 130,
+      render: (_: string | null, record: ProviderStats) => (
         <div style={{ fontSize: '12px' }}>
-          {Object.entries(errors).slice(0, 2).map(([cls, count]) => (
-            <Tag key={cls} color="error" style={{ marginBottom: '2px' }}>
-              {cls}: {count}
-            </Tag>
-          ))}
+          {record.last_error_at ? (
+            <Tooltip title={record.last_error_class || 'Unknown'}>
+              <span style={{ color: '#ff4d4f' }}>
+                {formatTimeAgo(record.last_error_at)}
+                {record.last_error_class && (
+                  <Tag color="error" style={{ marginLeft: '4px', fontSize: '10px' }}>
+                    {record.last_error_class.slice(0, 8)}
+                  </Tag>
+                )}
+              </span>
+            </Tooltip>
+          ) : (
+            <span style={{ color: '#52c41a' }}>Нет ошибок</span>
+          )}
         </div>
       ),
     },
@@ -566,12 +642,18 @@ export const Ops = () => {
           <Card>
             <Statistic
               title="Активные операции"
-              value={(system?.active_downloads ?? 0) + (system?.active_uploads ?? 0)}
+              value={`${(system?.active_downloads ?? 0)} / ${(system?.active_uploads ?? 0)}`}
               prefix={<ThunderboltOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              valueStyle={{ color: '#1890ff', fontSize: '24px' }}
             />
             <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-              {system?.active_downloads ?? 0} скачиваний, {system?.active_uploads ?? 0} загрузок
+              <span style={{ color: (system?.active_downloads ?? 0) > 0 ? '#52c41a' : '#888' }}>
+                {system?.active_downloads ?? 0} скачиваний
+              </span>
+              {' / '}
+              <span style={{ color: (system?.active_uploads ?? 0) > 0 ? '#1890ff' : '#888' }}>
+                {system?.active_uploads ?? 0} загрузок
+              </span>
             </div>
           </Card>
         </Col>
@@ -585,19 +667,19 @@ export const Ops = () => {
             key: 'platforms',
             label: (
               <span>
-                <CloudServerOutlined /> Платформы
+                <CloudServerOutlined /> Источники
               </span>
             ),
             children: (
               <Card
                 title={
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <span>Статистика по платформам</span>
+                    <span>Статистика по источникам</span>
                     <Segmented
                       size="small"
                       options={[
-                        { label: 'Платформы', value: 'platform' },
-                        { label: 'Подтипы', value: 'bucket' },
+                        { label: 'По платформе', value: 'platform' },
+                        { label: 'По типу', value: 'bucket' },
                       ]}
                       value={groupBy}
                       onChange={(val) => setGroupBy(val as 'platform' | 'bucket')}
@@ -746,16 +828,26 @@ export const Ops = () => {
                               <Col span={12}>
                                 <div style={{ fontSize: '12px', color: '#888' }}>Осталось</div>
                                 <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                                  {quota.units_remaining ?? '-'}
-                                  {quota.units_limit && (
-                                    <span style={{ fontSize: '12px', color: '#888' }}> / {quota.units_limit}</span>
+                                  {quota.units_remaining !== null ? (
+                                    <>
+                                      {quota.units_remaining}
+                                      {quota.units_limit && (
+                                        <span style={{ fontSize: '12px', color: '#888' }}> / {quota.units_limit}</span>
+                                      )}
+                                    </>
+                                  ) : (
+                                    <span style={{ fontSize: '14px', color: '#888' }}>Нет данных</span>
                                   )}
                                 </div>
                               </Col>
                               <Col span={12}>
                                 <div style={{ fontSize: '12px', color: '#888' }}>Расход (24ч)</div>
                                 <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
-                                  {quota.burn_rate_24h ?? '-'} <span style={{ fontSize: '12px' }}>req/day</span>
+                                  {quota.burn_rate_24h !== null ? (
+                                    <>{quota.burn_rate_24h} <span style={{ fontSize: '12px' }}>req/day</span></>
+                                  ) : (
+                                    <span style={{ fontSize: '14px', color: '#888' }}>Мало данных</span>
+                                  )}
                                 </div>
                               </Col>
                               <Col span={12}>
@@ -763,16 +855,25 @@ export const Ops = () => {
                                 <div style={{
                                   fontSize: '18px',
                                   fontWeight: 'bold',
-                                  color: (quota.forecast_average ?? 999) < 3 ? '#ff4d4f' :
-                                         (quota.forecast_average ?? 999) < 7 ? '#faad14' : '#52c41a'
+                                  color: quota.forecast_average !== null
+                                    ? (quota.forecast_average < 3 ? '#ff4d4f' : quota.forecast_average < 7 ? '#faad14' : '#52c41a')
+                                    : '#888'
                                 }}>
-                                  {quota.forecast_average ?? '-'} <span style={{ fontSize: '12px' }}>дней</span>
+                                  {quota.forecast_average !== null ? (
+                                    <>{quota.forecast_average} <span style={{ fontSize: '12px' }}>дней</span></>
+                                  ) : (
+                                    <span style={{ fontSize: '14px', color: '#888' }}>Появится после 10+ запросов</span>
+                                  )}
                                 </div>
                               </Col>
                               <Col span={12}>
                                 <div style={{ fontSize: '12px', color: '#888' }}>Прогноз (pessim)</div>
                                 <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#faad14' }}>
-                                  {quota.forecast_pessimistic ?? '-'} <span style={{ fontSize: '12px' }}>дней</span>
+                                  {quota.forecast_pessimistic !== null ? (
+                                    <>{quota.forecast_pessimistic} <span style={{ fontSize: '12px' }}>дней</span></>
+                                  ) : (
+                                    <span style={{ fontSize: '14px', color: '#888' }}>-</span>
+                                  )}
                                 </div>
                               </Col>
                             </Row>

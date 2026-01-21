@@ -57,6 +57,10 @@ class ProviderStats(BaseModel):
     # CDN vs direct host analysis
     download_host_share: dict = {}  # {"googlevideo.com": 30, "cdn.savenow.io": 70}
     top_hosts: List[str] = []  # топ-3 хоста
+    # Last activity (for debugging)
+    last_success_at: Optional[datetime] = None
+    last_error_at: Optional[datetime] = None
+    last_error_class: Optional[str] = None
 
 
 class QuotaInfo(BaseModel):
@@ -293,20 +297,25 @@ async def get_providers_stats(
             ActionLog.api_source,
             ActionLog.download_time_ms,
             ActionLog.download_speed_kbps,
-            ActionLog.details
+            ActionLog.details,
+            ActionLog.created_at
         ).where(
             ActionLog.created_at >= since,
             ActionLog.action == "download_success",
             ActionLog.api_source.isnot(None)
-        )
+        ).order_by(ActionLog.created_at.desc())
     )
 
     # Ошибки
     error_result = await db.execute(
-        select(ActionLog.api_source, ActionLog.details).where(
+        select(
+            ActionLog.api_source,
+            ActionLog.details,
+            ActionLog.created_at
+        ).where(
             ActionLog.created_at >= since,
             ActionLog.action == "download_error"
-        )
+        ).order_by(ActionLog.created_at.desc())
     )
 
     provider_data: dict = {}
@@ -320,7 +329,10 @@ async def get_providers_stats(
                 "success": 0, "errors": 0,
                 "times": [], "speeds": [],
                 "error_classes": {},
-                "hosts": {}  # download_host tracking
+                "hosts": {},  # download_host tracking
+                "last_success_at": None,
+                "last_error_at": None,
+                "last_error_class": None
             }
 
         provider_data[provider]["success"] += 1
@@ -328,6 +340,10 @@ async def get_providers_stats(
             provider_data[provider]["times"].append(row.download_time_ms)
         if row.download_speed_kbps:
             provider_data[provider]["speeds"].append(row.download_speed_kbps)
+
+        # Track last success (первая запись = последняя по времени, т.к. ORDER BY desc)
+        if provider_data[provider]["last_success_at"] is None:
+            provider_data[provider]["last_success_at"] = row.created_at
 
         # Track download_host (CDN vs googlevideo detection)
         download_host = details.get("download_host")
@@ -344,12 +360,21 @@ async def get_providers_stats(
             provider_data[provider] = {
                 "success": 0, "errors": 0,
                 "times": [], "speeds": [],
-                "error_classes": {}
+                "error_classes": {},
+                "hosts": {},
+                "last_success_at": None,
+                "last_error_at": None,
+                "last_error_class": None
             }
 
         provider_data[provider]["errors"] += 1
         provider_data[provider]["error_classes"][error_class] = \
             provider_data[provider]["error_classes"].get(error_class, 0) + 1
+
+        # Track last error (первая запись = последняя по времени)
+        if provider_data[provider]["last_error_at"] is None:
+            provider_data[provider]["last_error_at"] = row.created_at
+            provider_data[provider]["last_error_class"] = error_class
 
     # Получаем состояние провайдеров из Redis
     redis = await get_redis()
@@ -402,12 +427,15 @@ async def get_providers_stats(
             success_rate=success_rate,
             p95_total_ms=calculate_p95(data["times"]),
             avg_speed_kbps=round(sum(data["speeds"]) / len(data["speeds"]), 2) if data["speeds"] else None,
-            errors_by_class=data["error_classes"],
+            errors_by_class=data.get("error_classes", {}),
             enabled=state["enabled"],
             cooldown_until=state["cooldown_until"],
             health=health,
             download_host_share=download_host_share,
-            top_hosts=top_hosts
+            top_hosts=top_hosts,
+            last_success_at=data.get("last_success_at"),
+            last_error_at=data.get("last_error_at"),
+            last_error_class=data.get("last_error_class")
         ))
 
     return ProvidersResponse(range_hours=hours, providers=providers)

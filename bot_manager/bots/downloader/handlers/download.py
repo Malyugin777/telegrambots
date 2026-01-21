@@ -1017,7 +1017,13 @@ async def handle_url(message: types.Message):
             }
             # Добавляем quota если есть
             if quota_snapshot:
-                telemetry["quota"] = quota_snapshot.to_dict() if hasattr(quota_snapshot, 'to_dict') else None
+                # quota_snapshot может быть dict или QuotaSnapshot
+                if isinstance(quota_snapshot, dict):
+                    telemetry["quota"] = quota_snapshot
+                elif hasattr(quota_snapshot, 'to_dict'):
+                    telemetry["quota"] = quota_snapshot.to_dict()
+                else:
+                    telemetry["quota"] = quota_snapshot
 
             logger.info(f"Sent video: user={user_id}, size={file_size}, total={total_ms}ms, prep={prep_ms}ms, download={download_ms}ms, upload={upload_ms}ms, bucket={content_bucket}")
             await log_action(

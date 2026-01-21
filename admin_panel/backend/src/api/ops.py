@@ -481,10 +481,10 @@ async def get_quota_status(
     social_reset = None
 
     if social_row and social_row.details:
-        quota = social_row.details.get("quota", {})
-        social_remaining = quota.get("requests_remaining")
-        social_limit = quota.get("requests_limit")
-        social_reset = quota.get("requests_reset_sec")
+        quota = social_row.details.get("quota") or {}
+        social_remaining = quota.get("requests_remaining") if quota else None
+        social_limit = quota.get("requests_limit") if quota else None
+        social_reset = quota.get("requests_reset_sec") if quota else None
 
     # burn_rate для Social Download
     since_24h = now - timedelta(hours=24)
@@ -549,10 +549,10 @@ async def get_quota_status(
     requests_remaining = None
 
     if savenow_row and savenow_row.details:
-        quota = savenow_row.details.get("quota", {})
-        units_remaining = quota.get("units_remaining")
-        units_reset = quota.get("units_reset_sec")
-        requests_remaining = quota.get("requests_remaining")
+        quota = savenow_row.details.get("quota") or {}
+        units_remaining = quota.get("units_remaining") if quota else None
+        units_reset = quota.get("units_reset_sec") if quota else None
+        requests_remaining = quota.get("requests_remaining") if quota else None
 
     # burn_rate для SaveNow
     savenow_burn_result = await db.execute(

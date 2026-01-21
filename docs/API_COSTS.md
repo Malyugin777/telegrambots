@@ -1,6 +1,16 @@
 # API Costs & Subscriptions
 
-**Последнее обновление:** 2026-01-20
+**Последнее обновление:** 2026-01-21
+
+## Текущий биллинг
+
+| Сервис | План | Цена/мес | Лимиты |
+|--------|------|----------|--------|
+| YouTube Info & Download API | **Pro** | **$5** | 100K units, 500K req |
+| Social Download All In One | **Pro** | **$2** | 6K req |
+| **ИТОГО** | | **$7/мес** | |
+
+---
 
 ## RapidAPI Subscriptions
 
@@ -8,12 +18,12 @@
 - **URL:** https://rapidapi.com/manhgdev/api/social-download-all-in-one
 - **Host:** `social-download-all-in-one.p.rapidapi.com`
 - **Используется для:** TikTok, Instagram, Pinterest
-- **Текущий план:** Basic (бесплатный)
+- **Текущий план:** Pro ($2/мес) - подписка с 21.01.2026
 
 | План | Цена | Requests | Overage | Rate Limit |
 |------|------|----------|---------|------------|
 | Basic | $0/мес | 100/мес | Hard Limit | 1000/hour |
-| Pro | $2/мес | 6,000/мес | +$0.003 | 3/sec |
+| **Pro** | **$2/мес** | **6,000/мес** | +$0.003 | 3/sec |
 | Ultra | $5/мес | 22,000/мес | +$0.001 | 4/sec |
 | Mega | $10/мес | 60,000/мес | +$0.001 | 5/sec |
 
@@ -23,12 +33,12 @@
 
 ---
 
-### 2. YouTube Info & Download API (НОВЫЙ) 🏆
+### 2. YouTube Info & Download API 🏆
 - **URL:** https://rapidapi.com/valsuttlej53/api/youtube-info-download-api
 - **Host:** `youtube-info-download-api.p.rapidapi.com`
 - **Используется для:** YouTube (длинные видео)
 - **Backend:** SaveNow.to (CDN проксирование)
-- **Текущий план:** Basic (бесплатный)
+- **Текущий план:** Pro ($5/мес) - подписка с 21.01.2026
 
 **Важно:** SaveNow.to сайт показывает рекламу, но через RapidAPI wrapper получаем прямые CDN ссылки БЕЗ рекламы. API убирает рекламный слой.
 
@@ -92,21 +102,23 @@
 
 | Сервис | План | Цена/мес |
 |--------|------|----------|
-| Social Download All In One | Basic | $0 |
-| YouTube Info & Download API | Basic | $0 |
-| **ИТОГО** | | **$0/мес** |
+| Social Download All In One | **Pro** | **$2** |
+| YouTube Info & Download API | **Pro** | **$5** |
+| **ИТОГО** | | **$7/мес** |
 
 ## Рекомендации по апгрейду
 
+**Текущий план: Pro** ✅
+
 При росте трафика:
 
-1. **YouTube Info & Download API → Pro ($5/мес)**
-   - Когда: >500 YouTube downloads/day
-   - Даст: 100K units = ~16K-33K downloads/мес
-
-2. **Social Download All In One → Ultra ($5/мес)**
-   - Когда: >100 TikTok/Instagram downloads/мес
+1. **Social Download All In One → Ultra ($5/мес)**
+   - Когда: >6K TikTok/Instagram downloads/мес
    - Даст: 22K requests/мес
+
+2. **Social Download All In One → Mega ($10/мес)**
+   - Когда: >22K TikTok/Instagram downloads/мес
+   - Даст: 60K requests/мес
 
 ---
 

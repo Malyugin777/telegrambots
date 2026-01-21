@@ -1196,18 +1196,18 @@ export const Ops = () => {
                             style={{
                               display: 'flex',
                               alignItems: 'center',
-                              padding: '8px 12px',
+                              padding: '10px 14px',
                               marginBottom: '8px',
-                              backgroundColor: provider.enabled ? '#fafafa' : '#f5f5f5',
-                              borderRadius: '4px',
-                              border: '1px solid #d9d9d9',
-                              opacity: provider.enabled ? 1 : 0.6,
+                              backgroundColor: provider.enabled ? '#1a1a2e' : '#16213e',
+                              borderRadius: '6px',
+                              border: `1px solid ${provider.enabled ? '#0f3460' : '#1a1a2e'}`,
+                              opacity: provider.enabled ? 1 : 0.7,
                             }}
                           >
-                            <span style={{ marginRight: '12px', color: '#888', minWidth: '20px' }}>
+                            <span style={{ marginRight: '12px', color: '#94a3b8', minWidth: '24px', fontWeight: 'bold' }}>
                               {index + 1}.
                             </span>
-                            <Tag color={PROVIDER_COLORS[provider.name] || 'default'}>
+                            <Tag color={PROVIDER_COLORS[provider.name] || 'default'} style={{ fontSize: '13px' }}>
                               {PROVIDER_LABELS[provider.name] || provider.name}
                             </Tag>
                             <div style={{ flex: 1 }} />
@@ -1250,8 +1250,8 @@ export const Ops = () => {
                           <li>Выключенные провайдеры пропускаются</li>
                           <li>Изменения применяются <b>мгновенно</b></li>
                         </ul>
-                        <div style={{ marginTop: '16px', padding: '12px', backgroundColor: '#f6ffed', borderRadius: '4px', border: '1px solid #b7eb8f' }}>
-                          <b>Совет:</b> Если YouTube банит — поставь SaveNow первым.
+                        <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'rgba(82, 196, 26, 0.1)', borderRadius: '4px', border: '1px solid rgba(82, 196, 26, 0.3)' }}>
+                          <b style={{ color: '#52c41a' }}>Совет:</b> Если YouTube банит — поставь SaveNow первым.
                         </div>
                       </Card>
                     </Col>

@@ -299,6 +299,7 @@ async def resolve_short_url(url: str) -> str:
     Поддерживает:
     - Pinterest: pin.it -> pinterest.com
     - TikTok: vt.tiktok.com, vm.tiktok.com -> tiktok.com/@user/video/ID
+    - Instagram: instagr.am -> instagram.com
     """
     url_lower = url.lower()
 
@@ -308,6 +309,7 @@ async def resolve_short_url(url: str) -> str:
         'vt.tiktok.com',    # TikTok short
         'vm.tiktok.com',    # TikTok mobile short
         'tiktok.com/t/',    # TikTok another short format
+        'instagr.am',       # Instagram short
     ]
 
     needs_resolution = any(pattern in url_lower for pattern in short_url_patterns)
@@ -848,22 +850,26 @@ async def handle_url(message: types.Message):
                         api_source = "ytdlp"
                         break
 
-                    # TikTok "флапает" — retry 1 раз для transient ошибок
+                    # TikTok/Pinterest "флапают" — retry 1 раз для transient ошибок
                     error_str = ytdlp_result.error or ""
-                    is_tiktok_flap = (
-                        platform == "tiktok" and
-                        "unable to extract" in error_str.lower()
+                    error_lower = error_str.lower()
+                    is_transient_error = (
+                        platform in ("tiktok", "pinterest") and
+                        ("unable to extract" in error_lower or
+                         "no video formats" in error_lower or
+                         "connection reset" in error_lower or
+                         "timed out" in error_lower)
                     )
-                    if is_tiktok_flap:
-                        logger.info(f"[TIKTOK] Retrying yt-dlp in 3s (TikTok flap detected)")
+                    if is_transient_error:
+                        logger.info(f"[{platform.upper()}] Retrying yt-dlp in 3s (transient error detected)")
                         await asyncio.sleep(3)
                         ytdlp_result = await downloader.download(url, progress_callback=progress_callback)
                         if ytdlp_result.success:
                             result = ytdlp_result
                             api_source = "ytdlp"
-                            logger.info(f"[TIKTOK] yt-dlp retry succeeded!")
+                            logger.info(f"[{platform.upper()}] yt-dlp retry succeeded!")
                             break
-                        logger.warning(f"[TIKTOK] yt-dlp retry also failed: {ytdlp_result.error}")
+                        logger.warning(f"[{platform.upper()}] yt-dlp retry also failed: {ytdlp_result.error}")
 
                     errors["ytdlp"] = ytdlp_result.error
                     logger.warning(f"[{platform.upper()}] yt-dlp failed: {ytdlp_result.error}")

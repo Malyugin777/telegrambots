@@ -95,11 +95,15 @@ async def get_user_stats(session: AsyncSession, telegram_id: int) -> dict:
 
     # Считаем YouTube Full скачивания
     # Включаем "youtube" для совместимости со старыми записями (до разделения на shorts/full)
+    from sqlalchemy import or_
     yt_full_result = await session.execute(
         select(func.count(ActionLog.id)).where(
             ActionLog.user_id == user.id,
             ActionLog.action == "download_success",
-            ActionLog.details["platform"].astext.in_(["youtube_full", "youtube"])
+            or_(
+                ActionLog.details["platform"].astext == "youtube_full",
+                ActionLog.details["platform"].astext == "youtube"
+            )
         )
     )
     youtube_full_count = yt_full_result.scalar() or 0

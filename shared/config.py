@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     debug: bool = True
     log_level: str = "INFO"
 
+    # RapidAPI Quota Limits (для Ops Dashboard)
+    # Social Download All In One (Instagram, TikTok, Pinterest)
+    rapidapi_social_requests_limit: int = 6000  # Pro plan: 6K/month
+    rapidapi_social_plan_name: str = "Pro"
+    # SaveNow / YouTube Info & Download API
+    savenow_units_limit: int = 100000  # Pro plan: 100K units/month
+    savenow_plan_name: str = "Pro"
+
     @property
     def database_url(self) -> str:
         """Async PostgreSQL URL for SQLAlchemy."""

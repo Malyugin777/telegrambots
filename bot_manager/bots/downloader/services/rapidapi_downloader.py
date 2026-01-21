@@ -38,6 +38,21 @@ _executor = ThreadPoolExecutor(max_workers=3)
 
 
 @dataclass
+class QuotaSnapshot:
+    """Snapshot квоты RapidAPI для телеметрии"""
+    requests_remaining: Optional[int] = None
+    requests_limit: Optional[int] = None
+    requests_reset_sec: Optional[int] = None
+
+    def to_dict(self) -> dict:
+        return {
+            "requests_remaining": self.requests_remaining,
+            "requests_limit": self.requests_limit,
+            "requests_reset_sec": self.requests_reset_sec,
+        }
+
+
+@dataclass
 class RapidAPIMedia:
     """Медиа из ответа RapidAPI"""
     url: str
@@ -56,6 +71,7 @@ class RapidAPIResult:
     duration: int = 0  # Длительность видео в секундах
     thumbnail: Optional[str] = None  # URL превью
     error: Optional[str] = None
+    quota_snapshot: Optional[QuotaSnapshot] = None  # Quota info from headers
 
 
 @dataclass
@@ -70,6 +86,7 @@ class DownloadedFile:
     author: str = ""
     thumbnail: Optional[str] = None  # URL превью для видео
     error: Optional[str] = None
+    quota_snapshot: Optional[QuotaSnapshot] = None  # Quota info
 
 
 @dataclass
@@ -81,6 +98,7 @@ class CarouselResult:
     author: str = ""
     has_video: bool = False  # Есть ли видео для извлечения аудио
     error: Optional[str] = None
+    quota_snapshot: Optional[QuotaSnapshot] = None  # Quota info
 
 
 # === HELPER FUNCTIONS ===
@@ -179,10 +197,69 @@ class RapidAPIDownloader:
     def __init__(self):
         self.api_key = os.getenv("RAPIDAPI_KEY", "")
         self.api_host = os.getenv("RAPIDAPI_HOST", "social-download-all-in-one.p.rapidapi.com")
+        self._last_quota_snapshot: Optional[QuotaSnapshot] = None
         os.makedirs(DOWNLOAD_DIR, exist_ok=True)
 
         if not self.api_key:
             logger.warning("RAPIDAPI_KEY not set!")
+
+    def _log_quota_headers(self, headers: dict) -> QuotaSnapshot:
+        """
+        Парсит и логирует quota headers из ответа RapidAPI.
+
+        RapidAPI отправляет:
+        - x-ratelimit-requests-remaining: оставшиеся запросы
+        - x-ratelimit-requests-limit: лимит запросов
+        - x-ratelimit-requests-reset: секунды до сброса
+        """
+        # Нормализуем ключи (case-insensitive)
+        headers_lower = {k.lower(): v for k, v in headers.items()}
+
+        requests_remaining = None
+        requests_limit = None
+        requests_reset = None
+
+        # Пробуем разные варианты названий
+        for key in ['x-ratelimit-requests-remaining', 'x-ratelimit-remaining']:
+            if key in headers_lower:
+                try:
+                    requests_remaining = int(headers_lower[key])
+                except (ValueError, TypeError):
+                    pass
+                break
+
+        for key in ['x-ratelimit-requests-limit', 'x-ratelimit-limit']:
+            if key in headers_lower:
+                try:
+                    requests_limit = int(headers_lower[key])
+                except (ValueError, TypeError):
+                    pass
+                break
+
+        for key in ['x-ratelimit-requests-reset', 'x-ratelimit-reset']:
+            if key in headers_lower:
+                try:
+                    requests_reset = int(headers_lower[key])
+                except (ValueError, TypeError):
+                    pass
+                break
+
+        snapshot = QuotaSnapshot(
+            requests_remaining=requests_remaining,
+            requests_limit=requests_limit,
+            requests_reset_sec=requests_reset
+        )
+
+        # Логируем если есть данные
+        if requests_remaining is not None:
+            logger.info(f"[RAPIDAPI-QUOTA] remaining={requests_remaining}, limit={requests_limit}, reset_sec={requests_reset}")
+
+            # Предупреждение при низкой квоте
+            if requests_remaining < 100:
+                logger.warning(f"[RAPIDAPI-QUOTA] LOW QUOTA WARNING: only {requests_remaining} requests remaining!")
+
+        self._last_quota_snapshot = snapshot
+        return snapshot
 
     async def get_media_info(self, url: str) -> RapidAPIResult:
         """
@@ -208,16 +285,22 @@ class RapidAPIDownloader:
                     headers=headers,
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as resp:
+                    # Парсим quota headers из ответа
+                    quota_snapshot = self._log_quota_headers(dict(resp.headers))
+
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(f"RapidAPI error {resp.status}: {error_text[:200]}")
                         return RapidAPIResult(
                             success=False,
-                            error=f"API error: {resp.status}"
+                            error=f"API error: {resp.status}",
+                            quota_snapshot=quota_snapshot
                         )
 
                     data = await resp.json()
-                    return self._parse_response(data)
+                    result = self._parse_response(data)
+                    result.quota_snapshot = quota_snapshot
+                    return result
 
         except asyncio.TimeoutError:
             return RapidAPIResult(success=False, error="API timeout")
@@ -317,7 +400,7 @@ class RapidAPIDownloader:
         info = await self.get_media_info(url)
 
         if not info.success:
-            return DownloadedFile(success=False, error=info.error)
+            return DownloadedFile(success=False, error=info.error, quota_snapshot=info.quota_snapshot)
 
         # Логируем доступные качества
         available_qualities = [m.quality for m in info.medias if m.type == "video"]
@@ -363,13 +446,15 @@ class RapidAPIDownloader:
                 ),
                 timeout=DOWNLOAD_TIMEOUT
             )
+            # Добавляем quota_snapshot к результату
+            result.quota_snapshot = info.quota_snapshot
             return result
 
         except asyncio.TimeoutError:
-            return DownloadedFile(success=False, error=f"Download timeout ({DOWNLOAD_TIMEOUT}s)")
+            return DownloadedFile(success=False, error=f"Download timeout ({DOWNLOAD_TIMEOUT}s)", quota_snapshot=info.quota_snapshot)
         except Exception as e:
             logger.exception(f"Download error: {e}")
-            return DownloadedFile(success=False, error=str(e)[:100])
+            return DownloadedFile(success=False, error=str(e)[:100], quota_snapshot=info.quota_snapshot)
 
     async def download_all(self, url: str) -> CarouselResult:
         """
@@ -380,7 +465,7 @@ class RapidAPIDownloader:
         info = await self.get_media_info(url)
 
         if not info.success:
-            return CarouselResult(success=False, error=info.error)
+            return CarouselResult(success=False, error=info.error, quota_snapshot=info.quota_snapshot)
 
         # Собираем уникальные медиа (убираем дубли по URL)
         seen_urls = set()
@@ -394,7 +479,7 @@ class RapidAPIDownloader:
             unique_medias.append(m)
 
         if not unique_medias:
-            return CarouselResult(success=False, error="No media found")
+            return CarouselResult(success=False, error="No media found", quota_snapshot=info.quota_snapshot)
 
         # Если только 1 медиа - используем обычный download
         if len(unique_medias) == 1:
@@ -405,9 +490,10 @@ class RapidAPIDownloader:
                     files=[result],
                     title=info.title,
                     author=info.author,
-                    has_video=not result.is_photo
+                    has_video=not result.is_photo,
+                    quota_snapshot=info.quota_snapshot
                 )
-            return CarouselResult(success=False, error=result.error)
+            return CarouselResult(success=False, error=result.error, quota_snapshot=info.quota_snapshot)
 
         # Скачиваем все файлы параллельно
         logger.info(f"Downloading carousel: {len(unique_medias)} items")
@@ -434,7 +520,7 @@ class RapidAPIDownloader:
                 timeout=DOWNLOAD_TIMEOUT * 2
             )
         except asyncio.TimeoutError:
-            return CarouselResult(success=False, error="Carousel download timeout")
+            return CarouselResult(success=False, error="Carousel download timeout", quota_snapshot=info.quota_snapshot)
 
         # Фильтруем успешные
         files = []
@@ -447,7 +533,7 @@ class RapidAPIDownloader:
                     has_video = True
 
         if not files:
-            return CarouselResult(success=False, error="Failed to download carousel items")
+            return CarouselResult(success=False, error="Failed to download carousel items", quota_snapshot=info.quota_snapshot)
 
         logger.info(f"Carousel downloaded: {len(files)} files")
 
@@ -456,7 +542,8 @@ class RapidAPIDownloader:
             files=files,
             title=info.title,
             author=info.author,
-            has_video=has_video
+            has_video=has_video,
+            quota_snapshot=info.quota_snapshot
         )
 
     def _download_file(

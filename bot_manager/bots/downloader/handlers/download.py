@@ -618,16 +618,22 @@ async def handle_url(message: types.Message):
                 total_size = sum(f.file_size or 0 for f in carousel.files)
                 download_speed = int(total_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
 
+                # Формируем telemetry с quota_snapshot
+                carousel_telemetry = {
+                    "type": "carousel",
+                    "platform": platform,
+                    "bucket": "carousel",
+                    "files_count": len(carousel.files),
+                    "has_video": carousel.has_video,
+                }
+                # Добавляем quota_snapshot если есть
+                if carousel.quota_snapshot:
+                    carousel_telemetry["quota"] = carousel.quota_snapshot.to_dict()
+
                 logger.info(f"Sent carousel: user={user_id}, files={len(carousel.files)}, time={download_time_ms}ms, size={total_size}")
                 await log_action(
                     user_id, "download_success",
-                    {
-                        "type": "carousel",
-                        "platform": platform,
-                        "bucket": "carousel",
-                        "files_count": len(carousel.files),
-                        "has_video": carousel.has_video,
-                    },
+                    carousel_telemetry,
                     download_time_ms=download_time_ms,
                     file_size_bytes=total_size,
                     download_speed_kbps=download_speed,
@@ -675,7 +681,9 @@ async def handle_url(message: types.Message):
                     author=carousel.author or "unknown",
                     thumbnail=single_file.thumbnail,  # RapidAPI/ffmpeg thumbnail
                     platform="instagram"
-                )
+                ),
+                # Передаём quota_snapshot из carousel
+                quota_snapshot=carousel.quota_snapshot.to_dict() if carousel.quota_snapshot else None
             )
 
         # YOUTUBE: yt-dlp (primary) -> pytubefix (fallback #1) -> SaveNow (fallback #2, CDN)
@@ -876,10 +884,16 @@ async def handle_url(message: types.Message):
             # Phase 7.1: content bucket для фото
             photo_bucket = "photo" if platform == "pinterest" else detect_instagram_bucket(url)
 
+            # Формируем telemetry с quota_snapshot
+            photo_telemetry = {"type": "photo", "platform": platform, "bucket": photo_bucket}
+            quota_snapshot = getattr(result, 'quota_snapshot', None)
+            if quota_snapshot:
+                photo_telemetry["quota"] = quota_snapshot if isinstance(quota_snapshot, dict) else quota_snapshot.to_dict()
+
             logger.info(f"Sent photo: user={user_id}, size={file_size}, time={download_time_ms}ms, bucket={photo_bucket}")
             await log_action(
                 user_id, "download_success",
-                {"type": "photo", "platform": platform, "bucket": photo_bucket},
+                photo_telemetry,
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
                 download_speed_kbps=download_speed,

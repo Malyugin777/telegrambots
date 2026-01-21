@@ -450,10 +450,22 @@ async def get_quota_status(
     GET /api/v1/ops/quota
 
     Текущий остаток квоты по API + прогноз дней.
-    Данные берутся из последнего quota_snapshot в action_logs.details
+    Данные берутся из последнего quota_snapshot в action_logs.details.quota
     """
-    # Ищем последнюю запись с quota_snapshot в details
-    result = await db.execute(
+    import os
+
+    # Лимиты из env (или defaults для Pro плана)
+    SOCIAL_REQUESTS_LIMIT = int(os.getenv("RAPIDAPI_SOCIAL_REQUESTS_LIMIT", "6000"))
+    SOCIAL_PLAN_NAME = os.getenv("RAPIDAPI_SOCIAL_PLAN_NAME", "Pro")
+    SAVENOW_UNITS_LIMIT = int(os.getenv("SAVENOW_UNITS_LIMIT", "100000"))
+    SAVENOW_PLAN_NAME = os.getenv("SAVENOW_PLAN_NAME", "Pro")
+
+    now = datetime.utcnow()
+    apis = []
+
+    # === 1. Social Download All In One (Instagram, TikTok, Pinterest) ===
+    # Ищем последнюю запись с quota в details для RAPIDAPI
+    social_result = await db.execute(
         select(ActionLog.details, ActionLog.created_at)
         .where(
             ActionLog.action == "download_success",
@@ -462,86 +474,127 @@ async def get_quota_status(
         .order_by(ActionLog.created_at.desc())
         .limit(1)
     )
-    row = result.first()
+    social_row = social_result.first()
 
-    apis = []
+    social_remaining = None
+    social_limit = None
+    social_reset = None
 
-    # Social Download All In One (для Instagram)
+    if social_row and social_row.details:
+        quota = social_row.details.get("quota", {})
+        social_remaining = quota.get("requests_remaining")
+        social_limit = quota.get("requests_limit")
+        social_reset = quota.get("requests_reset_sec")
+
+    # burn_rate для Social Download
+    since_24h = now - timedelta(hours=24)
+    social_burn_result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= since_24h,
+            ActionLog.action == "download_success",
+            ActionLog.api_source == APISource.RAPIDAPI
+        )
+    )
+    social_burn_24h = social_burn_result.scalar() or 0
+
+    since_7d = now - timedelta(days=7)
+    social_burn_7d_result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= since_7d,
+            ActionLog.action == "download_success",
+            ActionLog.api_source == APISource.RAPIDAPI
+        )
+    )
+    social_burn_7d = social_burn_7d_result.scalar() or 0
+    social_burn_rate_7d = round(social_burn_7d / 7, 1) if social_burn_7d else None
+
+    # Forecasts для Social Download
+    social_forecast_avg = None
+    social_forecast_pess = None
+    effective_remaining = social_remaining if social_remaining is not None else (
+        (social_limit or SOCIAL_REQUESTS_LIMIT) - social_burn_24h if social_burn_24h else None
+    )
+    if effective_remaining and social_burn_24h > 0:
+        social_forecast_avg = round(effective_remaining / social_burn_24h, 1)
+        worst_hour = social_burn_24h / 24 * 2
+        if worst_hour > 0:
+            social_forecast_pess = round(effective_remaining / (worst_hour * 24), 1)
+
     apis.append(QuotaInfo(
         provider="social_download",
-        plan="Basic (Free)",
-        requests_remaining=None,  # TODO: track from headers
-        requests_limit=100,
-        reset_hours=None,
-        burn_rate_per_day=None,
-        days_remaining=None
+        plan=SOCIAL_PLAN_NAME,
+        requests_remaining=social_remaining,
+        requests_limit=social_limit or SOCIAL_REQUESTS_LIMIT,
+        reset_hours=round(social_reset / 3600, 1) if social_reset else None,
+        burn_rate_24h=float(social_burn_24h) if social_burn_24h else None,
+        burn_rate_7d=social_burn_rate_7d,
+        forecast_average=social_forecast_avg,
+        forecast_pessimistic=social_forecast_pess
     ))
 
-    # SaveNow (для YouTube)
-    # Пытаемся извлечь из последней записи
-    if row and row.details:
-        quota = row.details.get("quota_snapshot", {})
+    # === 2. SaveNow / YouTube Info & Download API ===
+    savenow_result = await db.execute(
+        select(ActionLog.details, ActionLog.created_at)
+        .where(
+            ActionLog.action == "download_success",
+            ActionLog.api_source == APISource.SAVENOW
+        )
+        .order_by(ActionLog.created_at.desc())
+        .limit(1)
+    )
+    savenow_row = savenow_result.first()
+
+    units_remaining = None
+    units_reset = None
+    requests_remaining = None
+
+    if savenow_row and savenow_row.details:
+        quota = savenow_row.details.get("quota", {})
         units_remaining = quota.get("units_remaining")
+        units_reset = quota.get("units_reset_sec")
         requests_remaining = quota.get("requests_remaining")
 
-        now = datetime.utcnow()
-
-        # burn_rate_24h: запросы за последние 24 часа
-        since_24h = now - timedelta(hours=24)
-        burn_24h_result = await db.execute(
-            select(func.count(ActionLog.id)).where(
-                ActionLog.created_at >= since_24h,
-                ActionLog.action == "download_success",
-                ActionLog.api_source == APISource.RAPIDAPI
-            )
+    # burn_rate для SaveNow
+    savenow_burn_result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= since_24h,
+            ActionLog.action == "download_success",
+            ActionLog.api_source == APISource.SAVENOW
         )
-        burn_rate_24h = burn_24h_result.scalar() or 0
+    )
+    savenow_burn_24h = savenow_burn_result.scalar() or 0
 
-        # burn_rate_7d: среднее в день за 7 дней
-        since_7d = now - timedelta(days=7)
-        burn_7d_result = await db.execute(
-            select(func.count(ActionLog.id)).where(
-                ActionLog.created_at >= since_7d,
-                ActionLog.action == "download_success",
-                ActionLog.api_source == APISource.RAPIDAPI
-            )
+    savenow_burn_7d_result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= since_7d,
+            ActionLog.action == "download_success",
+            ActionLog.api_source == APISource.SAVENOW
         )
-        burn_7d_total = burn_7d_result.scalar() or 0
-        burn_rate_7d = round(burn_7d_total / 7, 1) if burn_7d_total else None
+    )
+    savenow_burn_7d = savenow_burn_7d_result.scalar() or 0
+    savenow_burn_rate_7d = round(savenow_burn_7d / 7, 1) if savenow_burn_7d else None
 
-        # worst_hour: максимум запросов за любой час в последние 24h (для pessimistic forecast)
-        # Упрощенно: берем burn_rate_24h и умножаем на пик-фактор 2x
-        worst_hour_rate = burn_rate_24h / 24 * 2 if burn_rate_24h else None
+    # Forecasts для SaveNow
+    savenow_forecast_avg = None
+    savenow_forecast_pess = None
+    if units_remaining and savenow_burn_24h > 0:
+        savenow_forecast_avg = round(units_remaining / savenow_burn_24h, 1)
+        worst_hour = savenow_burn_24h / 24 * 2
+        if worst_hour > 0:
+            savenow_forecast_pess = round(units_remaining / (worst_hour * 24), 1)
 
-        # Forecasts
-        forecast_average = None
-        forecast_pessimistic = None
-        if units_remaining:
-            if burn_rate_24h > 0:
-                forecast_average = round(units_remaining / burn_rate_24h, 1)
-            if worst_hour_rate and worst_hour_rate > 0:
-                # Pessimistic: если весь день будет как worst hour
-                forecast_pessimistic = round(units_remaining / (worst_hour_rate * 24), 1)
-
-        apis.append(QuotaInfo(
-            provider="savenow",
-            plan="Basic (Free)" if (requests_remaining or 0) < 1000 else "Pro",
-            units_remaining=units_remaining,
-            units_limit=500,  # Daily limit for Basic
-            requests_remaining=requests_remaining,
-            reset_hours=24.0,
-            burn_rate_24h=float(burn_rate_24h) if burn_rate_24h else None,
-            burn_rate_7d=burn_rate_7d,
-            forecast_pessimistic=forecast_pessimistic,
-            forecast_average=forecast_average
-        ))
-    else:
-        apis.append(QuotaInfo(
-            provider="savenow",
-            plan="Unknown",
-            units_remaining=None,
-            units_limit=500
-        ))
+    apis.append(QuotaInfo(
+        provider="savenow",
+        plan=SAVENOW_PLAN_NAME,
+        units_remaining=units_remaining,
+        units_limit=SAVENOW_UNITS_LIMIT,
+        requests_remaining=requests_remaining,
+        reset_hours=round(units_reset / 3600, 1) if units_reset else None,
+        burn_rate_24h=float(savenow_burn_24h) if savenow_burn_24h else None,
+        burn_rate_7d=savenow_burn_rate_7d,
+        forecast_average=savenow_forecast_avg,
+        forecast_pessimistic=savenow_forecast_pess
+    ))
 
     return QuotaResponse(
         updated_at=datetime.utcnow(),

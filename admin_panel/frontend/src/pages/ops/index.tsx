@@ -885,8 +885,13 @@ export const Ops = () => {
                                     </div>
                                   </Col>
                                   <Col span={12}>
-                                    <Tooltip title="Сколько скачиваний сделано за последние 24 часа">
-                                      <div style={{ fontSize: '12px', color: '#888' }}>Скачано за 24ч</div>
+                                    <Tooltip title={isSavenow
+                                      ? "Потрачено токенов с начала месяца (из API)"
+                                      : "Сколько скачиваний сделано за последние 24 часа"
+                                    }>
+                                      <div style={{ fontSize: '12px', color: '#888' }}>
+                                        {isSavenow ? 'Потрачено за месяц' : 'Скачано за 24ч'}
+                                      </div>
                                     </Tooltip>
                                     <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
                                       {quota.burn_rate_24h !== null ? (
@@ -909,18 +914,24 @@ export const Ops = () => {
                                     </div>
                                   </Col>
                                   <Col span={12}>
-                                    <Tooltip title="Сколько % квоты потратим к концу месяца при текущем темпе">
-                                      <div style={{ fontSize: '12px', color: '#888' }}>Прогноз на месяц</div>
+                                    <Tooltip title={isSavenow
+                                      ? "Сколько % квоты уже использовано"
+                                      : "Сколько % квоты потратим к концу месяца при текущем темпе"
+                                    }>
+                                      <div style={{ fontSize: '12px', color: '#888' }}>
+                                        {isSavenow ? 'Использовано' : 'Прогноз на месяц'}
+                                      </div>
                                     </Tooltip>
                                     <div style={{
                                       fontSize: '18px',
                                       fontWeight: 'bold',
-                                      color: projectedPercent !== null
-                                        ? (projectedPercent > 90 ? '#ff4d4f' : projectedPercent > 70 ? '#faad14' : '#52c41a')
+                                      color: (isSavenow ? quota.forecast_average : projectedPercent) !== null
+                                        ? ((isSavenow ? quota.forecast_average : projectedPercent) as number > 90 ? '#ff4d4f' :
+                                           (isSavenow ? quota.forecast_average : projectedPercent) as number > 70 ? '#faad14' : '#52c41a')
                                         : '#888'
                                     }}>
-                                      {projectedPercent !== null ? (
-                                        <>{projectedPercent}%</>
+                                      {(isSavenow ? quota.forecast_average : projectedPercent) !== null ? (
+                                        <>{isSavenow ? quota.forecast_average : projectedPercent}%</>
                                       ) : (
                                         <span style={{ fontSize: '14px', color: '#888' }}>-</span>
                                       )}

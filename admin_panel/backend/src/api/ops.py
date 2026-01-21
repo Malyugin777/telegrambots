@@ -533,6 +533,7 @@ async def get_quota_status(
     ))
 
     # === 2. SaveNow / YouTube Info & Download API ===
+    # SaveNow использует units (токены), а не requests. Длинные видео = больше токенов.
     savenow_result = await db.execute(
         select(ActionLog.details, ActionLog.created_at)
         .where(
@@ -546,54 +547,36 @@ async def get_quota_status(
 
     units_remaining = None
     units_reset = None
-    requests_remaining = None
 
     if savenow_row and savenow_row.details:
         quota = savenow_row.details.get("quota") or {}
         units_remaining = quota.get("units_remaining") if quota else None
         units_reset = quota.get("units_reset_sec") if quota else None
-        requests_remaining = quota.get("requests_remaining") if quota else None
 
-    # burn_rate для SaveNow
-    savenow_burn_result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= since_24h,
-            ActionLog.action == "download_success",
-            ActionLog.api_source == APISource.SAVENOW
-        )
-    )
-    savenow_burn_24h = savenow_burn_result.scalar() or 0
+    # Для SaveNow считаем использованные токены из квоты, а не количество скачиваний
+    # used_this_month = limit - remaining (точные данные из API)
+    units_used_month = None
+    if units_remaining is not None:
+        units_used_month = SAVENOW_UNITS_LIMIT - units_remaining
 
-    savenow_burn_7d_result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= since_7d,
-            ActionLog.action == "download_success",
-            ActionLog.api_source == APISource.SAVENOW
-        )
-    )
-    savenow_burn_7d = savenow_burn_7d_result.scalar() or 0
-    savenow_burn_rate_7d = round(savenow_burn_7d / 7, 1) if savenow_burn_7d else None
-
-    # Forecasts для SaveNow
-    savenow_forecast_avg = None
-    savenow_forecast_pess = None
-    if units_remaining and savenow_burn_24h > 0:
-        savenow_forecast_avg = round(units_remaining / savenow_burn_24h, 1)
-        worst_hour = savenow_burn_24h / 24 * 2
-        if worst_hour > 0:
-            savenow_forecast_pess = round(units_remaining / (worst_hour * 24), 1)
+    # Прогноз: сколько % квоты используем к концу месяца
+    # Показываем текущий % использования (точные данные из API)
+    savenow_current_percent = None
+    if units_used_month is not None:
+        savenow_current_percent = round((units_used_month / SAVENOW_UNITS_LIMIT) * 100, 2)
 
     apis.append(QuotaInfo(
         provider="savenow",
         plan=SAVENOW_PLAN_NAME,
         units_remaining=units_remaining,
         units_limit=SAVENOW_UNITS_LIMIT,
-        requests_remaining=requests_remaining,
+        requests_remaining=None,  # SaveNow не использует requests, только units
         reset_hours=round(units_reset / 3600, 1) if units_reset else None,
-        burn_rate_24h=float(savenow_burn_24h) if savenow_burn_24h else None,
-        burn_rate_7d=savenow_burn_rate_7d,
-        forecast_average=savenow_forecast_avg,
-        forecast_pessimistic=savenow_forecast_pess
+        # burn_rate_24h для SaveNow = использовано токенов за месяц
+        burn_rate_24h=float(units_used_month) if units_used_month else None,
+        burn_rate_7d=None,
+        forecast_average=savenow_current_percent,  # текущий % использования
+        forecast_pessimistic=None
     ))
 
     return QuotaResponse(

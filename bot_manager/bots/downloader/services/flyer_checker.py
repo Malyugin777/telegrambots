@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shared.database.models import User, ActionLog
@@ -95,14 +95,15 @@ async def get_user_stats(session: AsyncSession, telegram_id: int) -> dict:
 
     # Считаем YouTube Full скачивания
     # Включаем "youtube" для совместимости со старыми записями (до разделения на shorts/full)
-    from sqlalchemy import or_
+    # Используем json_extract_path_text для PostgreSQL JSON колонок
+    platform_text = func.json_extract_path_text(ActionLog.details, 'platform')
     yt_full_result = await session.execute(
         select(func.count(ActionLog.id)).where(
             ActionLog.user_id == user.id,
             ActionLog.action == "download_success",
             or_(
-                ActionLog.details["platform"].astext == "youtube_full",
-                ActionLog.details["platform"].astext == "youtube"
+                platform_text == "youtube_full",
+                platform_text == "youtube"
             )
         )
     )
@@ -113,7 +114,7 @@ async def get_user_stats(session: AsyncSession, telegram_id: int) -> dict:
         select(func.count(ActionLog.id)).where(
             ActionLog.user_id == user.id,
             ActionLog.action == "download_success",
-            ActionLog.details["platform"].astext == "instagram"
+            platform_text == "instagram"
         )
     )
     instagram_count = ig_result.scalar() or 0

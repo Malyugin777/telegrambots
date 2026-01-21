@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useCustom } from '@refinedev/core';
+import { useCustom, useApiUrl } from '@refinedev/core';
 import {
   Row,
   Col,
@@ -13,10 +13,13 @@ import {
   Tooltip,
   Badge,
   Select,
+  Switch,
+  Button,
+  Segmented,
+  message,
 } from 'antd';
 import {
   CheckCircleOutlined,
-  CloseCircleOutlined,
   ClockCircleOutlined,
   ThunderboltOutlined,
   CloudServerOutlined,
@@ -24,6 +27,7 @@ import {
   ApiOutlined,
   WarningOutlined,
   ReloadOutlined,
+  PauseCircleOutlined,
 } from '@ant-design/icons';
 import type { ColumnsType } from 'antd/es/table';
 
@@ -31,6 +35,7 @@ import type { ColumnsType } from 'antd/es/table';
 
 interface PlatformStats {
   platform: string;
+  bucket: string | null;
   total: number;
   success: number;
   errors: number;
@@ -38,6 +43,7 @@ interface PlatformStats {
   p95_total_ms: number | null;
   p95_prep_ms: number | null;
   p95_download_ms: number | null;
+  p95_upload_ms: number | null;
   avg_speed_kbps: number | null;
   provider_share: Record<string, number>;
   top_error_class: string | null;
@@ -52,7 +58,9 @@ interface ProviderStats {
   p95_total_ms: number | null;
   avg_speed_kbps: number | null;
   errors_by_class: Record<string, number>;
-  cooldown_status: string | null;
+  enabled: boolean;
+  cooldown_until: string | null;
+  health: string;
   download_host_share: Record<string, number>;
   top_hosts: string[];
 }
@@ -120,11 +128,32 @@ const getSuccessRateColor = (rate: number): string => {
   return '#ff4d4f';
 };
 
+const getHealthBadge = (health: string) => {
+  switch (health) {
+    case 'healthy':
+      return <Badge status="success" text="OK" />;
+    case 'degraded':
+      return <Badge status="warning" text="Degraded" />;
+    case 'down':
+      return <Badge status="error" text="Down" />;
+    default:
+      return <Badge status="default" text="Unknown" />;
+  }
+};
+
+const P95Tooltip = ({ children }: { children: React.ReactNode }) => (
+  <Tooltip title="95% загрузок быстрее этого времени">
+    {children}
+  </Tooltip>
+);
+
 // ============ Components ============
 
 export const Ops = () => {
   const [timeRange, setTimeRange] = useState('24h');
+  const [groupBy, setGroupBy] = useState<'platform' | 'bucket'>('platform');
   const [refreshKey, setRefreshKey] = useState(0);
+  const apiUrl = useApiUrl();
 
   // Auto-refresh every 30 seconds
   useEffect(() => {
@@ -135,14 +164,14 @@ export const Ops = () => {
   }, []);
 
   // Fetch data
-  const { data: platformsData, isLoading: platformsLoading } = useCustom<PlatformsResponse>({
+  const { data: platformsData, isLoading: platformsLoading, refetch: refetchPlatforms } = useCustom<PlatformsResponse>({
     url: '/ops/platforms',
     method: 'get',
-    config: { query: { range: timeRange } },
-    queryOptions: { queryKey: ['ops-platforms', timeRange, refreshKey] },
+    config: { query: { range: timeRange, group_by: groupBy } },
+    queryOptions: { queryKey: ['ops-platforms', timeRange, groupBy, refreshKey] },
   });
 
-  const { data: providersData, isLoading: providersLoading } = useCustom<ProvidersResponse>({
+  const { data: providersData, isLoading: providersLoading, refetch: refetchProviders } = useCustom<ProvidersResponse>({
     url: '/ops/providers',
     method: 'get',
     config: { query: { range: timeRange } },
@@ -178,32 +207,71 @@ export const Ops = () => {
 
   const savenowQuota = quotas.find(q => q.provider === 'savenow');
 
+  // Provider control handlers
+  const handleToggleProvider = async (provider: string, enabled: boolean) => {
+    try {
+      const endpoint = enabled ? 'enable' : 'disable';
+      await fetch(`${apiUrl}/ops/providers/${provider}/${endpoint}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      message.success(`${provider} ${enabled ? 'enabled' : 'disabled'}`);
+      refetchProviders();
+    } catch {
+      message.error('Failed to update provider state');
+    }
+  };
+
+  const handleCooldown = async (provider: string, minutes: number) => {
+    try {
+      await fetch(`${apiUrl}/ops/providers/${provider}/cooldown?minutes=${minutes}`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+      });
+      message.success(`${provider} in cooldown for ${minutes} minutes`);
+      refetchProviders();
+    } catch {
+      message.error('Failed to set cooldown');
+    }
+  };
+
   // ============ Table Columns ============
 
   const platformColumns: ColumnsType<PlatformStats> = [
     {
-      title: 'Platform',
+      title: groupBy === 'bucket' ? 'Платформа:Тип' : 'Платформа',
       dataIndex: 'platform',
       key: 'platform',
-      render: (platform: string) => (
-        <Tag color={
-          platform === 'youtube' ? 'red' :
-          platform === 'instagram' ? 'magenta' :
-          platform === 'tiktok' ? 'cyan' :
-          platform === 'pinterest' ? 'volcano' : 'default'
-        }>
-          {platform.toUpperCase()}
-        </Tag>
+      render: (platform: string, record: PlatformStats) => (
+        <div>
+          <Tag color={
+            platform === 'youtube' ? 'red' :
+            platform === 'instagram' ? 'magenta' :
+            platform === 'tiktok' ? 'cyan' :
+            platform === 'pinterest' ? 'volcano' : 'default'
+          }>
+            {platform.toUpperCase()}
+          </Tag>
+          {record.bucket && (
+            <Tag color="blue" style={{ marginLeft: '4px' }}>
+              {record.bucket}
+            </Tag>
+          )}
+        </div>
       ),
     },
     {
-      title: 'Total',
+      title: 'Всего',
       dataIndex: 'total',
       key: 'total',
       sorter: (a, b) => a.total - b.total,
     },
     {
-      title: 'Success Rate',
+      title: '% успеха',
       dataIndex: 'success_rate',
       key: 'success_rate',
       render: (rate: number) => (
@@ -214,39 +282,50 @@ export const Ops = () => {
       sorter: (a, b) => a.success_rate - b.success_rate,
     },
     {
-      title: 'P95 Total',
+      title: <P95Tooltip><span>P95 Total</span></P95Tooltip>,
       dataIndex: 'p95_total_ms',
       key: 'p95_total_ms',
       render: formatMs,
       sorter: (a, b) => (a.p95_total_ms || 0) - (b.p95_total_ms || 0),
     },
     {
-      title: 'P95 Prep',
+      title: <P95Tooltip><span>P95 Prep</span></P95Tooltip>,
       dataIndex: 'p95_prep_ms',
       key: 'p95_prep_ms',
       render: formatMs,
     },
     {
-      title: 'P95 Download',
+      title: <P95Tooltip><span>P95 Download</span></P95Tooltip>,
       dataIndex: 'p95_download_ms',
       key: 'p95_download_ms',
       render: formatMs,
     },
     {
-      title: 'Avg Speed',
+      title: <P95Tooltip><span>P95 Upload</span></P95Tooltip>,
+      dataIndex: 'p95_upload_ms',
+      key: 'p95_upload_ms',
+      render: formatMs,
+    },
+    {
+      title: 'Скорость',
       dataIndex: 'avg_speed_kbps',
       key: 'avg_speed_kbps',
       render: formatSpeed,
     },
     {
-      title: 'Providers',
+      title: 'Провайдеры',
       dataIndex: 'provider_share',
       key: 'provider_share',
       render: (share: Record<string, number>) => (
         <div style={{ fontSize: '12px' }}>
           {Object.entries(share).map(([prov, pct]) => (
             <div key={prov}>
-              <Tag color={prov === 'pytubefix' ? 'blue' : prov === 'rapidapi' ? 'green' : 'default'}>
+              <Tag color={
+                prov === 'pytubefix' ? 'blue' :
+                prov === 'rapidapi' ? 'green' :
+                prov === 'ytdlp' ? 'purple' :
+                prov === 'savenow' ? 'orange' : 'default'
+              }>
                 {prov}: {pct}%
               </Tag>
             </div>
@@ -255,12 +334,12 @@ export const Ops = () => {
       ),
     },
     {
-      title: 'Top Error',
+      title: 'Ошибка',
       dataIndex: 'top_error_class',
       key: 'top_error_class',
       render: (err: string | null) => err ? (
         <Tooltip title={err}>
-          <Tag color="error">{err.slice(0, 15)}</Tag>
+          <Tag color="error">{err.slice(0, 12)}</Tag>
         </Tooltip>
       ) : '-',
     },
@@ -268,26 +347,73 @@ export const Ops = () => {
 
   const providerColumns: ColumnsType<ProviderStats> = [
     {
-      title: 'Provider',
+      title: 'Провайдер',
       dataIndex: 'provider',
       key: 'provider',
-      render: (provider: string) => (
-        <Tag color={
-          provider === 'pytubefix' ? 'blue' :
-          provider === 'rapidapi' ? 'green' :
-          provider === 'ytdlp' ? 'purple' : 'default'
-        }>
-          {provider.toUpperCase()}
-        </Tag>
+      render: (provider: string, record: ProviderStats) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Tag color={
+            provider === 'pytubefix' ? 'blue' :
+            provider === 'rapidapi' ? 'green' :
+            provider === 'ytdlp' ? 'purple' :
+            provider === 'savenow' ? 'orange' : 'default'
+          }>
+            {provider.toUpperCase()}
+          </Tag>
+          {getHealthBadge(record.health)}
+        </div>
       ),
     },
     {
-      title: 'Total',
+      title: 'Вкл',
+      dataIndex: 'enabled',
+      key: 'enabled',
+      width: 60,
+      render: (enabled: boolean, record: ProviderStats) => (
+        <Switch
+          size="small"
+          checked={enabled}
+          onChange={(checked) => handleToggleProvider(record.provider, checked)}
+        />
+      ),
+    },
+    {
+      title: 'Cooldown',
+      dataIndex: 'cooldown_until',
+      key: 'cooldown_until',
+      width: 120,
+      render: (cooldown: string | null, record: ProviderStats) => {
+        if (cooldown) {
+          const until = new Date(cooldown);
+          const now = new Date();
+          if (until > now) {
+            const mins = Math.round((until.getTime() - now.getTime()) / 60000);
+            return (
+              <Tooltip title={`До ${until.toLocaleTimeString()}`}>
+                <Tag color="orange" icon={<PauseCircleOutlined />}>
+                  {mins}m
+                </Tag>
+              </Tooltip>
+            );
+          }
+        }
+        return (
+          <Button
+            size="small"
+            onClick={() => handleCooldown(record.provider, 30)}
+          >
+            +30m
+          </Button>
+        );
+      },
+    },
+    {
+      title: 'Всего',
       dataIndex: 'total',
       key: 'total',
     },
     {
-      title: 'Success Rate',
+      title: '% успеха',
       dataIndex: 'success_rate',
       key: 'success_rate',
       render: (rate: number) => (
@@ -297,19 +423,19 @@ export const Ops = () => {
       ),
     },
     {
-      title: 'P95 Total',
+      title: <P95Tooltip><span>P95</span></P95Tooltip>,
       dataIndex: 'p95_total_ms',
       key: 'p95_total_ms',
       render: formatMs,
     },
     {
-      title: 'Avg Speed',
+      title: 'Скорость',
       dataIndex: 'avg_speed_kbps',
       key: 'avg_speed_kbps',
       render: formatSpeed,
     },
     {
-      title: 'Download Hosts',
+      title: 'CDN хосты',
       dataIndex: 'download_host_share',
       key: 'download_host_share',
       render: (share: Record<string, number>, record: ProviderStats) => (
@@ -323,12 +449,12 @@ export const Ops = () => {
       ),
     },
     {
-      title: 'Errors by Class',
+      title: 'Ошибки',
       dataIndex: 'errors_by_class',
       key: 'errors_by_class',
       render: (errors: Record<string, number>) => (
         <div style={{ fontSize: '12px' }}>
-          {Object.entries(errors).slice(0, 3).map(([cls, count]) => (
+          {Object.entries(errors).slice(0, 2).map(([cls, count]) => (
             <Tag key={cls} color="error" style={{ marginBottom: '2px' }}>
               {cls}: {count}
             </Tag>
@@ -355,12 +481,12 @@ export const Ops = () => {
             onChange={setTimeRange}
             style={{ width: 100 }}
             options={[
-              { value: '1h', label: '1 hour' },
-              { value: '24h', label: '24 hours' },
-              { value: '7d', label: '7 days' },
+              { value: '1h', label: '1 час' },
+              { value: '24h', label: '24 часа' },
+              { value: '7d', label: '7 дней' },
             ]}
           />
-          <Tooltip title="Auto-refresh: 30s">
+          <Tooltip title="Автообновление: 30с">
             <Badge dot color={isLoading ? 'orange' : 'green'}>
               <ReloadOutlined spin={isLoading} style={{ fontSize: '18px' }} />
             </Badge>
@@ -373,7 +499,7 @@ export const Ops = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
-              title="Overall Success Rate"
+              title="Общий % успеха"
               value={overallSuccessRate}
               precision={1}
               suffix="%"
@@ -381,21 +507,23 @@ export const Ops = () => {
               prefix={overallSuccessRate >= 90 ? <CheckCircleOutlined /> : <WarningOutlined />}
             />
             <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-              {totalSuccess} / {totalSuccess + totalErrors} downloads
+              {totalSuccess} / {totalSuccess + totalErrors} загрузок
             </div>
           </Card>
         </Col>
 
         <Col xs={24} sm={12} lg={6}>
           <Card>
-            <Statistic
-              title="Worst P95 Latency"
-              value={worstP95 > 0 ? formatMs(worstP95) : '-'}
-              valueStyle={{ color: worstP95 > 30000 ? '#ff4d4f' : worstP95 > 15000 ? '#faad14' : '#52c41a' }}
-              prefix={<ClockCircleOutlined />}
-            />
+            <Tooltip title="95% загрузок быстрее этого времени">
+              <Statistic
+                title="Худшая P95 задержка"
+                value={worstP95 > 0 ? formatMs(worstP95) : '-'}
+                valueStyle={{ color: worstP95 > 30000 ? '#ff4d4f' : worstP95 > 15000 ? '#faad14' : '#52c41a' }}
+                prefix={<ClockCircleOutlined />}
+              />
+            </Tooltip>
             <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-              Across all platforms
+              По всем платформам
             </div>
           </Card>
         </Col>
@@ -403,9 +531,9 @@ export const Ops = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
-              title="Quota Forecast"
+              title="Прогноз квоты"
               value={savenowQuota?.forecast_average ?? '-'}
-              suffix={savenowQuota?.forecast_average ? ' days' : ''}
+              suffix={savenowQuota?.forecast_average ? ' дней' : ''}
               valueStyle={{
                 color: (savenowQuota?.forecast_average ?? 999) < 3 ? '#ff4d4f' :
                        (savenowQuota?.forecast_average ?? 999) < 7 ? '#faad14' : '#52c41a'
@@ -421,13 +549,13 @@ export const Ops = () => {
         <Col xs={24} sm={12} lg={6}>
           <Card>
             <Statistic
-              title="Active Operations"
+              title="Активные операции"
               value={(system?.active_downloads ?? 0) + (system?.active_uploads ?? 0)}
               prefix={<ThunderboltOutlined />}
               valueStyle={{ color: '#1890ff' }}
             />
             <div style={{ fontSize: '12px', color: '#888', marginTop: '8px' }}>
-              {system?.active_downloads ?? 0} downloads, {system?.active_uploads ?? 0} uploads
+              {system?.active_downloads ?? 0} скачиваний, {system?.active_uploads ?? 0} загрузок
             </div>
           </Card>
         </Col>
@@ -441,18 +569,33 @@ export const Ops = () => {
             key: 'platforms',
             label: (
               <span>
-                <CloudServerOutlined /> Platforms
+                <CloudServerOutlined /> Платформы
               </span>
             ),
             children: (
-              <Card>
+              <Card
+                title={
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span>Статистика по платформам</span>
+                    <Segmented
+                      size="small"
+                      options={[
+                        { label: 'Платформы', value: 'platform' },
+                        { label: 'Подтипы', value: 'bucket' },
+                      ]}
+                      value={groupBy}
+                      onChange={(val) => setGroupBy(val as 'platform' | 'bucket')}
+                    />
+                  </div>
+                }
+              >
                 {platformsLoading ? (
                   <div style={{ textAlign: 'center', padding: '40px' }}><Spin /></div>
                 ) : (
                   <Table
                     dataSource={platforms}
                     columns={platformColumns}
-                    rowKey="platform"
+                    rowKey={(record) => `${record.platform}-${record.bucket || 'all'}`}
                     pagination={false}
                     size="middle"
                   />
@@ -464,11 +607,11 @@ export const Ops = () => {
             key: 'providers',
             label: (
               <span>
-                <ApiOutlined /> Providers
+                <ApiOutlined /> Провайдеры
               </span>
             ),
             children: (
-              <Card>
+              <Card title="Статистика по провайдерам">
                 {providersLoading ? (
                   <div style={{ textAlign: 'center', padding: '40px' }}><Spin /></div>
                 ) : (
@@ -487,14 +630,14 @@ export const Ops = () => {
             key: 'system',
             label: (
               <span>
-                <DatabaseOutlined /> System & Quota
+                <DatabaseOutlined /> Система
               </span>
             ),
             children: (
               <Row gutter={[16, 16]}>
                 {/* System Metrics */}
                 <Col xs={24} lg={12}>
-                  <Card title="System Metrics">
+                  <Card title="Системные метрики">
                     {systemLoading ? (
                       <Spin />
                     ) : system ? (
@@ -523,7 +666,7 @@ export const Ops = () => {
                         </div>
                         <div style={{ marginBottom: '16px' }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                            <span>Disk</span>
+                            <span>Диск</span>
                             <span>{system.disk_percent?.toFixed(1) ?? '-'}%</span>
                           </div>
                           <Progress
@@ -533,19 +676,19 @@ export const Ops = () => {
                           />
                         </div>
                         <div>
-                          <span>/tmp size: </span>
+                          <span>/tmp размер: </span>
                           <strong>{system.tmp_size_mb?.toFixed(1) ?? '-'} MB</strong>
                         </div>
                       </div>
                     ) : (
-                      <div style={{ color: '#888' }}>No data available</div>
+                      <div style={{ color: '#888' }}>Нет данных</div>
                     )}
                   </Card>
                 </Col>
 
                 {/* Quota Info */}
                 <Col xs={24} lg={12}>
-                  <Card title="API Quotas">
+                  <Card title="Квоты API">
                     {quotaLoading ? (
                       <Spin />
                     ) : quotas.length > 0 ? (
@@ -566,7 +709,7 @@ export const Ops = () => {
                           >
                             <Row gutter={[16, 8]}>
                               <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Units Remaining</div>
+                                <div style={{ fontSize: '12px', color: '#888' }}>Осталось</div>
                                 <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
                                   {quota.units_remaining ?? '-'}
                                   {quota.units_limit && (
@@ -575,26 +718,26 @@ export const Ops = () => {
                                 </div>
                               </Col>
                               <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Burn Rate (24h)</div>
+                                <div style={{ fontSize: '12px', color: '#888' }}>Расход (24ч)</div>
                                 <div style={{ fontSize: '18px', fontWeight: 'bold' }}>
                                   {quota.burn_rate_24h ?? '-'} <span style={{ fontSize: '12px' }}>req/day</span>
                                 </div>
                               </Col>
                               <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Forecast (avg)</div>
+                                <div style={{ fontSize: '12px', color: '#888' }}>Прогноз (avg)</div>
                                 <div style={{
                                   fontSize: '18px',
                                   fontWeight: 'bold',
                                   color: (quota.forecast_average ?? 999) < 3 ? '#ff4d4f' :
                                          (quota.forecast_average ?? 999) < 7 ? '#faad14' : '#52c41a'
                                 }}>
-                                  {quota.forecast_average ?? '-'} <span style={{ fontSize: '12px' }}>days</span>
+                                  {quota.forecast_average ?? '-'} <span style={{ fontSize: '12px' }}>дней</span>
                                 </div>
                               </Col>
                               <Col span={12}>
-                                <div style={{ fontSize: '12px', color: '#888' }}>Forecast (pessimistic)</div>
+                                <div style={{ fontSize: '12px', color: '#888' }}>Прогноз (pessim)</div>
                                 <div style={{ fontSize: '18px', fontWeight: 'bold', color: '#faad14' }}>
-                                  {quota.forecast_pessimistic ?? '-'} <span style={{ fontSize: '12px' }}>days</span>
+                                  {quota.forecast_pessimistic ?? '-'} <span style={{ fontSize: '12px' }}>дней</span>
                                 </div>
                               </Col>
                             </Row>
@@ -613,7 +756,7 @@ export const Ops = () => {
                         ))}
                       </div>
                     ) : (
-                      <div style={{ color: '#888' }}>No quota data available</div>
+                      <div style={{ color: '#888' }}>Нет данных о квотах</div>
                     )}
                   </Card>
                 </Col>

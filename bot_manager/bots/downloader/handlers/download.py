@@ -134,21 +134,47 @@ def classify_error(error: str) -> str:
     return "PROVIDER_BUG"
 
 
-def get_duration_bucket(duration_sec: int) -> str:
+def get_content_bucket(platform: str, content_type: str = None, duration_sec: int = 0) -> str:
     """
-    Phase 7.0 Telemetry: Определяет bucket по длительности видео.
+    Phase 7.1 Telemetry: Определяет bucket по типу контента.
+
+    Args:
+        platform: youtube/instagram/tiktok/pinterest
+        content_type: тип контента (reel/post/story/carousel/photo/video)
+        duration_sec: длительность в секундах (для YouTube)
 
     Returns:
-        'shorts' - <5 min (300 sec)
-        'medium' - 5-30 min (300-1800 sec)
-        'long' - >30 min (>1800 sec)
+        - youtube: 'shorts' (<5 min) / 'full' (>=5 min)
+        - instagram: 'reel' / 'post' / 'story' / 'carousel'
+        - tiktok: 'video'
+        - pinterest: 'photo' / 'video'
     """
-    if duration_sec < 300:
-        return "shorts"
-    elif duration_sec < 1800:
-        return "medium"
-    else:
-        return "long"
+    if platform == "youtube":
+        return "shorts" if duration_sec < 300 else "full"
+    elif platform == "instagram":
+        return content_type or "post"
+    elif platform == "tiktok":
+        return "video"
+    elif platform == "pinterest":
+        return content_type or "video"
+    return "unknown"
+
+
+def detect_instagram_bucket(url: str, is_carousel: bool = False) -> str:
+    """
+    Определяет тип Instagram контента по URL.
+
+    Returns:
+        'reel' / 'story' / 'carousel' / 'post'
+    """
+    url_lower = url.lower()
+    if "/reel/" in url_lower or "/reels/" in url_lower:
+        return "reel"
+    elif "/stories/" in url_lower:
+        return "story"
+    elif is_carousel:
+        return "carousel"
+    return "post"
 
 
 def _is_retryable_error(error: Exception) -> bool:
@@ -587,6 +613,7 @@ async def handle_url(message: types.Message):
                     {
                         "type": "carousel",
                         "platform": platform,
+                        "bucket": "carousel",
                         "files_count": len(carousel.files),
                         "has_video": carousel.has_video,
                     },
@@ -835,10 +862,13 @@ async def handle_url(message: types.Message):
             file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
             download_speed = int(file_size / download_time_ms * 1000 / 1024) if download_time_ms > 0 else 0
 
-            logger.info(f"Sent photo: user={user_id}, size={file_size}, time={download_time_ms}ms")
+            # Phase 7.1: content bucket для фото
+            photo_bucket = "photo" if platform == "pinterest" else detect_instagram_bucket(url)
+
+            logger.info(f"Sent photo: user={user_id}, size={file_size}, time={download_time_ms}ms, bucket={photo_bucket}")
             await log_action(
                 user_id, "download_success",
-                {"type": "photo", "platform": platform},
+                {"type": "photo", "platform": platform, "bucket": photo_bucket},
                 download_time_ms=download_time_ms,
                 file_size_bytes=file_size,
                 download_speed_kbps=download_speed,
@@ -912,8 +942,13 @@ async def handle_url(message: types.Message):
             file_size = result.file_size or (os.path.getsize(result.file_path) if result.file_path else 0)
             download_speed = int(file_size / total_ms * 1000 / 1024) if total_ms > 0 else 0
 
-            # Phase 7.0 Telemetry: duration_bucket для аналитики
-            duration_bucket = get_duration_bucket(duration) if duration > 0 else "unknown"
+            # Phase 7.1 Telemetry: content bucket для аналитики по подтипам
+            if platform == "instagram":
+                # Для Instagram определяем тип из URL (reel/post/story)
+                content_bucket = detect_instagram_bucket(url)
+            else:
+                # YouTube: shorts/full по duration, TikTok/Pinterest: video
+                content_bucket = get_content_bucket(platform, duration_sec=duration)
 
             # Phase 7.0 Telemetry: собираем данные из result (SaveNowResult и др.)
             prep_ms = getattr(result, 'prep_ms', None) or 0
@@ -947,7 +982,7 @@ async def handle_url(message: types.Message):
             telemetry = {
                 "type": "video",
                 "platform": platform,
-                "bucket": duration_bucket,
+                "bucket": content_bucket,
                 "duration_sec": duration,
                 "prep_ms": prep_ms,
                 "download_ms": download_ms,
@@ -959,7 +994,7 @@ async def handle_url(message: types.Message):
             if quota_snapshot:
                 telemetry["quota"] = quota_snapshot.to_dict() if hasattr(quota_snapshot, 'to_dict') else None
 
-            logger.info(f"Sent video: user={user_id}, size={file_size}, total={total_ms}ms, prep={prep_ms}ms, download={download_ms}ms, upload={upload_ms}ms, bucket={duration_bucket}")
+            logger.info(f"Sent video: user={user_id}, size={file_size}, total={total_ms}ms, prep={prep_ms}ms, download={download_ms}ms, upload={upload_ms}ms, bucket={content_bucket}")
             await log_action(
                 user_id, "download_success",
                 telemetry,

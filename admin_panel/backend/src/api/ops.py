@@ -23,8 +23,9 @@ router = APIRouter()
 # ============ Schemas ============
 
 class PlatformStats(BaseModel):
-    """Статистика по платформе"""
+    """Статистика по платформе (или платформа+bucket)"""
     platform: str
+    bucket: Optional[str] = None  # shorts/full, reel/post/story/carousel, video, photo
     total: int
     success: int
     errors: int
@@ -33,6 +34,7 @@ class PlatformStats(BaseModel):
     p95_total_ms: Optional[float] = None
     p95_prep_ms: Optional[float] = None      # job creation + polling
     p95_download_ms: Optional[float] = None  # file download time
+    p95_upload_ms: Optional[float] = None    # Telegram upload time
     avg_speed_kbps: Optional[float] = None
     provider_share: dict  # {"ytdlp": 60, "rapidapi": 40}
     top_error_class: Optional[str] = None
@@ -48,7 +50,10 @@ class ProviderStats(BaseModel):
     p95_total_ms: Optional[float] = None
     avg_speed_kbps: Optional[float] = None
     errors_by_class: dict  # {"HARD_KILL": 5, "STALL": 2}
-    cooldown_status: Optional[str] = None  # "active" / "cooldown" / null
+    # Provider state management
+    enabled: bool = True
+    cooldown_until: Optional[datetime] = None
+    health: str = "healthy"  # healthy / degraded / down
     # CDN vs direct host analysis
     download_host_share: dict = {}  # {"googlevideo.com": 30, "cdn.savenow.io": 70}
     top_hosts: List[str] = []  # топ-3 хоста
@@ -130,16 +135,20 @@ def calculate_p95(values: List[float]) -> Optional[float]:
 @router.get("/platforms", response_model=PlatformsResponse)
 async def get_platforms_stats(
     range: str = Query("24h", description="Time range: 24h, 7d, etc."),
+    group_by: str = Query("platform", description="Группировка: platform или bucket"),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
     """
-    GET /api/v1/ops/platforms?range=24h
+    GET /api/v1/ops/platforms?range=24h&group_by=platform
 
-    Статистика по платформам: success_rate, p95_total_ms, provider_share, top_error_class
+    Статистика по платформам или подтипам (bucket):
+    - group_by=platform: youtube, instagram, tiktok, pinterest
+    - group_by=bucket: youtube:shorts, youtube:full, instagram:reel, etc.
     """
     hours = parse_range(range)
     since = datetime.utcnow() - timedelta(hours=hours)
+    use_bucket = group_by == "bucket"
 
     # Получаем все download_success и download_error записи за период
     success_result = await db.execute(
@@ -161,59 +170,69 @@ async def get_platforms_stats(
         )
     )
 
-    # Группируем по платформам
+    # Группируем по платформам (или platform:bucket)
     platform_data: dict = {}
+
+    def get_key(details: dict) -> tuple:
+        """Возвращает ключ группировки: (platform, bucket) или (platform, None)"""
+        platform = details.get("platform", "unknown")
+        bucket = details.get("bucket") if use_bucket else None
+        return (platform, bucket)
 
     for row in success_result:
         details = row.details or {}
-        platform = details.get("platform", "unknown")
+        key = get_key(details)
         api_source = row.api_source.value if row.api_source else "unknown"
 
-        if platform not in platform_data:
-            platform_data[platform] = {
+        if key not in platform_data:
+            platform_data[key] = {
                 "success": 0, "errors": 0,
                 "times": [], "speeds": [],
-                "prep_times": [], "download_times": [],  # P95 breakdown
-                "providers": {}
-            }
-
-        platform_data[platform]["success"] += 1
-        if row.download_time_ms:
-            platform_data[platform]["times"].append(row.download_time_ms)
-        if row.download_speed_kbps:
-            platform_data[platform]["speeds"].append(row.download_speed_kbps)
-
-        # P95 breakdown: prep_ms и download_ms из details
-        if details.get("prep_ms"):
-            platform_data[platform]["prep_times"].append(details["prep_ms"])
-        if details.get("download_ms"):
-            platform_data[platform]["download_times"].append(details["download_ms"])
-
-        # Provider share
-        platform_data[platform]["providers"][api_source] = \
-            platform_data[platform]["providers"].get(api_source, 0) + 1
-
-    for row in error_result:
-        details = row[0] or {}
-        platform = details.get("platform", "unknown")
-        error_class = details.get("error_class", "UNKNOWN")
-
-        if platform not in platform_data:
-            platform_data[platform] = {
-                "success": 0, "errors": 0,
-                "times": [], "speeds": [],
+                "prep_times": [], "download_times": [], "upload_times": [],
                 "providers": {}, "error_classes": {}
             }
 
-        platform_data[platform]["errors"] += 1
-        if "error_classes" not in platform_data[platform]:
-            platform_data[platform]["error_classes"] = {}
-        platform_data[platform]["error_classes"][error_class] = \
-            platform_data[platform]["error_classes"].get(error_class, 0) + 1
+        platform_data[key]["success"] += 1
+        if row.download_time_ms:
+            platform_data[key]["times"].append(row.download_time_ms)
+        if row.download_speed_kbps:
+            platform_data[key]["speeds"].append(row.download_speed_kbps)
+
+        # P95 breakdown: prep_ms, download_ms, upload_ms из details
+        if details.get("prep_ms"):
+            platform_data[key]["prep_times"].append(details["prep_ms"])
+        if details.get("download_ms"):
+            platform_data[key]["download_times"].append(details["download_ms"])
+        if details.get("upload_ms"):
+            platform_data[key]["upload_times"].append(details["upload_ms"])
+
+        # Provider share
+        platform_data[key]["providers"][api_source] = \
+            platform_data[key]["providers"].get(api_source, 0) + 1
+
+    for row in error_result:
+        details = row[0] or {}
+        key = get_key(details)
+        error_class = details.get("error_class", "UNKNOWN")
+
+        if key not in platform_data:
+            platform_data[key] = {
+                "success": 0, "errors": 0,
+                "times": [], "speeds": [],
+                "prep_times": [], "download_times": [], "upload_times": [],
+                "providers": {}, "error_classes": {}
+            }
+
+        platform_data[key]["errors"] += 1
+        platform_data[key]["error_classes"][error_class] = \
+            platform_data[key]["error_classes"].get(error_class, 0) + 1
 
     # Формируем ответ
     platforms = []
-    for name, data in sorted(platform_data.items(), key=lambda x: -(x[1]["success"] + x[1]["errors"])):
+    for (platform, bucket), data in sorted(
+        platform_data.items(),
+        key=lambda x: -(x[1]["success"] + x[1]["errors"])
+    ):
         total = data["success"] + data["errors"]
         success_rate = round(data["success"] / total * 100, 1) if total > 0 else 0
 
@@ -228,7 +247,8 @@ async def get_platforms_stats(
         top_error = max(error_classes.items(), key=lambda x: x[1])[0] if error_classes else None
 
         platforms.append(PlatformStats(
-            platform=name,
+            platform=platform,
+            bucket=bucket,
             total=total,
             success=data["success"],
             errors=data["errors"],
@@ -236,6 +256,7 @@ async def get_platforms_stats(
             p95_total_ms=calculate_p95(data["times"]),
             p95_prep_ms=calculate_p95(data.get("prep_times", [])),
             p95_download_ms=calculate_p95(data.get("download_times", [])),
+            p95_upload_ms=calculate_p95(data.get("upload_times", [])),
             avg_speed_kbps=round(sum(data["speeds"]) / len(data["speeds"]), 2) if data["speeds"] else None,
             provider_share=provider_share,
             top_error_class=top_error
@@ -322,6 +343,17 @@ async def get_providers_stats(
         provider_data[provider]["error_classes"][error_class] = \
             provider_data[provider]["error_classes"].get(error_class, 0) + 1
 
+    # Получаем состояние провайдеров из Redis
+    redis = await get_redis()
+    provider_states = {}
+    for provider_name in ["ytdlp", "rapidapi", "pytubefix", "savenow", "instaloader", "cobalt"]:
+        enabled = await redis.get(f"provider:{provider_name}:enabled")
+        cooldown = await redis.get(f"provider:{provider_name}:cooldown_until")
+        provider_states[provider_name] = {
+            "enabled": enabled != "false" if enabled else True,
+            "cooldown_until": datetime.fromisoformat(cooldown) if cooldown else None
+        }
+
     # Формируем ответ
     providers = []
     for name, data in sorted(provider_data.items(), key=lambda x: -(x[1]["success"] + x[1]["errors"])):
@@ -339,6 +371,21 @@ async def get_providers_stats(
         top_hosts = sorted(hosts.items(), key=lambda x: -x[1])[:3]
         top_hosts = [h[0] for h in top_hosts]
 
+        # Provider state from Redis
+        state = provider_states.get(name, {"enabled": True, "cooldown_until": None})
+
+        # Health based on success rate
+        if success_rate >= 90:
+            health = "healthy"
+        elif success_rate >= 70:
+            health = "degraded"
+        else:
+            health = "down"
+
+        # If in cooldown, mark as degraded
+        if state["cooldown_until"] and state["cooldown_until"] > datetime.utcnow():
+            health = "degraded"
+
         providers.append(ProviderStats(
             provider=name,
             total=total,
@@ -348,7 +395,9 @@ async def get_providers_stats(
             p95_total_ms=calculate_p95(data["times"]),
             avg_speed_kbps=round(sum(data["speeds"]) / len(data["speeds"]), 2) if data["speeds"] else None,
             errors_by_class=data["error_classes"],
-            cooldown_status=None,  # TODO: implement cooldown tracking
+            enabled=state["enabled"],
+            cooldown_until=state["cooldown_until"],
+            health=health,
             download_host_share=download_host_share,
             top_hosts=top_hosts
         ))
@@ -507,4 +556,84 @@ async def get_system_metrics(
     return SystemResponse(
         timestamp=datetime.utcnow(),
         metrics=metrics
+    )
+
+
+# ============ Provider State Management ============
+
+class ProviderStateResponse(BaseModel):
+    """Ответ на изменение состояния провайдера"""
+    provider: str
+    enabled: bool
+    cooldown_until: Optional[datetime] = None
+    message: str
+
+
+@router.post("/providers/{provider}/enable", response_model=ProviderStateResponse)
+async def enable_provider(
+    provider: str,
+    _=Depends(get_current_user),
+):
+    """
+    POST /api/v1/ops/providers/{provider}/enable
+
+    Включить провайдер (убрать cooldown и пометить enabled=true)
+    """
+    redis = await get_redis()
+
+    await redis.set(f"provider:{provider}:enabled", "true")
+    await redis.delete(f"provider:{provider}:cooldown_until")
+
+    return ProviderStateResponse(
+        provider=provider,
+        enabled=True,
+        cooldown_until=None,
+        message=f"Provider {provider} enabled"
+    )
+
+
+@router.post("/providers/{provider}/disable", response_model=ProviderStateResponse)
+async def disable_provider(
+    provider: str,
+    _=Depends(get_current_user),
+):
+    """
+    POST /api/v1/ops/providers/{provider}/disable
+
+    Отключить провайдер (enabled=false)
+    """
+    redis = await get_redis()
+
+    await redis.set(f"provider:{provider}:enabled", "false")
+
+    return ProviderStateResponse(
+        provider=provider,
+        enabled=False,
+        cooldown_until=None,
+        message=f"Provider {provider} disabled"
+    )
+
+
+@router.post("/providers/{provider}/cooldown", response_model=ProviderStateResponse)
+async def set_provider_cooldown(
+    provider: str,
+    minutes: int = Query(30, description="Cooldown в минутах"),
+    _=Depends(get_current_user),
+):
+    """
+    POST /api/v1/ops/providers/{provider}/cooldown?minutes=30
+
+    Установить cooldown для провайдера (временное отключение)
+    """
+    redis = await get_redis()
+
+    until = datetime.utcnow() + timedelta(minutes=minutes)
+    await redis.set(f"provider:{provider}:cooldown_until", until.isoformat())
+    await redis.expire(f"provider:{provider}:cooldown_until", minutes * 60)
+
+    return ProviderStateResponse(
+        provider=provider,
+        enabled=True,
+        cooldown_until=until,
+        message=f"Provider {provider} in cooldown until {until.isoformat()}"
     )

@@ -1,0 +1,75 @@
+# Database Examples from action_logs
+
+## Schema (action_logs)
+```sql
+Table "public.action_logs"
+       Column        |            Type             | Nullable |
+---------------------+-----------------------------+----------+
+ id                  | integer                     | not null |
+ user_id             | integer                     |          |
+ bot_id              | integer                     |          |
+ action              | character varying(100)      | not null |
+ details             | json                        |          |
+ created_at          | timestamp without time zone | not null |
+ download_time_ms    | integer                     |          |
+ file_size_bytes     | bigint                      |          |
+ download_speed_kbps | integer                     |          |
+ api_source          | apisource (enum)            |          |
+
+api_source enum values: YTDLP, RAPIDAPI, PYTUBEFIX, (SAVENOW - to add)
+```
+
+## Sample Data (15 recent records)
+
+```
+ id  | user_id |      action      |                                   details                                                  | download_time_ms | file_size_bytes | download_speed_kbps | api_source |         created_at
+-----+---------+------------------+--------------------------------------------------------------------------------------------+------------------+-----------------+---------------------+------------+----------------------------
+ 187 |       3 | download_request | {"platform": "youtube", "url": "https://www.youtube.com/watch?v=IxB5DErxlLw"}              |                  |                 |                     |            | 2026-01-20 22:47:08
+ 186 |       3 | download_request | {"platform": "youtube", "url": "https://www.youtube.com/watch?v=v5H0OgI5W_s"}              |                  |                 |                     |            | 2026-01-20 21:50:14
+ 185 |       4 | download_request | {"platform": "instagram", "url": "https://www.instagram.com/reel/DTvIbRPjBKK/..."}         |                  |                 |                     |            | 2026-01-20 16:31:27
+ 184 |       4 | download_request | {"platform": "instagram", "url": "https://www.instagram.com/reel/DTi7DK2ApEz/..."}         |                  |                 |                     |            | 2026-01-20 13:59:40
+ 183 |       3 | download_success | {"type": "video", "platform": "youtube"}                                                   |            12637 |        87346197 |                6749 | YTDLP      | 2026-01-19 22:25:44
+ 182 |       3 | download_request | {"platform": "youtube", "url": "https://www.youtube.com/watch?v=Dd94DGE_bQE"}              |                  |                 |                     |            | 2026-01-19 22:25:31
+ 181 |       3 | download_success | {"type": "video", "platform": "youtube"}                                                   |            13500 |        39861034 |                2883 | YTDLP      | 2026-01-19 21:26:28
+ 180 |       3 | download_request | {"platform": "youtube", "url": "https://www.youtube.com/watch?v=ZR8pgeDDKt0"}              |                  |                 |                     |            | 2026-01-19 21:26:15
+ 179 |       3 | download_request | {"platform": "youtube", "url": "https://www.youtube.com/watch?v=-QDEwMPVDsE"}              |                  |                 |                     |            | 2026-01-19 20:57:01
+ 178 |       9 | download_success | {"type": "video", "platform": "youtube"}                                                   |           414581 |        33504556 |                  78 | RAPIDAPI   | 2026-01-19 20:21:03
+ 177 |       9 | download_request | {"platform": "youtube", "url": "https://www.youtube.com/watch?v=gKXJQLg1-cg"}              |                  |                 |                     |            | 2026-01-19 20:14:09
+ 176 |       9 | start            | null                                                                                       |                  |                 |                     |            | 2026-01-19 20:14:06
+ 175 |       5 | download_success | {"type": "video", "platform": "instagram"}                                                 |             7860 |         7848148 |                 975 | RAPIDAPI   | 2026-01-19 19:54:37
+ 174 |       5 | download_request | {"platform": "instagram", "url": "https://www.instagram.com/reel/DOJwI-dCBSM/..."}         |                  |                 |                     |            | 2026-01-19 19:54:29
+ 173 |       6 | download_success | {"type": "video", "platform": "instagram"}                                                 |             9926 |        37607414 |                3699 | RAPIDAPI   | 2026-01-19 17:40:02
+```
+
+## Action Types
+- `start` - user started bot
+- `download_request` - user sent URL for download
+- `download_success` - download completed successfully
+- `download_error` - download failed (in error_logs table)
+
+## Observations
+1. `download_request` logs URL but no metrics (they come later in `download_success`)
+2. `download_success` has metrics but no URL (URL is in the preceding `download_request`)
+3. api_source only filled for success records
+4. Platform extracted from URL or details.platform
+
+## Metrics Examples
+| api_source | download_time_ms | file_size_bytes | speed_kbps | Note |
+|------------|------------------|-----------------|------------|------|
+| YTDLP      | 12,637           | 87 MB           | 6,749      | Fast |
+| YTDLP      | 13,500           | 40 MB           | 2,883      | Good |
+| RAPIDAPI   | 414,581 (7 min)  | 33 MB           | 78         | Slow! |
+| RAPIDAPI   | 7,860            | 8 MB            | 975        | OK   |
+| RAPIDAPI   | 9,926            | 38 MB           | 3,699      | Good |
+
+## Error Logs Schema (for reference)
+```sql
+Table "public.error_logs"
+ id          | integer
+ user_id     | integer
+ bot_id      | integer
+ error_type  | character varying(50)  -- e.g. "download_error"
+ error_message | text
+ stack_trace | text
+ created_at  | timestamp
+```

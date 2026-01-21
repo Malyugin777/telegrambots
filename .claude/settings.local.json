@@ -77,7 +77,23 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add SaveNow API for YouTube (CDN, no IP ban)\n\n- New savenow_downloader.py with polling progress\n- Quota headers logging (x-ratelimit-*)\n- Unit cost logging for budget tracking\n- Temporarily set SaveNow first for testing\n- docs/API_COSTS.md with pricing comparison\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager 2>&1 | tail -150 | grep -E ''SAVENOW|YOUTUBE|ERROR|error|Error''\")",
       "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager 2>&1 | tail -50 | grep -E ''Sent|SUCCESS|UPLOAD|upload|THUMBNAIL|thumbnail''\")",
-      "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager 2>&1 | tail -100 | grep -iE ''thumb|THUMBNAIL|preview''\")"
+      "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager 2>&1 | tail -100 | grep -iE ''thumb|THUMBNAIL|preview''\")",
+      "Bash(find:*)",
+      "Bash(where:*)",
+      "Bash(sed:*)",
+      "Bash(awk:*)",
+      "Bash(rm:*)",
+      "Bash(mv:*)",
+      "Bash(cp:*)",
+      "Bash(mkdir:*)",
+      "Bash(ls:*)",
+      "Read(//c/Projects/TelegramBots/**)",
+      "Edit(//c/Projects/TelegramBots/**)",
+      "Write(//c/Projects/TelegramBots/**)",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDM5NzcyfQ.c8vGljwvFhVeN6P3BY138mPpJTOMIhZ1E224VHegMPU\")",
+      "Bash(medium)",
+      "Bash(long\",\n  \"prep_ms\": 5000,\n  \"download_ms\": 15000,\n  \"upload_ms\": 8000,\n  \"total_ms\": 28000,\n  \"download_host\": \"cdn.savenow.to\",\n  \"quota\": {...}\n}\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5MDYxNzkzfQ.7kZHXpM2CxF8BHNoK4BubRYtyJEMVQMP9YBAj3RRqM8\")"
     ]
   }
 }

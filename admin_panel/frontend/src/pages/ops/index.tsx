@@ -1113,7 +1113,11 @@ export const Ops = () => {
               </span>
             ),
             children: (
-              <Card title="Настройка маршрутизации провайдеров">
+              <Card
+                title="Настройка маршрутизации провайдеров"
+                style={{ backgroundColor: '#1f1f1f', borderColor: '#303030' }}
+                styles={{ header: { borderColor: '#303030' } }}
+              >
                 {routingLoading ? (
                   <div style={{ textAlign: 'center', padding: '40px' }}><Spin /></div>
                 ) : (
@@ -1129,6 +1133,7 @@ export const Ops = () => {
                             setEditedChain(null);
                           }}
                           style={{ width: 200 }}
+                          dropdownStyle={{ backgroundColor: '#1f1f1f', borderColor: '#303030' }}
                           options={routingSources.map(r => ({
                             value: r.source,
                             label: SOURCE_LABELS[r.source] || r.source,
@@ -1155,6 +1160,8 @@ export const Ops = () => {
                       <Card
                         size="small"
                         title="Порядок провайдеров"
+                        style={{ backgroundColor: '#141414', borderColor: '#303030' }}
+                        styles={{ header: { borderColor: '#303030' } }}
                         extra={
                           <div>
                             {editedChain && (
@@ -1243,14 +1250,19 @@ export const Ops = () => {
 
                     {/* Info */}
                     <Col xs={24} lg={12}>
-                      <Card size="small" title="Как это работает">
-                        <ul style={{ paddingLeft: '20px', margin: 0 }}>
+                      <Card
+                        size="small"
+                        title="Как это работает"
+                        style={{ backgroundColor: '#141414', borderColor: '#303030' }}
+                        styles={{ header: { borderColor: '#303030' }, body: { color: '#d9d9d9' } }}
+                      >
+                        <ul style={{ paddingLeft: '20px', margin: 0, color: '#d9d9d9' }}>
                           <li>Бот пробует провайдеров <b>сверху вниз</b></li>
                           <li>Если первый упал — пробует второго, и т.д.</li>
                           <li>Выключенные провайдеры пропускаются</li>
                           <li>Изменения применяются <b>мгновенно</b></li>
                         </ul>
-                        <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'rgba(82, 196, 26, 0.1)', borderRadius: '4px', border: '1px solid rgba(82, 196, 26, 0.3)' }}>
+                        <div style={{ marginTop: '16px', padding: '12px', backgroundColor: 'rgba(82, 196, 26, 0.1)', borderRadius: '4px', border: '1px solid rgba(82, 196, 26, 0.3)', color: '#d9d9d9' }}>
                           <b style={{ color: '#52c41a' }}>Совет:</b> Если YouTube банит — поставь SaveNow первым.
                         </div>
                       </Card>

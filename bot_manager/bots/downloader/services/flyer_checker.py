@@ -10,6 +10,7 @@ FlyerService интеграция для монетизации через по�
 """
 
 import logging
+import os
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -28,8 +29,8 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
-# FlyerService API ключ
-FLYER_API_KEY = "FL-RELiwN-PULZsV-OqkKlf-ygoADQ"
+# FlyerService API ключ (из переменной окружения)
+FLYER_API_KEY = os.getenv("FLYER_API_KEY", "")
 FLYER_DISABLED = False  # Включить проверку подписки
 
 # Настройки монетизации

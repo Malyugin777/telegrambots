@@ -114,7 +114,8 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nfix: Re-enable FlyerService with proper error handling\n\n- Set FLYER_DISABLED = False to enable subscription checks\n- Added try/except in check_and_allow() to catch SQL errors\n- On any error, user is allowed to download (fail-safe)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "WebFetch(domain:pytubefix.readthedocs.io)",
       "Bash(python -c:*)",
-      "Bash(ssh root@185.96.80.254 \"cat /etc/nginx/sites-available/shadow-api | head -30\")"
+      "Bash(ssh root@185.96.80.254 \"cat /etc/nginx/sites-available/shadow-api | head -30\")",
+      "Bash(git rm:*)"
     ]
   }
 }

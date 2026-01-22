@@ -29,9 +29,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 # FlyerService API ключ
-# ВРЕМЕННО ОТКЛЮЧЕНО - нужно проверить API
 FLYER_API_KEY = "FL-RELiwN-PULZsV-OqkKlf-ygoADQ"
-FLYER_DISABLED = True  # Отключить проверку подписки
+FLYER_DISABLED = False  # Включить проверку подписки
 
 # Настройки монетизации
 FREE_DAYS = 3  # Первые N дней без проверок
@@ -241,14 +240,22 @@ async def check_and_allow(
     Returns:
         True если можно скачивать, False если нужно сначала подписаться
     """
-    # ВРЕМЕННО ОТКЛЮЧЕНО
+    # Глобальный выключатель
     if FLYER_DISABLED:
         logger.debug(f"[FLYER] Disabled, allowing download for {telegram_id}")
         return True
 
-    # Проверяем нужна ли проверка для этого случая
-    if not await should_check_subscription(session, telegram_id, platform):
-        return True  # Бесплатное скачивание
+    try:
+        # Проверяем нужна ли проверка для этого случая
+        should_check = await should_check_subscription(session, telegram_id, platform)
 
-    # Проверяем подписку через FlyerService
-    return await check_subscription(telegram_id, language_code)
+        if not should_check:
+            return True  # Бесплатное скачивание
+
+        # Проверяем подписку через FlyerService
+        return await check_subscription(telegram_id, language_code)
+
+    except Exception as e:
+        # При ЛЮБОЙ ошибке - не блокируем юзера, логируем и пропускаем
+        logger.error(f"[FLYER] Error in check_and_allow for {telegram_id}: {e}", exc_info=True)
+        return True

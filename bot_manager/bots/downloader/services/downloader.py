@@ -152,12 +152,12 @@ class VideoDownloader:
             opts['impersonate'] = CHROME_TARGET
             opts['concurrent_fragment_downloads'] = 5
 
-        # Для YouTube Full: используем web client для доступа к adaptive 720p форматам
+        # Для YouTube Full: используем несколько клиентов для надёжности
         if is_youtube_full:
-            # ios/android клиенты требуют PO Token и без него дают только 360p combined
-            # web client даёт доступ к adaptive форматам (720p video + audio отдельно)
-            opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
-            logger.info(f"[YTDLP] Using web client for YouTube Full (720p adaptive)")
+            # web client может быть ограничен SABR streaming, используем tv + android + web
+            # tv client часто даёт доступ к adaptive форматам без ограничений
+            opts['extractor_args'] = {'youtube': {'player_client': ['tv', 'android', 'web']}}
+            logger.info(f"[YTDLP] Using tv+android+web clients for YouTube Full (720p adaptive)")
 
             # Минимальная скорость 100KB/s - помогает обойти throttling
             opts['throttledratelimit'] = 100 * 1024  # 100KB/s

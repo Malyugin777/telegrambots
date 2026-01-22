@@ -387,6 +387,26 @@ class VideoDownloader:
         """Синхронная загрузка (выполняется в thread pool)"""
         import time
         start_time = time.time()
+        last_log_time = start_time
+
+        # Добавляем progress hook для логирования
+        def log_progress(d):
+            nonlocal last_log_time
+            now = time.time()
+            # Логируем каждые 10 секунд
+            if now - last_log_time >= 10:
+                status = d.get('status', 'unknown')
+                downloaded = d.get('downloaded_bytes', 0)
+                total = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                speed = d.get('speed', 0)
+                speed_str = f"{speed/1024/1024:.1f}MB/s" if speed else "N/A"
+                pct = (downloaded / total * 100) if total else 0
+                logger.info(f"[YTDLP_PROGRESS] status={status}, {downloaded/1024/1024:.1f}MB/{total/1024/1024:.1f}MB ({pct:.0f}%), speed={speed_str}")
+                last_log_time = now
+
+        # Добавляем наш progress hook к существующим
+        existing_hooks = opts.get('progress_hooks', [])
+        opts['progress_hooks'] = existing_hooks + [log_progress]
 
         try:
             logger.info(f"[DOWNLOAD_START] URL={url[:100]}, is_audio={is_audio}")

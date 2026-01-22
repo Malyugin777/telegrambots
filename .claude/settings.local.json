@@ -111,7 +111,8 @@
       "Bash(git commit -m \"$(cat <<''EOF''\nfeat: Add FlyerService monetization + update bot texts\n\n- Integrate FlyerService for subscription-based monetization\n- YouTube Full: 3 free, then check every time\n- Instagram: check every 3rd download\n- TikTok/Pinterest/YouTube Shorts: always free\n- First 3 days and first 5 downloads: no checks\n- Update /start and /help with YouTube Full support (up to 2GB)\n- Improve error messages (no technical details leak to users)\n- Add make_user_friendly_error with more patterns\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
       "WebFetch(domain:flyertg.com)",
       "Bash(ssh root@66.151.33.167 \"docker logs nexus_bot_manager --since ''2026-01-22T00:00:00'' 2>&1 | grep -i ''flyer\\|error\\|exception'' | head -50\")",
-      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Re-enable FlyerService with proper error handling\n\n- Set FLYER_DISABLED = False to enable subscription checks\n- Added try/except in check_and_allow() to catch SQL errors\n- On any error, user is allowed to download (fail-safe)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")"
+      "Bash(git commit -m \"$(cat <<''EOF''\nfix: Re-enable FlyerService with proper error handling\n\n- Set FLYER_DISABLED = False to enable subscription checks\n- Added try/except in check_and_allow() to catch SQL errors\n- On any error, user is allowed to download (fail-safe)\n\n🤖 Generated with [Claude Code](https://claude.com/claude-code)\n\nCo-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>\nEOF\n)\")",
+      "WebFetch(domain:pytubefix.readthedocs.io)"
     ]
   }
 }

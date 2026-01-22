@@ -164,7 +164,7 @@ class PytubeDownloader:
 
             def _get_info():
                 try:
-                    yt = YouTube(url)
+                    yt = YouTube(url, client='WEB')  # WEB client для автоматической генерации PO Token
                     return PytubeResult(
                         success=True,
                         title=yt.title or "video",
@@ -232,7 +232,7 @@ class PytubeDownloader:
 
             logger.info(f"[PYTUBEFIX] Starting download: {url}, quality={quality}")
 
-            yt = YouTube(url)
+            yt = YouTube(url, client='WEB')  # WEB client для автоматической генерации PO Token
 
             # Информация о видео
             title = yt.title or "video"

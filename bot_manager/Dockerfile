@@ -1,8 +1,8 @@
 FROM python:3.12-slim
 
-# Install system dependencies + deno
+# Install system dependencies + deno + nodejs (для pytubefix PO Token)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg curl unzip \
+    ffmpeg curl unzip nodejs npm \
     && curl -fsSL https://deno.land/install.sh | sh \
     && rm -rf /var/lib/apt/lists/*
 

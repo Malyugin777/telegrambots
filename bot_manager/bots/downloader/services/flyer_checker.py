@@ -208,7 +208,15 @@ async def check_subscription(
             # flyerapi не установлен — пропускаем проверку
             return True
 
-        result = await flyer.check(telegram_id, language_code=language_code)
+        # Кастомное сообщение для SaveNinja
+        custom_message = {
+            'text': '📥 <b>Чтобы скачать видео</b>, подпишись на нашего партнёра',
+            'button_bot': '🤖 Запустить',
+            'button_channel': '📢 Подписаться',
+            'button_fp': '✅ Проверить',
+        }
+
+        result = await flyer.check(telegram_id, language_code=language_code, message=custom_message)
 
         if result:
             logger.info(f"[FLYER] User {telegram_id}: subscribed ✓")

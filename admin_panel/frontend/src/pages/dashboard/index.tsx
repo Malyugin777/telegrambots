@@ -1,5 +1,5 @@
 import { useCustom } from '@refinedev/core';
-import { Row, Col, Card, Statistic, Spin, Progress, Alert } from 'antd';
+import { Row, Col, Card, Statistic, Spin } from 'antd';
 import {
   RobotOutlined,
   UserOutlined,
@@ -8,11 +8,7 @@ import {
   CheckCircleOutlined,
   ClockCircleOutlined,
   FireOutlined,
-  ThunderboltOutlined,
-  FileOutlined,
   DashboardOutlined,
-  ApiOutlined,
-  WarningOutlined,
 } from '@ant-design/icons';
 import { Area, Pie } from '@ant-design/charts';
 import { useTranslation } from 'react-i18next';
@@ -54,18 +50,6 @@ interface PlatformPerformance {
 interface PerformanceData {
   overall: PlatformPerformance;
   platforms: PlatformPerformance[];
-}
-
-interface APIUsageStats {
-  today: number;
-  month: number;
-  limit: number | null;
-}
-
-interface APIUsageData {
-  rapidapi: APIUsageStats;
-  ytdlp: APIUsageStats;
-  cobalt?: APIUsageStats;
 }
 
 interface FlyerTopUser {
@@ -112,11 +96,6 @@ export const Dashboard = () => {
     method: 'get',
   });
 
-  const { data: apiUsageData } = useCustom<APIUsageData>({
-    url: '/stats/api-usage',
-    method: 'get',
-  });
-
   const { data: flyerStatsData } = useCustom<FlyerStatsData>({
     url: '/stats/flyer',
     method: 'get',
@@ -126,8 +105,11 @@ export const Dashboard = () => {
   const chart = chartData?.data;
   const platforms = platformData?.data?.platforms || [];
   const performance = performanceData?.data?.overall;
-  const apiUsage = apiUsageData?.data;
   const flyerStats = flyerStatsData?.data;
+
+  // Показываем FlyerService виджет только если есть данные С flyer_required
+  // (т.е. хотя бы одно скачивание с рекламой - значит сбор данных начался)
+  const hasFlyerData = flyerStats && flyerStats.youtube_full_with_flyer_total > 0;
 
   // Prepare chart data
   const lineData = [
@@ -143,6 +125,7 @@ export const Dashboard = () => {
     })) || []),
   ];
 
+  // Цвета: Скачивания - синий, Новые юзеры - оранжевый (контрастные)
   const areaConfig = {
     data: lineData,
     xField: 'date',
@@ -155,7 +138,7 @@ export const Dashboard = () => {
         duration: 1000,
       },
     },
-    color: ['#1890ff', '#52c41a'],
+    color: ['#1890ff', '#fa8c16'],  // Синий и оранжевый
     theme: 'dark',
     areaStyle: () => {
       return {
@@ -197,41 +180,50 @@ export const Dashboard = () => {
     },
   };
 
+  // Цвета платформ (яркие, различимые)
   const platformColors: Record<string, string> = {
     instagram: '#E1306C',
     tiktok: '#00f2ea',
     youtube: '#FF0000',
+    youtube_full: '#FF0000',
+    youtube_shorts: '#FF6B6B',
     pinterest: '#E60023',
   };
 
-  const pieData = platforms.filter((p: { name: string; count: number }) =>
-    p.name !== '10' && p.count > 0
-  );
+  // Фильтруем мусорные данные
+  const pieData = platforms
+    .filter((p: { name: string; count: number }) =>
+      p.name !== '10' && p.count > 0 && p.name.length > 1
+    )
+    .map((p: { name: string; count: number }) => ({
+      ...p,
+      // Красивые названия
+      displayName: p.name === 'youtube_full' ? 'YouTube Full' :
+                   p.name === 'youtube_shorts' ? 'YouTube Shorts' :
+                   p.name.charAt(0).toUpperCase() + p.name.slice(1),
+    }));
+
+  // Общее количество для центра
+  const totalPlatformCount = pieData.reduce((sum: number, p: { count: number }) => sum + p.count, 0);
 
   const pieConfig = {
     data: pieData,
     angleField: 'count',
     colorField: 'name',
-    radius: 0.8,
-    innerRadius: 0.6,
+    radius: 0.75,
+    innerRadius: 0.5,
     label: {
-      type: 'outer' as const,
-      content: (data: any) => `${data.name}: ${data.count}`,
+      type: 'spider' as const,
+      content: (data: any) => `${data.displayName}\n${data.count}`,
       style: {
         fill: '#fff',
-        fontSize: 12,
+        fontSize: 13,
+        fontWeight: 500,
       },
     },
     color: (datum: { name: string }) => platformColors[datum.name] || '#888',
     theme: 'dark',
-    legend: {
-      position: 'bottom' as const,
-      itemName: {
-        style: {
-          fill: '#999',
-        },
-      },
-    },
+    legend: false,  // Убираем легенду, все видно в лейблах
     statistic: {
       title: {
         offsetY: -4,
@@ -244,9 +236,11 @@ export const Dashboard = () => {
       content: {
         offsetY: 4,
         style: {
-          fontSize: '24px',
+          fontSize: '28px',
           fill: '#fff',
+          fontWeight: 'bold',
         },
+        content: totalPlatformCount.toString(),
       },
     },
     interactions: [
@@ -341,33 +335,9 @@ export const Dashboard = () => {
         </Col>
       </Row>
 
-      {/* Performance Cards */}
+      {/* Среднее время скачивания (без скорости и размера) */}
       {performance && (
         <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
-          <Col xs={24} sm={8}>
-            <Card className="stat-card">
-              <Statistic
-                title="Средняя скорость"
-                value={performance.avg_speed_kbps ? Math.round(performance.avg_speed_kbps) : 0}
-                suffix="KB/s"
-                prefix={<ThunderboltOutlined />}
-                valueStyle={{ color: '#faad14' }}
-              />
-            </Card>
-          </Col>
-
-          <Col xs={24} sm={8}>
-            <Card className="stat-card">
-              <Statistic
-                title="Средний размер файла"
-                value={performance.avg_file_size_mb ? performance.avg_file_size_mb.toFixed(2) : '0.00'}
-                suffix="MB"
-                prefix={<FileOutlined />}
-                valueStyle={{ color: '#1890ff' }}
-              />
-            </Card>
-          </Col>
-
           <Col xs={24} sm={8}>
             <Card className="stat-card">
               <Statistic
@@ -382,138 +352,8 @@ export const Dashboard = () => {
         </Row>
       )}
 
-      {/* API Usage Card */}
-      {apiUsage && (
-        <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
-          <Col xs={24}>
-            {/* Alert if RapidAPI > 80% */}
-            {apiUsage.rapidapi.limit &&
-             (apiUsage.rapidapi.month / apiUsage.rapidapi.limit) > 0.8 && (
-              <Alert
-                message="Внимание: Превышен лимит RapidAPI!"
-                description={`Использовано ${Math.round((apiUsage.rapidapi.month / apiUsage.rapidapi.limit) * 100)}% месячного лимита RapidAPI`}
-                type="error"
-                icon={<WarningOutlined />}
-                showIcon
-                style={{ marginBottom: '16px' }}
-                banner
-              />
-            )}
-
-            <Card
-              title={
-                <span>
-                  <ApiOutlined /> Использование API
-                </span>
-              }
-            >
-              <Row gutter={[16, 16]}>
-                {/* RapidAPI */}
-                <Col xs={24} md={12}>
-                  <h4 style={{ marginBottom: '12px' }}>RapidAPI</h4>
-
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span>Сегодня:</span>
-                      <span>{apiUsage.rapidapi.today}{apiUsage.rapidapi.limit ? ` / ${apiUsage.rapidapi.limit}` : ''}</span>
-                    </div>
-                    {apiUsage.rapidapi.limit && (
-                      <Progress
-                        percent={Math.round((apiUsage.rapidapi.today / apiUsage.rapidapi.limit) * 100)}
-                        strokeColor={{
-                          '0%': '#52c41a',
-                          '80%': '#faad14',
-                          '100%': '#ff4d4f',
-                        }}
-                      />
-                    )}
-                  </div>
-
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span>За месяц:</span>
-                      <span>{apiUsage.rapidapi.month}{apiUsage.rapidapi.limit ? ` / ${apiUsage.rapidapi.limit}` : ''}</span>
-                    </div>
-                    {apiUsage.rapidapi.limit && (
-                      <Progress
-                        percent={Math.round((apiUsage.rapidapi.month / apiUsage.rapidapi.limit) * 100)}
-                        strokeColor={{
-                          '0%': '#52c41a',
-                          '80%': '#faad14',
-                          '100%': '#ff4d4f',
-                        }}
-                      />
-                    )}
-                  </div>
-                </Col>
-
-                {/* yt-dlp */}
-                <Col xs={24} md={12}>
-                  <h4 style={{ marginBottom: '12px' }}>yt-dlp</h4>
-
-                  <div style={{ marginBottom: '16px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span>Сегодня:</span>
-                      <span>{apiUsage.ytdlp.today}</span>
-                    </div>
-                    <Progress
-                      percent={100}
-                      strokeColor="#1890ff"
-                      showInfo={false}
-                    />
-                  </div>
-
-                  <div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                      <span>За месяц:</span>
-                      <span>{apiUsage.ytdlp.month}</span>
-                    </div>
-                    <Progress
-                      percent={100}
-                      strokeColor="#1890ff"
-                      showInfo={false}
-                    />
-                  </div>
-                </Col>
-
-                {/* Cobalt (if available) */}
-                {apiUsage.cobalt && (
-                  <Col xs={24} md={12}>
-                    <h4 style={{ marginBottom: '12px' }}>Cobalt</h4>
-
-                    <div style={{ marginBottom: '16px' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span>Сегодня:</span>
-                        <span>{apiUsage.cobalt.today}</span>
-                      </div>
-                      <Progress
-                        percent={100}
-                        strokeColor="#722ed1"
-                        showInfo={false}
-                      />
-                    </div>
-
-                    <div>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                        <span>За месяц:</span>
-                        <span>{apiUsage.cobalt.month}</span>
-                      </div>
-                      <Progress
-                        percent={100}
-                        strokeColor="#722ed1"
-                        showInfo={false}
-                      />
-                    </div>
-                  </Col>
-                )}
-              </Row>
-            </Card>
-          </Col>
-        </Row>
-      )}
-
-      {/* FlyerService Stats */}
-      {flyerStats && (
+      {/* FlyerService Stats - только если есть данные с flyer_required */}
+      {hasFlyerData && (
         <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
           <Col xs={24}>
             <Card
@@ -529,17 +369,17 @@ export const Dashboard = () => {
                   <h4 style={{ marginBottom: '12px' }}>Сегодня</h4>
                   <Statistic
                     title="Всего YouTube Full"
-                    value={flyerStats.youtube_full_today}
+                    value={flyerStats!.youtube_full_today}
                     valueStyle={{ fontSize: '24px' }}
                   />
                   <div style={{ marginTop: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ color: '#faad14' }}>⚠️ Бесплатно (без рекламы):</span>
-                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats.youtube_full_free_today}</span>
+                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats!.youtube_full_free_today}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={{ color: '#52c41a' }}>✅ С рекламой:</span>
-                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats.youtube_full_with_flyer_today}</span>
+                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.youtube_full_with_flyer_today}</span>
                     </div>
                   </div>
                 </Col>
@@ -549,17 +389,17 @@ export const Dashboard = () => {
                   <h4 style={{ marginBottom: '12px' }}>За всё время</h4>
                   <Statistic
                     title="Всего YouTube Full"
-                    value={flyerStats.youtube_full_total}
+                    value={flyerStats!.youtube_full_total}
                     valueStyle={{ fontSize: '24px' }}
                   />
                   <div style={{ marginTop: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                       <span style={{ color: '#faad14' }}>⚠️ Бесплатно:</span>
-                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats.youtube_full_free_total}</span>
+                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats!.youtube_full_free_total}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={{ color: '#52c41a' }}>✅ С рекламой:</span>
-                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats.youtube_full_with_flyer_total}</span>
+                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.youtube_full_with_flyer_total}</span>
                     </div>
                   </div>
                 </Col>
@@ -567,9 +407,9 @@ export const Dashboard = () => {
                 {/* Топ бесплатных качальщиков */}
                 <Col xs={24} md={8}>
                   <h4 style={{ marginBottom: '12px' }}>Топ бесплатных качальщиков</h4>
-                  {flyerStats.top_free_downloaders.length > 0 ? (
+                  {flyerStats!.top_free_downloaders.length > 0 ? (
                     <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                      {flyerStats.top_free_downloaders.slice(0, 5).map((user, idx) => (
+                      {flyerStats!.top_free_downloaders.slice(0, 5).map((user, idx) => (
                         <div key={user.user_id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
                           <span style={{ color: '#888' }}>
                             {idx + 1}. {user.username ? `@${user.username}` : user.name || `ID:${user.telegram_id}`}

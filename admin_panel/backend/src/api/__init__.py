@@ -12,6 +12,7 @@ from .uploads import router as uploads_router
 from .subscriptions import router as subscriptions_router
 from .bot_messages import router as bot_messages_router
 from .ops import router as ops_router
+from .flyer_webhook import router as flyer_webhook_router
 
 api_router = APIRouter()
 
@@ -26,3 +27,4 @@ api_router.include_router(uploads_router, prefix="/uploads", tags=["uploads"])
 api_router.include_router(subscriptions_router, prefix="/subscriptions", tags=["subscriptions"])
 api_router.include_router(bot_messages_router, prefix="/bot-messages", tags=["bot-messages"])
 api_router.include_router(ops_router, prefix="/ops", tags=["ops"])
+api_router.include_router(flyer_webhook_router, prefix="/flyer-webhook", tags=["flyer"])

@@ -33,9 +33,9 @@ FLYER_API_KEY = "FL-RELiwN-PULZsV-OqkKlf-ygoADQ"
 FLYER_DISABLED = False  # Включить проверку подписки
 
 # Настройки монетизации
-FREE_DAYS = 3  # Первые N дней без проверок
-FREE_DOWNLOADS = 5  # Первые N скачиваний без проверок
-YOUTUBE_FULL_FREE_COUNT = 3  # YouTube Full бесплатно первые N раз
+FREE_DAYS = 0  # Первые N дней без проверок (0 = сразу с рекламой)
+FREE_DOWNLOADS = 0  # Первые N скачиваний без проверок (0 = сразу с рекламой)
+YOUTUBE_FULL_FREE_COUNT = 0  # YouTube Full бесплатно первые N раз (0 = сразу с рекламой)
 INSTAGRAM_CHECK_EVERY = 3  # Instagram проверять каждый N-й раз
 
 # Инициализация клиента

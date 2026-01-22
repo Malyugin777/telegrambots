@@ -545,9 +545,8 @@ async def handle_url(message: types.Message):
         language_code = message.from_user.language_code or "ru"
         if not await check_and_allow(session, user_id, platform, language_code):
             # Юзер не подписан — FlyerAPI уже показал ему сообщение с заданиями
+            # Сообщение уже содержит инструкцию "После выполнения отправь ссылку ещё раз"
             logger.info(f"[FLYER] User {user_id} blocked for {platform}, showing subscription tasks")
-            # Подсказка юзеру что делать после выполнения задания
-            await message.answer("👆 Выполни задание и отправь ссылку ещё раз")
             return
 
     # === ПРОВЕРЯЕМ КЭШ (мгновенная отправка) ===

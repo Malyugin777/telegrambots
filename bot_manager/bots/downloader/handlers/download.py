@@ -169,6 +169,62 @@ def get_content_bucket(platform: str, content_type: str = None, duration_sec: in
     return "unknown"
 
 
+def format_duration(seconds: int) -> str:
+    """Форматирует секунды в HH:MM:SS или MM:SS."""
+    if seconds <= 0:
+        return "0:00"
+    hours, remainder = divmod(seconds, 3600)
+    minutes, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def get_quality_label(height: int) -> str:
+    """Возвращает метку качества по высоте видео."""
+    if height >= 2160:
+        return "4K"
+    elif height >= 1440:
+        return "1440p"
+    elif height >= 1080:
+        return "1080p"
+    elif height >= 720:
+        return "720p"
+    elif height >= 480:
+        return "480p"
+    elif height >= 360:
+        return "360p"
+    elif height >= 240:
+        return "240p"
+    return f"{height}p" if height > 0 else ""
+
+
+def make_youtube_full_caption(title: str, height: int, duration: int) -> str:
+    """Создаёт расширенный caption для YouTube Full видео."""
+    lines = []
+
+    # Название (обрезаем если слишком длинное)
+    if title and title != "video":
+        # Telegram caption max 1024 chars, оставляем запас
+        title_truncated = title[:200] + "..." if len(title) > 200 else title
+        lines.append(f"🎬 {title_truncated}")
+
+    # Качество и длительность
+    quality = get_quality_label(height)
+    duration_str = format_duration(duration)
+    if quality and duration_str:
+        lines.append(f"📊 {quality} | {duration_str}")
+    elif quality:
+        lines.append(f"📊 {quality}")
+    elif duration_str:
+        lines.append(f"📊 {duration_str}")
+
+    # Подпись
+    lines.append("📥 Скачано через @SaveNinja_bot")
+
+    return "\n".join(lines)
+
+
 def detect_instagram_bucket(url: str, is_carousel: bool = False) -> str:
     """
     Определяет тип Instagram контента по URL.
@@ -1057,6 +1113,15 @@ async def handle_url(message: types.Message):
                     thumb_path = thumbnail_value
                     logger.info(f"[THUMBNAIL] Using local file: {thumb_path}")
 
+            # === ФОРМИРУЕМ CAPTION ===
+            # Для YouTube Full - расширенный caption с названием и качеством
+            # Для остального - стандартный "Скачано через @SaveNinja_bot"
+            if platform == "youtube_full":
+                video_title = result.info.title if result.info else "video"
+                video_caption = make_youtube_full_caption(video_title, height, duration)
+            else:
+                video_caption = CAPTION
+
             # === ОТПРАВКА С RETRY (3 попытки, backoff 5/10/20s) ===
             # Phase 7.0 Telemetry: измеряем upload_ms
             upload_start = time.time()
@@ -1069,7 +1134,7 @@ async def handle_url(message: types.Message):
                 file_path=result.file_path,
                 filename=result.filename,
                 thumb_path=thumb_path,
-                caption=CAPTION,
+                caption=video_caption,
                 thumbnail=True,  # Флаг что нужен thumbnail (send_with_retry создаст FSInputFile)
                 duration=duration if duration > 0 else None,
                 width=width if width > 0 else None,

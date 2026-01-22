@@ -140,7 +140,8 @@ class VideoDownloader:
             'geo_bypass': True,
             'buffersize': 1024 * 64,  # 64KB буфер
 
-            # YouTube: ios клиент быстрее отдаёт готовые mp4
+            # YouTube: для Shorts используем ios клиент (быстрые готовые mp4)
+            # Для Full НЕ используем ios/android - они требуют PO Token и дают только 360p
             'extractor_args': {
                 'youtube': {'player_client': ['ios', 'android']},
             },
@@ -151,8 +152,13 @@ class VideoDownloader:
             opts['impersonate'] = CHROME_TARGET
             opts['concurrent_fragment_downloads'] = 5
 
-        # Для YouTube Full: обход throttling (VPS режет скорость до ~6MB/мин)
+        # Для YouTube Full: используем web client для доступа к adaptive 720p форматам
         if is_youtube_full:
+            # ios/android клиенты требуют PO Token и без него дают только 360p combined
+            # web client даёт доступ к adaptive форматам (720p video + audio отдельно)
+            opts['extractor_args'] = {'youtube': {'player_client': ['web']}}
+            logger.info(f"[YTDLP] Using web client for YouTube Full (720p adaptive)")
+
             # Минимальная скорость 100KB/s - помогает обойти throttling
             opts['throttledratelimit'] = 100 * 1024  # 100KB/s
             # Альтернатива: ограничение скорости 1MB/s (парадоксально, но может ускорить)

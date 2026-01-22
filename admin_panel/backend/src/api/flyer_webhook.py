@@ -20,24 +20,19 @@ async def flyer_webhook(request: Request):
     Receive webhook from FlyerService.
 
     FlyerService sends POST requests when users complete tasks (subscribe to channels).
-    This endpoint just acknowledges the request - FlyerService handles the subscription tracking.
+    Must return {"status": true} for FlyerService to accept the webhook.
     """
     try:
         # Get raw body for logging
         body = await request.json()
         logger.info(f"[FLYER WEBHOOK] Received: {body}")
 
-        # Just acknowledge - FlyerService handles the logic
-        return JSONResponse(
-            content={"success": True},
-            status_code=200
-        )
+        # FlyerService requires exactly {"status": true}
+        return {"status": True}
     except Exception as e:
         logger.error(f"[FLYER WEBHOOK] Error: {e}")
-        return JSONResponse(
-            content={"success": False, "error": str(e)},
-            status_code=200  # Return 200 anyway to not break FlyerService
-        )
+        # Still return status: true to not break FlyerService
+        return {"status": True}
 
 
 @router.get("")

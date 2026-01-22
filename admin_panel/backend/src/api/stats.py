@@ -3,8 +3,10 @@ Statistics API endpoints.
 """
 from datetime import datetime, timedelta
 import random
+from typing import List, Optional
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,22 @@ from ..config import settings
 from ..models import Bot, User, Broadcast, ActionLog, BotStatus, BroadcastStatus, APISource
 from ..schemas import StatsResponse, LoadChartResponse, ChartDataPoint, PerformanceResponse, PlatformPerformance, APIUsageResponse, APIUsageStats
 from ..auth import get_current_user
+
+
+class FlyerStatsResponse(BaseModel):
+    """Статистика FlyerService."""
+    # Сегодня
+    youtube_full_today: int
+    youtube_full_free_today: int  # flyer_required = False
+    youtube_full_with_flyer_today: int  # flyer_required = True
+
+    # За всё время
+    youtube_full_total: int
+    youtube_full_free_total: int
+    youtube_full_with_flyer_total: int
+
+    # Топ бесплатных качальщиков (user_id, count)
+    top_free_downloaders: List[dict]
 
 router = APIRouter()
 
@@ -355,4 +373,105 @@ async def get_api_usage(
             month=cobalt_month,
             limit=None  # No limit for Cobalt
         ) if (cobalt_today > 0 or cobalt_month > 0) else None
+    )
+
+
+@router.get("/flyer", response_model=FlyerStatsResponse)
+async def get_flyer_stats(
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """
+    Статистика FlyerService - сколько YouTube Full скачано бесплатно vs с рекламой.
+
+    flyer_required в details:
+    - False = бесплатное скачивание (shorts, free period, или не YouTube Full)
+    - True = требовалась проверка Flyer (юзер подписан или видел рекламу)
+    """
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+
+    # Получаем все YouTube Full скачивания
+    result = await db.execute(
+        select(ActionLog.details, ActionLog.user_id, ActionLog.created_at)
+        .where(ActionLog.action == "download_success")
+    )
+
+    # Счётчики
+    youtube_full_today = 0
+    youtube_full_free_today = 0
+    youtube_full_with_flyer_today = 0
+    youtube_full_total = 0
+    youtube_full_free_total = 0
+    youtube_full_with_flyer_total = 0
+
+    # Счётчик бесплатных скачиваний по юзерам
+    user_free_counts: dict[int, int] = {}
+
+    for row in result:
+        details = row.details
+        user_id = row.user_id
+        created_at = row.created_at
+
+        if not details or not isinstance(details, dict):
+            continue
+
+        # Проверяем что это YouTube Full
+        platform = details.get('platform', '')
+        if platform != 'youtube_full':
+            continue
+
+        # Считаем общее количество
+        youtube_full_total += 1
+        is_today = created_at and created_at >= today_start
+
+        if is_today:
+            youtube_full_today += 1
+
+        # Проверяем flyer_required
+        flyer_required = details.get('flyer_required', False)
+
+        if flyer_required:
+            youtube_full_with_flyer_total += 1
+            if is_today:
+                youtube_full_with_flyer_today += 1
+        else:
+            youtube_full_free_total += 1
+            if is_today:
+                youtube_full_free_today += 1
+
+            # Считаем для топа бесплатных качальщиков
+            if user_id:
+                user_free_counts[user_id] = user_free_counts.get(user_id, 0) + 1
+
+    # Топ 10 бесплатных качальщиков
+    top_users = sorted(user_free_counts.items(), key=lambda x: -x[1])[:10]
+
+    # Получаем информацию о юзерах
+    top_free_downloaders = []
+    if top_users:
+        user_ids = [u[0] for u in top_users]
+        users_result = await db.execute(
+            select(User.id, User.telegram_id, User.username, User.first_name)
+            .where(User.id.in_(user_ids))
+        )
+        users_map = {row.id: row for row in users_result}
+
+        for user_id, count in top_users:
+            user = users_map.get(user_id)
+            top_free_downloaders.append({
+                "user_id": user_id,
+                "telegram_id": user.telegram_id if user else None,
+                "username": user.username if user else None,
+                "name": user.first_name if user else None,
+                "free_count": count,
+            })
+
+    return FlyerStatsResponse(
+        youtube_full_today=youtube_full_today,
+        youtube_full_free_today=youtube_full_free_today,
+        youtube_full_with_flyer_today=youtube_full_with_flyer_today,
+        youtube_full_total=youtube_full_total,
+        youtube_full_free_total=youtube_full_free_total,
+        youtube_full_with_flyer_total=youtube_full_with_flyer_total,
+        top_free_downloaders=top_free_downloaders,
     )

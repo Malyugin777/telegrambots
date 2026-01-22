@@ -239,12 +239,20 @@ async def check_subscription(
         return True
 
 
+class FlyerCheckResult:
+    """Результат проверки FlyerService."""
+    def __init__(self, allowed: bool, flyer_required: bool, flyer_shown: bool = False):
+        self.allowed = allowed  # Можно ли скачивать
+        self.flyer_required = flyer_required  # Требовалась ли проверка Flyer
+        self.flyer_shown = flyer_shown  # Была ли показана реклама (юзер не подписан)
+
+
 async def check_and_allow(
     session: AsyncSession,
     telegram_id: int,
     platform: str,
     language_code: str = "ru",
-) -> bool:
+) -> FlyerCheckResult:
     """
     Главная функция: проверить нужна ли подписка и если да — проверить её.
 
@@ -255,24 +263,32 @@ async def check_and_allow(
         language_code: Язык пользователя
 
     Returns:
-        True если можно скачивать, False если нужно сначала подписаться
+        FlyerCheckResult с информацией о проверке
     """
     # Глобальный выключатель
     if FLYER_DISABLED:
         logger.debug(f"[FLYER] Disabled, allowing download for {telegram_id}")
-        return True
+        return FlyerCheckResult(allowed=True, flyer_required=False)
 
     try:
         # Проверяем нужна ли проверка для этого случая
         should_check = await should_check_subscription(session, telegram_id, platform)
 
         if not should_check:
-            return True  # Бесплатное скачивание
+            # Бесплатное скачивание (shorts, pinterest, tiktok, или бесплатный период)
+            return FlyerCheckResult(allowed=True, flyer_required=False)
 
         # Проверяем подписку через FlyerService
-        return await check_subscription(telegram_id, language_code)
+        is_subscribed = await check_subscription(telegram_id, language_code)
+
+        if is_subscribed:
+            # Юзер подписан - разрешаем без показа рекламы
+            return FlyerCheckResult(allowed=True, flyer_required=True, flyer_shown=False)
+        else:
+            # Юзер НЕ подписан - FlyerAPI показал рекламу
+            return FlyerCheckResult(allowed=False, flyer_required=True, flyer_shown=True)
 
     except Exception as e:
         # При ЛЮБОЙ ошибке - не блокируем юзера, логируем и пропускаем
         logger.error(f"[FLYER] Error in check_and_allow for {telegram_id}: {e}", exc_info=True)
-        return True
+        return FlyerCheckResult(allowed=True, flyer_required=False)

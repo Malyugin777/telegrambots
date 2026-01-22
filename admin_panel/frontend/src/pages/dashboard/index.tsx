@@ -68,6 +68,24 @@ interface APIUsageData {
   cobalt?: APIUsageStats;
 }
 
+interface FlyerTopUser {
+  user_id: number;
+  telegram_id: number | null;
+  username: string | null;
+  name: string | null;
+  free_count: number;
+}
+
+interface FlyerStatsData {
+  youtube_full_today: number;
+  youtube_full_free_today: number;
+  youtube_full_with_flyer_today: number;
+  youtube_full_total: number;
+  youtube_full_free_total: number;
+  youtube_full_with_flyer_total: number;
+  top_free_downloaders: FlyerTopUser[];
+}
+
 export const Dashboard = () => {
   const { t } = useTranslation();
 
@@ -99,11 +117,17 @@ export const Dashboard = () => {
     method: 'get',
   });
 
+  const { data: flyerStatsData } = useCustom<FlyerStatsData>({
+    url: '/stats/flyer',
+    method: 'get',
+  });
+
   const stats = statsData?.data;
   const chart = chartData?.data;
   const platforms = platformData?.data?.platforms || [];
   const performance = performanceData?.data?.overall;
   const apiUsage = apiUsageData?.data;
+  const flyerStats = flyerStatsData?.data;
 
   // Prepare chart data
   const lineData = [
@@ -482,6 +506,82 @@ export const Dashboard = () => {
                     </div>
                   </Col>
                 )}
+              </Row>
+            </Card>
+          </Col>
+        </Row>
+      )}
+
+      {/* FlyerService Stats */}
+      {flyerStats && (
+        <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
+          <Col xs={24}>
+            <Card
+              title={
+                <span>
+                  <NotificationOutlined /> FlyerService (YouTube Full)
+                </span>
+              }
+            >
+              <Row gutter={[16, 16]}>
+                {/* Сегодня */}
+                <Col xs={24} md={8}>
+                  <h4 style={{ marginBottom: '12px' }}>Сегодня</h4>
+                  <Statistic
+                    title="Всего YouTube Full"
+                    value={flyerStats.youtube_full_today}
+                    valueStyle={{ fontSize: '24px' }}
+                  />
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ color: '#faad14' }}>⚠️ Бесплатно (без рекламы):</span>
+                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats.youtube_full_free_today}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#52c41a' }}>✅ С рекламой:</span>
+                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats.youtube_full_with_flyer_today}</span>
+                    </div>
+                  </div>
+                </Col>
+
+                {/* За всё время */}
+                <Col xs={24} md={8}>
+                  <h4 style={{ marginBottom: '12px' }}>За всё время</h4>
+                  <Statistic
+                    title="Всего YouTube Full"
+                    value={flyerStats.youtube_full_total}
+                    valueStyle={{ fontSize: '24px' }}
+                  />
+                  <div style={{ marginTop: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ color: '#faad14' }}>⚠️ Бесплатно:</span>
+                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats.youtube_full_free_total}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: '#52c41a' }}>✅ С рекламой:</span>
+                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats.youtube_full_with_flyer_total}</span>
+                    </div>
+                  </div>
+                </Col>
+
+                {/* Топ бесплатных качальщиков */}
+                <Col xs={24} md={8}>
+                  <h4 style={{ marginBottom: '12px' }}>Топ бесплатных качальщиков</h4>
+                  {flyerStats.top_free_downloaders.length > 0 ? (
+                    <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
+                      {flyerStats.top_free_downloaders.slice(0, 5).map((user, idx) => (
+                        <div key={user.user_id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                          <span style={{ color: '#888' }}>
+                            {idx + 1}. {user.username ? `@${user.username}` : user.name || `ID:${user.telegram_id}`}
+                          </span>
+                          <span style={{ color: '#faad14', fontWeight: 'bold' }}>{user.free_count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <span style={{ color: '#888' }}>Нет данных</span>
+                  )}
+                </Col>
               </Row>
             </Card>
           </Col>

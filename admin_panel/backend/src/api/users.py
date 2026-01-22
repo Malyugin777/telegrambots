@@ -1,9 +1,10 @@
 """
 Users management API endpoints.
 """
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
+from pydantic import BaseModel
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +12,16 @@ from ..database import get_db
 from ..models import User, ActionLog, UserRole
 from ..schemas import UserResponse, UserListResponse, UserBanRequest, UserRoleUpdate
 from ..auth import get_current_user, get_superuser
+
+
+class FreeDownloaderResponse(BaseModel):
+    """Юзер с количеством бесплатных скачиваний."""
+    id: int
+    telegram_id: int
+    username: Optional[str]
+    first_name: Optional[str]
+    free_youtube_full_count: int
+    total_youtube_full_count: int
 
 router = APIRouter()
 
@@ -260,3 +271,76 @@ async def get_user_stats(
             for log in recent_logs
         ],
     }
+
+
+@router.get("/top-free-downloaders", response_model=List[FreeDownloaderResponse])
+async def get_top_free_downloaders(
+    limit: int = Query(50, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    """
+    Получить топ юзеров по количеству бесплатных YouTube Full скачиваний.
+
+    Бесплатные = flyer_required=False в details (без показа рекламы).
+    """
+    # Получаем все YouTube Full скачивания
+    result = await db.execute(
+        select(ActionLog.details, ActionLog.user_id)
+        .where(ActionLog.action == "download_success")
+    )
+
+    # Счётчики по юзерам
+    user_free_counts: dict[int, int] = {}
+    user_total_counts: dict[int, int] = {}
+
+    for row in result:
+        details = row.details
+        user_id = row.user_id
+
+        if not details or not isinstance(details, dict) or not user_id:
+            continue
+
+        # Проверяем что это YouTube Full
+        platform = details.get('platform', '')
+        if platform != 'youtube_full':
+            continue
+
+        # Считаем общее
+        user_total_counts[user_id] = user_total_counts.get(user_id, 0) + 1
+
+        # Считаем бесплатные
+        flyer_required = details.get('flyer_required', False)
+        if not flyer_required:
+            user_free_counts[user_id] = user_free_counts.get(user_id, 0) + 1
+
+    # Сортируем по количеству бесплатных
+    top_users = sorted(user_free_counts.items(), key=lambda x: -x[1])[:limit]
+
+    if not top_users:
+        return []
+
+    # Получаем информацию о юзерах
+    user_ids = [u[0] for u in top_users]
+    users_result = await db.execute(
+        select(User).where(User.id.in_(user_ids))
+    )
+    users_map = {u.id: u for u in users_result.scalars().all()}
+
+    # Формируем ответ
+    response = []
+    for user_id, free_count in top_users:
+        user = users_map.get(user_id)
+        if not user:
+            continue
+
+        response.append(FreeDownloaderResponse(
+            id=user.id,
+            telegram_id=user.telegram_id,
+            username=user.username,
+            first_name=user.first_name,
+            free_youtube_full_count=free_count,
+            total_youtube_full_count=user_total_counts.get(user_id, 0),
+        ))
+
+    return response

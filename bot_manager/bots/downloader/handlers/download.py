@@ -541,9 +541,11 @@ async def handle_url(message: types.Message):
 
     # === ПРОВЕРКА ПОДПИСКИ (FlyerService) ===
     # Проверяем нужно ли показать задания на подписку
+    flyer_result = None  # Для передачи в log_action
     async with AsyncSessionLocal() as session:
         language_code = message.from_user.language_code or "ru"
-        if not await check_and_allow(session, user_id, platform, language_code):
+        flyer_result = await check_and_allow(session, user_id, platform, language_code)
+        if not flyer_result.allowed:
             # Юзер не подписан — FlyerAPI уже показал ему сообщение с заданиями
             # Сообщение уже содержит инструкцию "После выполнения отправь ссылку ещё раз"
             logger.info(f"[FLYER] User {user_id} blocked for {platform}, showing subscription tasks")
@@ -743,6 +745,7 @@ async def handle_url(message: types.Message):
                     "bucket": "carousel",
                     "files_count": len(carousel.files),
                     "has_video": carousel.has_video,
+                    "flyer_required": flyer_result.flyer_required if flyer_result else False,
                 }
                 # Добавляем quota_snapshot если есть
                 if carousel.quota_snapshot:
@@ -1060,7 +1063,12 @@ async def handle_url(message: types.Message):
             photo_bucket = "photo" if platform == "pinterest" else detect_instagram_bucket(url)
 
             # Формируем telemetry с quota_snapshot
-            photo_telemetry = {"type": "photo", "platform": platform, "bucket": photo_bucket}
+            photo_telemetry = {
+                "type": "photo",
+                "platform": platform,
+                "bucket": photo_bucket,
+                "flyer_required": flyer_result.flyer_required if flyer_result else False,
+            }
             quota_snapshot = getattr(result, 'quota_snapshot', None)
             if quota_snapshot:
                 photo_telemetry["quota"] = quota_snapshot if isinstance(quota_snapshot, dict) else quota_snapshot.to_dict()
@@ -1198,6 +1206,7 @@ async def handle_url(message: types.Message):
                 "upload_ms": upload_ms,
                 "total_ms": total_ms,
                 "download_host": download_host,
+                "flyer_required": flyer_result.flyer_required if flyer_result else False,
             }
             # Добавляем quota если есть
             if quota_snapshot:

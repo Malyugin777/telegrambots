@@ -546,6 +546,8 @@ async def handle_url(message: types.Message):
         if not await check_and_allow(session, user_id, platform, language_code):
             # Юзер не подписан — FlyerAPI уже показал ему сообщение с заданиями
             logger.info(f"[FLYER] User {user_id} blocked for {platform}, showing subscription tasks")
+            # Подсказка юзеру что делать после подписки
+            await message.answer("👆 Подпишись на канал и отправь ссылку ещё раз")
             return
 
     # === ПРОВЕРЯЕМ КЭШ (мгновенная отправка) ===

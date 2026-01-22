@@ -206,7 +206,13 @@ async def check_subscription(
         flyer = get_flyer()
         if flyer is None:
             # flyerapi не установлен — пропускаем проверку
+            logger.warning(f"[FLYER] User {telegram_id}: flyerapi not available, SKIP")
             return True
+
+        # Очищаем локальный кэш чтобы всегда делать реальный запрос
+        if telegram_id in flyer._cache:
+            del flyer._cache[telegram_id]
+            logger.info(f"[FLYER] User {telegram_id}: cleared local cache")
 
         # Кастомное сообщение для SaveNinja
         custom_message = {
@@ -216,10 +222,12 @@ async def check_subscription(
             'button_fp': '✅ Проверить',
         }
 
+        logger.info(f"[FLYER] User {telegram_id}: calling API check()...")
         result = await flyer.check(telegram_id, language_code=language_code, message=custom_message)
+        logger.info(f"[FLYER] User {telegram_id}: API returned skip={result}")
 
         if result:
-            logger.info(f"[FLYER] User {telegram_id}: subscribed ✓")
+            logger.info(f"[FLYER] User {telegram_id}: subscribed ✓ (no ads shown)")
         else:
             logger.info(f"[FLYER] User {telegram_id}: not subscribed, showing tasks")
 

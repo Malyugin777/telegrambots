@@ -4,6 +4,7 @@ import { SearchOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useCustom } from '@refinedev/core';
 import { useState } from 'react';
 import dayjs from 'dayjs';
+import { ExportButton } from '../../components';
 
 interface Log {
   id: number;
@@ -111,6 +112,10 @@ export const LogList = () => {
         >
           Refresh
         </Button>
+        <ExportButton
+          resource="logs"
+          filters={{ action: actionFilter, bot_id: botFilter }}
+        />
       </Space>
 
       <Table {...tableProps} rowKey="id" size="small">

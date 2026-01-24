@@ -43,6 +43,7 @@ class BroadcastWorker:
         buttons: Optional[List[dict]] = None,
         target_type: str = "all",
         target_user_ids: Optional[List[int]] = None,
+        segment_conditions: Optional[dict] = None,
         on_progress: Optional[callable] = None,
     ) -> dict:
         """
@@ -54,8 +55,9 @@ class BroadcastWorker:
             image_url: URL или file_id фото
             video_url: URL или file_id видео
             buttons: Список кнопок [{text, url}, ...]
-            target_type: 'all' | 'list'
+            target_type: 'all' | 'list' | 'segment'
             target_user_ids: Список telegram_id (если target_type='list')
+            segment_conditions: Условия сегмента (если target_type='segment')
             on_progress: Callback для обновления прогресса
 
         Returns:
@@ -64,7 +66,7 @@ class BroadcastWorker:
         self._cancelled = False
 
         # Получаем список получателей
-        recipients = await self._get_recipients(target_type, target_user_ids)
+        recipients = await self._get_recipients(target_type, target_user_ids, segment_conditions)
         total = len(recipients)
 
         logger.info(f"Starting broadcast {broadcast_id}: {total} recipients")
@@ -139,6 +141,7 @@ class BroadcastWorker:
         self,
         target_type: str,
         target_user_ids: Optional[List[int]] = None,
+        segment_conditions: Optional[dict] = None,
     ) -> List[int]:
         """Получить список telegram_id получателей."""
         async with async_session() as session:
@@ -146,9 +149,60 @@ class BroadcastWorker:
 
             if target_type == "list" and target_user_ids:
                 query = query.where(User.telegram_id.in_(target_user_ids))
+            elif target_type == "segment" and segment_conditions:
+                # Применяем условия сегмента
+                filters = self._build_segment_filters(segment_conditions)
+                for f in filters:
+                    query = query.where(f)
 
             result = await session.execute(query)
             return [row[0] for row in result.all()]
+
+    def _build_segment_filters(self, conditions: dict) -> list:
+        """
+        Build SQLAlchemy filter conditions from segment rules.
+
+        Format:
+        {
+            "rules": [
+                {"field": "language_code", "op": "eq", "value": "ru"},
+                {"field": "is_banned", "op": "eq", "value": false}
+            ]
+        }
+        """
+        filters = []
+        rules = conditions.get("rules", [])
+
+        for rule in rules:
+            field_name = rule.get("field")
+            op = rule.get("op")
+            value = rule.get("value")
+
+            if not field_name or not op:
+                continue
+
+            if not hasattr(User, field_name):
+                continue
+            column = getattr(User, field_name)
+
+            if op == "eq":
+                filters.append(column == value)
+            elif op == "ne":
+                filters.append(column != value)
+            elif op == "gt":
+                filters.append(column > value)
+            elif op == "gte":
+                filters.append(column >= value)
+            elif op == "lt":
+                filters.append(column < value)
+            elif op == "lte":
+                filters.append(column <= value)
+            elif op == "in" and isinstance(value, list):
+                filters.append(column.in_(value))
+            elif op == "contains" and isinstance(value, str):
+                filters.append(column.ilike(f"%{value}%"))
+
+        return filters
 
     async def _send_message(
         self,

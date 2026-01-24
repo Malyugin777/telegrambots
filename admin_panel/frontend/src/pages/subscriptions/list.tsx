@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import { useState } from 'react';
 import dayjs from 'dayjs';
+import { ExportButton } from '../../components';
 
 interface Subscription {
   id: number;
@@ -98,6 +99,7 @@ export const SubscriptionList = () => {
           >
             Обновить
           </Button>
+          <ExportButton resource="subscriptions" filters={{ is_active: statusFilter === 'active' ? true : undefined }} />
           <CreateButton {...createButtonProps} />
         </Space>
       )}

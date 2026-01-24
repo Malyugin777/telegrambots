@@ -5,8 +5,9 @@ import routerProvider, {
   UnsavedChangesNotifier,
   DocumentTitleHandler,
 } from '@refinedev/react-router-v6';
-import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom';
-import { ConfigProvider, App as AntdApp, theme } from 'antd';
+import { BrowserRouter, Routes, Route, Outlet, Navigate, useNavigate } from 'react-router-dom';
+import { ConfigProvider, App as AntdApp, theme, Dropdown, Button, Space } from 'antd';
+import type { MenuProps } from 'antd';
 import {
   DashboardOutlined,
   RobotOutlined,
@@ -17,6 +18,8 @@ import {
   DollarOutlined,
   MessageOutlined,
   MonitorOutlined,
+  SettingOutlined,
+  LogoutOutlined,
 } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 
@@ -32,6 +35,7 @@ import { ErrorList } from './pages/errors';
 import { SubscriptionList, SubscriptionCreate, SubscriptionEdit } from './pages/subscriptions';
 import { BotMessageList } from './pages/bot-messages';
 import { Ops } from './pages/ops';
+import { ProfilePage } from './pages/profile';
 import { Login } from './pages/login';
 import { LanguageSwitcher, Footer } from './components';
 
@@ -166,19 +170,48 @@ function App() {
                           {t('common.appName')}
                         </div>
                       )}
-                      Header={() => (
-                        <div style={{
-                          display: 'flex',
-                          justifyContent: 'flex-end',
-                          alignItems: 'center',
-                          padding: '0 24px',
-                          height: '64px',
-                          backgroundColor: '#141414',
-                          borderBottom: '1px solid #303030',
-                        }}>
-                          <LanguageSwitcher />
-                        </div>
-                      )}
+                      Header={() => {
+                        const navigate = useNavigate();
+                        const userMenuItems: MenuProps['items'] = [
+                          {
+                            key: 'profile',
+                            icon: <SettingOutlined />,
+                            label: 'Профиль',
+                            onClick: () => navigate('/profile'),
+                          },
+                          { type: 'divider' },
+                          {
+                            key: 'logout',
+                            icon: <LogoutOutlined />,
+                            label: 'Выйти',
+                            danger: true,
+                            onClick: () => {
+                              localStorage.removeItem('access_token');
+                              window.location.href = '/login';
+                            },
+                          },
+                        ];
+
+                        return (
+                          <div style={{
+                            display: 'flex',
+                            justifyContent: 'flex-end',
+                            alignItems: 'center',
+                            padding: '0 24px',
+                            height: '64px',
+                            backgroundColor: '#141414',
+                            borderBottom: '1px solid #303030',
+                            gap: '16px',
+                          }}>
+                            <LanguageSwitcher />
+                            <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
+                              <Button type="text" icon={<UserOutlined />} style={{ color: '#fff' }}>
+                                Админ
+                              </Button>
+                            </Dropdown>
+                          </div>
+                        );
+                      }}
                       Footer={() => <Footer />}
                     >
                       <div style={{ paddingBottom: '40px' }}>
@@ -231,6 +264,8 @@ function App() {
                 <Route path="/ops">
                   <Route index element={<Ops />} />
                 </Route>
+
+                <Route path="/profile" element={<ProfilePage />} />
               </Route>
 
               <Route path="/login" element={<Login />} />

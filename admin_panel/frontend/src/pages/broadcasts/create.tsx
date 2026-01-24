@@ -64,25 +64,65 @@ export const BroadcastCreate = () => {
                 {(fields, { add, remove }) => (
                   <>
                     {fields.map(({ key, name, ...restField }) => (
-                      <Space key={key} style={{ display: 'flex', marginBottom: 8 }} align="start">
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'text']}
-                          rules={[{ required: true, message: 'Текст кнопки' }]}
-                        >
-                          <Input placeholder="Текст кнопки" style={{ width: 150 }} />
-                        </Form.Item>
-                        <Form.Item
-                          {...restField}
-                          name={[name, 'url']}
-                        >
-                          <Input placeholder="https://link.com" style={{ width: 280 }} />
-                        </Form.Item>
-                        <MinusCircleOutlined onClick={() => remove(name)} style={{ marginTop: 8 }} />
-                      </Space>
+                      <Card key={key} size="small" style={{ marginBottom: 8 }}>
+                        <Space direction="vertical" style={{ width: '100%' }}>
+                          <Space style={{ display: 'flex' }} align="start">
+                            <Form.Item
+                              {...restField}
+                              name={[name, 'text']}
+                              rules={[{ required: true, message: 'Текст кнопки' }]}
+                              style={{ marginBottom: 0 }}
+                            >
+                              <Input placeholder="Текст кнопки" style={{ width: 200 }} />
+                            </Form.Item>
+                            <Form.Item
+                              {...restField}
+                              name={[name, 'type']}
+                              style={{ marginBottom: 0 }}
+                              initialValue="url"
+                            >
+                              <Select style={{ width: 100 }}>
+                                <Select.Option value="url">URL</Select.Option>
+                                <Select.Option value="callback">Callback</Select.Option>
+                              </Select>
+                            </Form.Item>
+                            <MinusCircleOutlined onClick={() => remove(name)} style={{ marginTop: 8 }} />
+                          </Space>
+                          <Form.Item
+                            noStyle
+                            shouldUpdate={(prev, curr) =>
+                              prev.buttons?.[name]?.type !== curr.buttons?.[name]?.type
+                            }
+                          >
+                            {({ getFieldValue }) => {
+                              const btnType = getFieldValue(['buttons', name, 'type']) || 'url';
+                              return btnType === 'url' ? (
+                                <Form.Item
+                                  {...restField}
+                                  name={[name, 'url']}
+                                  style={{ marginBottom: 0 }}
+                                  rules={[{ required: true, message: 'Введите URL' }]}
+                                >
+                                  <Input placeholder="https://example.com" />
+                                </Form.Item>
+                              ) : (
+                                <Form.Item
+                                  {...restField}
+                                  name={[name, 'callback_data']}
+                                  style={{ marginBottom: 0 }}
+                                  rules={[{ required: true, message: 'Введите callback_data' }]}
+                                  extra="Данные для callback query (до 64 символов)"
+                                >
+                                  <Input placeholder="action:value" maxLength={64} />
+                                </Form.Item>
+                              );
+                            }}
+                          </Form.Item>
+                        </Space>
+                      </Card>
                     ))}
                     <Form.Item>
-                      <Button type="dashed" onClick={() => add()} block icon={<PlusOutlined />}>
+                      <Button type="dashed" onClick={() => add({ type: 'url' })} block icon={<PlusOutlined />}>
                         Добавить кнопку
                       </Button>
                     </Form.Item>

@@ -96,6 +96,62 @@ async def get_me(
     return current_user
 
 
+@router.patch("/me", response_model=AdminUserResponse)
+async def update_me(
+    email: str = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_user),
+):
+    """Update current user profile."""
+    if email:
+        # Check if email already used by another user
+        result = await db.execute(
+            select(AdminUser).where(
+                AdminUser.email == email,
+                AdminUser.id != current_user.id
+            )
+        )
+        if result.scalar_one_or_none():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already in use",
+            )
+        current_user.email = email
+
+    await db.flush()
+    await db.refresh(current_user)
+    return current_user
+
+
+@router.post("/me/password")
+async def change_password(
+    current_password: str,
+    new_password: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: AdminUser = Depends(get_current_user),
+):
+    """Change current user password."""
+    # Verify current password
+    if not verify_password(current_password, current_user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Current password is incorrect",
+        )
+
+    # Validate new password
+    if len(new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="New password must be at least 6 characters",
+        )
+
+    # Update password
+    current_user.password_hash = hash_password(new_password)
+    await db.flush()
+
+    return {"message": "Password changed successfully"}
+
+
 @router.post("/setup", response_model=AdminUserResponse)
 async def initial_setup(
     data: AdminUserCreate,

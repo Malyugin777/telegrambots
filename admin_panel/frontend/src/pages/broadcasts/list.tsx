@@ -17,6 +17,7 @@ import { useCustomMutation, useNavigation } from '@refinedev/core';
 import { useState } from 'react';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { ExportButton } from '../../components';
 
 interface Broadcast {
   id: number;
@@ -139,6 +140,7 @@ export const BroadcastList = () => {
         >
           Обновить
         </Button>
+        <ExportButton resource="broadcasts" filters={{ status: statusFilter }} />
       </Space>
 
       <Table {...tableProps} rowKey="id">

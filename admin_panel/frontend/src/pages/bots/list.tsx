@@ -14,6 +14,7 @@ import {
 } from '@ant-design/icons';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { ExportButton } from '../../components';
 
 interface Bot {
   id: number;
@@ -90,6 +91,7 @@ export const BotList = () => {
         >
           {t('common.refresh')}
         </Button>
+        <ExportButton resource="bots" />
       </Space>
 
       <Table {...tableProps} rowKey="id">

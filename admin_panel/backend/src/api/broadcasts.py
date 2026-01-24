@@ -19,6 +19,57 @@ from ..auth import get_current_user
 router = APIRouter()
 
 
+def build_segment_query(conditions: dict):
+    """
+    Build SQLAlchemy filter conditions from segment rules.
+
+    Supported conditions format:
+    {
+        "rules": [
+            {"field": "language_code", "op": "eq", "value": "ru"},
+            {"field": "is_banned", "op": "eq", "value": false}
+        ]
+    }
+
+    Supported operators: eq, ne, gt, gte, lt, lte, in, contains
+    """
+    filters = [User.is_blocked == False]  # Always exclude blocked users
+
+    rules = conditions.get("rules", [])
+    for rule in rules:
+        field_name = rule.get("field")
+        op = rule.get("op")
+        value = rule.get("value")
+
+        if not field_name or not op:
+            continue
+
+        # Get the column from User model
+        if not hasattr(User, field_name):
+            continue
+        column = getattr(User, field_name)
+
+        # Build filter based on operator
+        if op == "eq":
+            filters.append(column == value)
+        elif op == "ne":
+            filters.append(column != value)
+        elif op == "gt":
+            filters.append(column > value)
+        elif op == "gte":
+            filters.append(column >= value)
+        elif op == "lt":
+            filters.append(column < value)
+        elif op == "lte":
+            filters.append(column <= value)
+        elif op == "in" and isinstance(value, list):
+            filters.append(column.in_(value))
+        elif op == "contains" and isinstance(value, str):
+            filters.append(column.ilike(f"%{value}%"))
+
+    return filters
+
+
 async def count_recipients(
     db: AsyncSession,
     target_type: str,
@@ -37,10 +88,24 @@ async def count_recipients(
 
     elif target_type == "segment" and target_segment_id:
         segment = await db.get(Segment, target_segment_id)
-        if segment and segment.cached_count:
-            return segment.cached_count
-        # TODO: Calculate from conditions
-        return 0
+        if not segment:
+            return 0
+
+        # Build query from segment conditions
+        filters = build_segment_query(segment.conditions or {})
+        query = select(func.count(User.id))
+        for f in filters:
+            query = query.where(f)
+
+        result = await db.execute(query)
+        count = result.scalar() or 0
+
+        # Update cached count
+        segment.cached_count = count
+        segment.cached_at = datetime.utcnow()
+        await db.flush()
+
+        return count
 
     return 0
 

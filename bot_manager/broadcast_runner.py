@@ -70,8 +70,8 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
         # Распаковываем данные
         broadcast = dict(row._mapping)
 
-        if broadcast["status"] != "RUNNING":
-            logger.info(f"Broadcast {broadcast_id} is not running, skipping")
+        if broadcast["status"] != "running":
+            logger.info(f"Broadcast {broadcast_id} is not running (status={broadcast['status']}), skipping")
             return
 
         logger.info(f"Processing broadcast {broadcast_id}: {broadcast['name']}")
@@ -91,6 +91,18 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
             await session.commit()
 
         try:
+            # Получаем условия сегмента если target_type='segment'
+            segment_conditions = None
+            if broadcast.get("target_type") == "segment" and broadcast.get("target_segment_id"):
+                segment_result = await session.execute(
+                    text("SELECT conditions FROM segments WHERE id = :id"),
+                    {"id": broadcast["target_segment_id"]}
+                )
+                segment_row = segment_result.fetchone()
+                if segment_row:
+                    segment_conditions = segment_row[0]
+                    logger.info(f"Loaded segment conditions for broadcast {broadcast_id}")
+
             result = await worker.send_broadcast(
                 broadcast_id=broadcast_id,
                 text=broadcast["text"],
@@ -99,6 +111,7 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
                 buttons=broadcast.get("buttons"),
                 target_type=broadcast.get("target_type", "all"),
                 target_user_ids=broadcast.get("target_user_ids"),
+                segment_conditions=segment_conditions,
                 on_progress=update_progress,
             )
 
@@ -106,7 +119,7 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
             await session.execute(
                 text("""
                     UPDATE broadcasts
-                    SET status = 'COMPLETED',
+                    SET status = 'completed',
                         completed_at = :completed_at,
                         sent_count = :sent,
                         delivered_count = :delivered,
@@ -131,7 +144,7 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
             await session.execute(
                 text("""
                     UPDATE broadcasts
-                    SET status = 'CANCELLED', completed_at = :completed_at
+                    SET status = 'cancelled', completed_at = :completed_at
                     WHERE id = :id
                 """),
                 {"id": broadcast_id, "completed_at": datetime.utcnow()}
@@ -163,9 +176,9 @@ async def main():
                 async with async_session() as session:
                     from sqlalchemy import text
 
-                    # Находим рассылки со статусом RUNNING
+                    # Находим рассылки со статусом running (lowercase в БД)
                     result = await session.execute(
-                        text("SELECT id FROM broadcasts WHERE status = 'RUNNING' LIMIT 1")
+                        text("SELECT id FROM broadcasts WHERE status = 'running' LIMIT 1")
                     )
                     row = result.fetchone()
 
@@ -178,7 +191,7 @@ async def main():
                         result = await session.execute(
                             text("""
                                 SELECT id FROM broadcasts
-                                WHERE status = 'SCHEDULED'
+                                WHERE status = 'scheduled'
                                 AND scheduled_at <= NOW()
                                 LIMIT 1
                             """)
@@ -192,7 +205,7 @@ async def main():
                             await session.execute(
                                 text("""
                                     UPDATE broadcasts
-                                    SET status = 'RUNNING', started_at = NOW()
+                                    SET status = 'running', started_at = NOW()
                                     WHERE id = :id
                                 """),
                                 {"id": broadcast_id}

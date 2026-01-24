@@ -5,6 +5,7 @@ import { useUpdate, useCustom } from '@refinedev/core';
 import { useState } from 'react';
 import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
+import { ExportButton } from '../../components';
 
 interface FreeDownloader {
   id: number;
@@ -132,6 +133,10 @@ export const UserList = () => {
             >
               {t('common.refresh')}
             </Button>
+            <ExportButton
+              resource="users"
+              filters={{ role: roleFilter, is_banned: bannedFilter }}
+            />
           </Space>
 
           <Table {...tableProps} rowKey="id">

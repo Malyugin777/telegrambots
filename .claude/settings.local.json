@@ -124,7 +124,9 @@
       "Bash(ssh root@185.96.80.254 'docker exec admin_api python << \"\"PYEOF\"\"\nimport asyncio\nfrom sqlalchemy import text\nfrom sqlalchemy.ext.asyncio import create_async_engine, AsyncSession\nfrom passlib.hash import bcrypt\n\nasync def check():\n    engine = create_async_engine(\"\"postgresql+asyncpg://nexus:nexus_secure_pwd_2024@66.151.33.167:5432/nexus_db\"\")\n    async with AsyncSession(engine) as session:\n        result = await session.execute(text(\"\"SELECT username, password_hash FROM admin_users WHERE username = :u\"\"), {\"\"u\"\": \"\"admin\"\"})\n        row = result.fetchone()\n        if row:\n            username, phash = row\n            print(f\"\"User: {username}\"\")\n            print(f\"\"Hash: {phash[:30]}...\"\")\n            pwd1 = \"\"NexusAdmin2026!Secure\"\"\n            pwd2 = \"\"Admin123\"\"\n            print(f\"\"NexusAdmin2026!Secure works: {bcrypt.verify(pwd1, phash)}\"\")\n            print(f\"\"Admin123 works: {bcrypt.verify(pwd2, phash)}\"\")\n        else:\n            print(\"\"Admin not found\"\")\n    await engine.dispose()\n\nasyncio.run(check())\nPYEOF')",
       "Bash(ssh root@185.96.80.254 \"docker exec admin_api python -c \"\"from passlib.hash import bcrypt; print(bcrypt.hash(''Admin2026''))\"\"\")",
       "Bash(ssh -T root@66.151.33.167 \"docker exec nexus_postgres psql -U nexus -d nexus_db -c \"\"UPDATE admin_users SET password_hash = E''\\$2b\\$12\\$FsNhFdfD5k74dxnkzmgmfuz28YwIHAx4W8nYy6vJyCcpxei2Zwjyu'' WHERE username = ''admin'';\"\"\")",
-      "Bash(ssh root@185.96.80.254:*)"
+      "Bash(ssh root@185.96.80.254:*)",
+      "Bash(ssh -T root@66.151.33.167 \"docker exec nexus_postgres psql -U nexus -d nexus_db -c \"\"UPDATE admin_users SET password_hash = E''$2b$12$Hs3qLM36gMXu2OysheNE0ebk6tAJzxIk9D.kxg9sdVOxnBcNfXoaC'' WHERE username = ''admin'';\"\"\")",
+      "Bash(TOKEN=\"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIyIiwiZXhwIjoxNzY5Mzc0OTM3fQ.kZSEps5qXaQLeY5UIWxaygeE3SyzlwwdD9K22F_s4hQ\")"
     ]
   }
 }

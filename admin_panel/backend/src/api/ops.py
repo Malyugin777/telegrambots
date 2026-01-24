@@ -508,6 +508,22 @@ async def get_quota_status(
     social_burn_7d = social_burn_7d_result.scalar() or 0
     social_burn_rate_7d = round(social_burn_7d / 7, 1) if social_burn_7d else None
 
+    # Месячное использование RapidAPI (для расчёта remaining)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    social_month_result = await db.execute(
+        select(func.count(ActionLog.id)).where(
+            ActionLog.created_at >= month_start,
+            ActionLog.action == "download_success",
+            ActionLog.api_source == APISource.RAPIDAPI
+        )
+    )
+    social_month_usage = social_month_result.scalar() or 0
+
+    # Если API не отдаёт remaining - вычисляем из базы
+    if social_remaining is None and social_month_usage > 0:
+        limit = social_limit or SOCIAL_REQUESTS_LIMIT
+        social_remaining = max(0, limit - social_month_usage)
+
     # Forecasts для Social Download
     social_forecast_avg = None
     social_forecast_pess = None

@@ -36,7 +36,7 @@ class FlyerStatsResponse(BaseModel):
     monetization_rate_today: float  # % скачиваний с проверкой (ads + silent)
     ad_conversion_today: float  # % показов рекламы от проверок
 
-    # Топ качальщиков без рекламы (user_id, count)
+    # Топ халявщиков - подписались и качают без рекламы (user_id, silent_pass_count)
     top_free_downloaders: List[dict]
 
 router = APIRouter()
@@ -424,8 +424,8 @@ async def get_flyer_stats(
     total_downloads_today = 0
     total_downloads = 0
 
-    # Счётчик бесплатных скачиваний по юзерам
-    user_free_counts: dict[int, int] = {}
+    # Счётчик тихих проходов по юзерам (халявщики = подписались и качают бесплатно)
+    user_silent_counts: dict[int, int] = {}
 
     for row in result:
         details = row.details
@@ -453,15 +453,14 @@ async def get_flyer_stats(
             silent_passes_total += 1
             if is_today:
                 silent_passes_today += 1
+            # Считаем для топа халявщиков (подписались и качают без рекламы)
+            if user_id:
+                user_silent_counts[user_id] = user_silent_counts.get(user_id, 0) + 1
         else:
             # Бесплатное скачивание (не 10-е или honey period)
             free_downloads_total += 1
             if is_today:
                 free_downloads_today += 1
-
-            # Считаем для топа бесплатных качальщиков
-            if user_id:
-                user_free_counts[user_id] = user_free_counts.get(user_id, 0) + 1
 
     # === 3. Рассчитываем проценты ===
     # Процент монетизации = (ads + silent) / total * 100
@@ -472,8 +471,8 @@ async def get_flyer_stats(
     # (сколько % от проверок закончились показом рекламы)
     ad_conversion_today = (ads_shown_today / checks_today * 100) if checks_today > 0 else 0
 
-    # === 4. Топ 10 бесплатных качальщиков ===
-    top_users = sorted(user_free_counts.items(), key=lambda x: -x[1])[:10]
+    # === 4. Топ 10 халявщиков (подписались и качают без рекламы) ===
+    top_users = sorted(user_silent_counts.items(), key=lambda x: -x[1])[:10]
 
     top_free_downloaders = []
     if top_users:
@@ -491,7 +490,7 @@ async def get_flyer_stats(
                 "telegram_id": user.telegram_id if user else None,
                 "username": user.username if user else None,
                 "name": user.first_name if user else None,
-                "free_count": count,
+                "free_count": count,  # Количество тихих проходов
             })
 
     return FlyerStatsResponse(

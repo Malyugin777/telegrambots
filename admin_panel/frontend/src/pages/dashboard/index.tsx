@@ -366,100 +366,78 @@ export const Dashboard = () => {
             <Card
               title={
                 <span>
-                  <NotificationOutlined /> FlyerService (Каждое 10-е скачивание)
+                  <NotificationOutlined /> Реклама (каждое 10-е скачивание)
                 </span>
               }
             >
               <Row gutter={[16, 16]}>
                 {/* Сегодня */}
-                <Col xs={24} md={6}>
-                  <h4 style={{ marginBottom: '12px' }}>Сегодня</h4>
-                  <Statistic
-                    title="Всего скачиваний"
-                    value={flyerStats!.total_downloads_today}
-                    valueStyle={{ fontSize: '24px' }}
-                  />
-                  <div style={{ marginTop: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ color: '#52c41a' }}>Показано рекламы:</span>
-                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.ads_shown_today}</span>
+                <Col xs={24} sm={12} md={8}>
+                  <div style={{ background: '#1a1a2e', padding: '16px', borderRadius: '8px' }}>
+                    <h4 style={{ margin: '0 0 16px 0', color: '#fff' }}>Сегодня</h4>
+                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff', marginBottom: '16px' }}>
+                      {flyerStats!.total_downloads_today} <span style={{ fontSize: '14px', color: '#888' }}>скачиваний</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ color: '#1890ff' }}>Тихих проходов:</span>
-                      <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{flyerStats!.silent_passes_today}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Бесплатных:</span>
-                      <span style={{ color: '#888', fontWeight: 'bold' }}>{flyerStats!.free_downloads_today}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#52c41a' }}></span>
+                        <span style={{ color: '#888', flex: 1 }}>Предложено подписаться</span>
+                        <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.ads_shown_today}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#1890ff' }}></span>
+                        <span style={{ color: '#888', flex: 1 }}>Уже подписаны</span>
+                        <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{flyerStats!.silent_passes_today}</span>
+                      </div>
                     </div>
                   </div>
                 </Col>
 
                 {/* За всё время */}
-                <Col xs={24} md={6}>
-                  <h4 style={{ marginBottom: '12px' }}>За всё время</h4>
-                  <Statistic
-                    title="Всего скачиваний"
-                    value={flyerStats!.total_downloads}
-                    valueStyle={{ fontSize: '24px' }}
-                  />
-                  <div style={{ marginTop: '12px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ color: '#52c41a' }}>Показано рекламы:</span>
-                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.ads_shown_total}</span>
+                <Col xs={24} sm={12} md={8}>
+                  <div style={{ background: '#1a1a2e', padding: '16px', borderRadius: '8px' }}>
+                    <h4 style={{ margin: '0 0 16px 0', color: '#fff' }}>За всё время</h4>
+                    <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#fff', marginBottom: '16px' }}>
+                      {flyerStats!.total_downloads} <span style={{ fontSize: '14px', color: '#888' }}>скачиваний</span>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ color: '#1890ff' }}>Тихих проходов:</span>
-                      <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{flyerStats!.silent_passes_total}</span>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#888' }}>Бесплатных:</span>
-                      <span style={{ color: '#888', fontWeight: 'bold' }}>{flyerStats!.free_downloads_total}</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#52c41a' }}></span>
+                        <span style={{ color: '#888', flex: 1 }}>Предложено подписаться</span>
+                        <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.ads_shown_total}</span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#1890ff' }}></span>
+                        <span style={{ color: '#888', flex: 1 }}>Уже подписаны</span>
+                        <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{flyerStats!.silent_passes_total}</span>
+                      </div>
                     </div>
                   </div>
                 </Col>
 
-                {/* Конверсия */}
-                <Col xs={24} md={6}>
-                  <h4 style={{ marginBottom: '12px' }}>Конверсия (сегодня)</h4>
-                  <Statistic
-                    title="Монетизация"
-                    value={flyerStats!.monetization_rate_today}
-                    suffix="%"
-                    valueStyle={{ fontSize: '24px', color: '#722ed1' }}
-                  />
-                  <div style={{ marginTop: '8px', color: '#888', fontSize: '12px' }}>
-                    % проверок от скачиваний
-                  </div>
-                  <Statistic
-                    title="Показ рекламы"
-                    value={flyerStats!.ad_conversion_today}
-                    suffix="%"
-                    valueStyle={{ fontSize: '20px', color: '#52c41a' }}
-                    style={{ marginTop: '12px' }}
-                  />
-                  <div style={{ color: '#888', fontSize: '12px' }}>
-                    % рекламы от проверок
-                  </div>
-                </Col>
-
-                {/* Топ халявщиков */}
-                <Col xs={24} md={6}>
-                  <h4 style={{ marginBottom: '12px' }}>Топ халявщиков</h4>
-                  {flyerStats!.top_free_downloaders.length > 0 ? (
-                    <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
-                      {flyerStats!.top_free_downloaders.slice(0, 5).map((user, idx) => (
-                        <div key={user.user_id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ color: '#888', fontSize: '13px' }}>
-                            {idx + 1}. {user.username ? `@${user.username}` : user.name || `ID:${user.telegram_id}`}
-                          </span>
-                          <span style={{ color: '#faad14', fontWeight: 'bold' }}>{user.free_count}</span>
-                        </div>
-                      ))}
+                {/* Топ подписанных халявщиков */}
+                <Col xs={24} md={8}>
+                  <div style={{ background: '#1a1a2e', padding: '16px', borderRadius: '8px', height: '100%' }}>
+                    <h4 style={{ margin: '0 0 16px 0', color: '#fff' }}>Топ халявщиков</h4>
+                    <div style={{ color: '#888', fontSize: '12px', marginBottom: '12px' }}>
+                      Подписались и качают бесплатно
                     </div>
-                  ) : (
-                    <span style={{ color: '#888' }}>Нет данных</span>
-                  )}
+                    {flyerStats!.top_free_downloaders.length > 0 ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {flyerStats!.top_free_downloaders.slice(0, 5).map((user, idx) => (
+                          <div key={user.user_id} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: '#faad14', fontWeight: 'bold', width: '20px' }}>{idx + 1}.</span>
+                            <span style={{ color: '#ccc', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {user.username ? `@${user.username}` : user.name || `ID:${user.telegram_id}`}
+                            </span>
+                            <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{user.free_count}</span>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <span style={{ color: '#888' }}>Пока нет данных</span>
+                    )}
+                  </div>
                 </Col>
               </Row>
             </Card>

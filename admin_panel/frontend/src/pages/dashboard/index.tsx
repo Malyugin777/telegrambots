@@ -61,12 +61,20 @@ interface FlyerTopUser {
 }
 
 interface FlyerStatsData {
-  youtube_full_today: number;
-  youtube_full_free_today: number;
-  youtube_full_with_flyer_today: number;
-  youtube_full_total: number;
-  youtube_full_free_total: number;
-  youtube_full_with_flyer_total: number;
+  // Сегодня
+  ads_shown_today: number;
+  silent_passes_today: number;
+  free_downloads_today: number;
+  total_downloads_today: number;
+  // За всё время
+  ads_shown_total: number;
+  silent_passes_total: number;
+  free_downloads_total: number;
+  total_downloads: number;
+  // Проценты
+  monetization_rate_today: number;
+  ad_conversion_today: number;
+  // Топ
   top_free_downloaders: FlyerTopUser[];
 }
 
@@ -107,9 +115,8 @@ export const Dashboard = () => {
   const performance = performanceData?.data?.overall;
   const flyerStats = flyerStatsData?.data;
 
-  // Показываем FlyerService виджет только если есть данные С flyer_required
-  // (т.е. хотя бы одно скачивание с рекламой - значит сбор данных начался)
-  const hasFlyerData = flyerStats && flyerStats.youtube_full_with_flyer_total > 0;
+  // Показываем FlyerService виджет если есть скачивания
+  const hasFlyerData = flyerStats && flyerStats.total_downloads > 0;
 
   // Prepare chart data
   const lineData = [
@@ -352,66 +359,98 @@ export const Dashboard = () => {
         </Row>
       )}
 
-      {/* FlyerService Stats - только если есть данные с flyer_required */}
+      {/* FlyerService Stats (Mom's Strategy) */}
       {hasFlyerData && (
         <Row gutter={[16, 16]} style={{ marginTop: '16px' }}>
           <Col xs={24}>
             <Card
               title={
                 <span>
-                  <NotificationOutlined /> FlyerService (YouTube Full)
+                  <NotificationOutlined /> FlyerService (Каждое 10-е скачивание)
                 </span>
               }
             >
               <Row gutter={[16, 16]}>
                 {/* Сегодня */}
-                <Col xs={24} md={8}>
+                <Col xs={24} md={6}>
                   <h4 style={{ marginBottom: '12px' }}>Сегодня</h4>
                   <Statistic
-                    title="Всего YouTube Full"
-                    value={flyerStats!.youtube_full_today}
+                    title="Всего скачиваний"
+                    value={flyerStats!.total_downloads_today}
                     valueStyle={{ fontSize: '24px' }}
                   />
                   <div style={{ marginTop: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ color: '#faad14' }}>⚠️ Бесплатно (без рекламы):</span>
-                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats!.youtube_full_free_today}</span>
+                      <span style={{ color: '#52c41a' }}>Показано рекламы:</span>
+                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.ads_shown_today}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ color: '#1890ff' }}>Тихих проходов:</span>
+                      <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{flyerStats!.silent_passes_today}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#52c41a' }}>✅ С рекламой:</span>
-                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.youtube_full_with_flyer_today}</span>
+                      <span style={{ color: '#888' }}>Бесплатных:</span>
+                      <span style={{ color: '#888', fontWeight: 'bold' }}>{flyerStats!.free_downloads_today}</span>
                     </div>
                   </div>
                 </Col>
 
                 {/* За всё время */}
-                <Col xs={24} md={8}>
+                <Col xs={24} md={6}>
                   <h4 style={{ marginBottom: '12px' }}>За всё время</h4>
                   <Statistic
-                    title="Всего YouTube Full"
-                    value={flyerStats!.youtube_full_total}
+                    title="Всего скачиваний"
+                    value={flyerStats!.total_downloads}
                     valueStyle={{ fontSize: '24px' }}
                   />
                   <div style={{ marginTop: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                      <span style={{ color: '#faad14' }}>⚠️ Бесплатно:</span>
-                      <span style={{ color: '#faad14', fontWeight: 'bold' }}>{flyerStats!.youtube_full_free_total}</span>
+                      <span style={{ color: '#52c41a' }}>Показано рекламы:</span>
+                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.ads_shown_total}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                      <span style={{ color: '#1890ff' }}>Тихих проходов:</span>
+                      <span style={{ color: '#1890ff', fontWeight: 'bold' }}>{flyerStats!.silent_passes_total}</span>
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={{ color: '#52c41a' }}>✅ С рекламой:</span>
-                      <span style={{ color: '#52c41a', fontWeight: 'bold' }}>{flyerStats!.youtube_full_with_flyer_total}</span>
+                      <span style={{ color: '#888' }}>Бесплатных:</span>
+                      <span style={{ color: '#888', fontWeight: 'bold' }}>{flyerStats!.free_downloads_total}</span>
                     </div>
                   </div>
                 </Col>
 
-                {/* Топ бесплатных качальщиков */}
-                <Col xs={24} md={8}>
-                  <h4 style={{ marginBottom: '12px' }}>Топ бесплатных качальщиков</h4>
+                {/* Конверсия */}
+                <Col xs={24} md={6}>
+                  <h4 style={{ marginBottom: '12px' }}>Конверсия (сегодня)</h4>
+                  <Statistic
+                    title="Монетизация"
+                    value={flyerStats!.monetization_rate_today}
+                    suffix="%"
+                    valueStyle={{ fontSize: '24px', color: '#722ed1' }}
+                  />
+                  <div style={{ marginTop: '8px', color: '#888', fontSize: '12px' }}>
+                    % проверок от скачиваний
+                  </div>
+                  <Statistic
+                    title="Показ рекламы"
+                    value={flyerStats!.ad_conversion_today}
+                    suffix="%"
+                    valueStyle={{ fontSize: '20px', color: '#52c41a' }}
+                    style={{ marginTop: '12px' }}
+                  />
+                  <div style={{ color: '#888', fontSize: '12px' }}>
+                    % рекламы от проверок
+                  </div>
+                </Col>
+
+                {/* Топ халявщиков */}
+                <Col xs={24} md={6}>
+                  <h4 style={{ marginBottom: '12px' }}>Топ халявщиков</h4>
                   {flyerStats!.top_free_downloaders.length > 0 ? (
                     <div style={{ maxHeight: '150px', overflowY: 'auto' }}>
                       {flyerStats!.top_free_downloaders.slice(0, 5).map((user, idx) => (
                         <div key={user.user_id} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                          <span style={{ color: '#888' }}>
+                          <span style={{ color: '#888', fontSize: '13px' }}>
                             {idx + 1}. {user.username ? `@${user.username}` : user.name || `ID:${user.telegram_id}`}
                           </span>
                           <span style={{ color: '#faad14', fontWeight: 'bold' }}>{user.free_count}</span>

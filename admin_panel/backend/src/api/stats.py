@@ -19,18 +19,24 @@ from ..auth import get_current_user
 
 
 class FlyerStatsResponse(BaseModel):
-    """Статистика FlyerService."""
+    """Статистика FlyerService (Mom's Strategy)."""
     # Сегодня
-    youtube_full_today: int
-    youtube_full_free_today: int  # flyer_required = False
-    youtube_full_with_flyer_today: int  # flyer_required = True
+    ads_shown_today: int  # Показано рекламы (10-е скачивание, юзер НЕ подписан)
+    silent_passes_today: int  # Тихие проходы (10-е скачивание, юзер подписан)
+    free_downloads_today: int  # Бесплатные скачивания (не 10-е или honey period)
+    total_downloads_today: int  # Всего скачиваний
 
     # За всё время
-    youtube_full_total: int
-    youtube_full_free_total: int
-    youtube_full_with_flyer_total: int
+    ads_shown_total: int
+    silent_passes_total: int
+    free_downloads_total: int
+    total_downloads: int
 
-    # Топ бесплатных качальщиков (user_id, count)
+    # Процент монетизации
+    monetization_rate_today: float  # % скачиваний с проверкой (ads + silent)
+    ad_conversion_today: float  # % показов рекламы от проверок
+
+    # Топ качальщиков без рекламы (user_id, count)
     top_free_downloaders: List[dict]
 
 router = APIRouter()
@@ -382,27 +388,41 @@ async def get_flyer_stats(
     _=Depends(get_current_user),
 ):
     """
-    Статистика FlyerService - сколько YouTube Full скачано бесплатно vs с рекламой.
+    Статистика FlyerService (Mom's Strategy).
 
-    flyer_required в details:
-    - False = бесплатное скачивание (shorts, free period, или не YouTube Full)
-    - True = требовалась проверка Flyer (юзер подписан или видел рекламу)
+    Логика:
+    - flyer_ad_shown action = 10-е скачивание, юзер НЕ подписан, показали рекламу
+    - download_success + flyer_required=True = 10-е скачивание, юзер подписан (silent pass)
+    - download_success + flyer_required=False = бесплатное скачивание (не 10-е или honey period)
     """
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # Получаем все YouTube Full скачивания
+    # === 1. Считаем показы рекламы (flyer_ad_shown) ===
+    result = await db.execute(
+        select(func.count(ActionLog.id))
+        .where(ActionLog.action == "flyer_ad_shown", ActionLog.created_at >= today_start)
+    )
+    ads_shown_today = result.scalar() or 0
+
+    result = await db.execute(
+        select(func.count(ActionLog.id))
+        .where(ActionLog.action == "flyer_ad_shown")
+    )
+    ads_shown_total = result.scalar() or 0
+
+    # === 2. Считаем успешные скачивания ===
     result = await db.execute(
         select(ActionLog.details, ActionLog.user_id, ActionLog.created_at)
         .where(ActionLog.action == "download_success")
     )
 
     # Счётчики
-    youtube_full_today = 0
-    youtube_full_free_today = 0
-    youtube_full_with_flyer_today = 0
-    youtube_full_total = 0
-    youtube_full_free_total = 0
-    youtube_full_with_flyer_total = 0
+    silent_passes_today = 0
+    silent_passes_total = 0
+    free_downloads_today = 0
+    free_downloads_total = 0
+    total_downloads_today = 0
+    total_downloads = 0
 
     # Счётчик бесплатных скачиваний по юзерам
     user_free_counts: dict[int, int] = {}
@@ -412,41 +432,49 @@ async def get_flyer_stats(
         user_id = row.user_id
         created_at = row.created_at
 
-        if not details or not isinstance(details, dict):
-            continue
-
-        # Проверяем что это YouTube Full
-        platform = details.get('platform', '')
-        if platform != 'youtube_full':
-            continue
-
-        # Считаем общее количество
-        youtube_full_total += 1
+        total_downloads += 1
         is_today = created_at and created_at >= today_start
 
         if is_today:
-            youtube_full_today += 1
+            total_downloads_today += 1
+
+        if not details or not isinstance(details, dict):
+            # Нет details = старая запись, считаем как free
+            free_downloads_total += 1
+            if is_today:
+                free_downloads_today += 1
+            continue
 
         # Проверяем flyer_required
         flyer_required = details.get('flyer_required', False)
 
         if flyer_required:
-            youtube_full_with_flyer_total += 1
+            # 10-е скачивание, юзер был подписан (silent pass)
+            silent_passes_total += 1
             if is_today:
-                youtube_full_with_flyer_today += 1
+                silent_passes_today += 1
         else:
-            youtube_full_free_total += 1
+            # Бесплатное скачивание (не 10-е или honey period)
+            free_downloads_total += 1
             if is_today:
-                youtube_full_free_today += 1
+                free_downloads_today += 1
 
             # Считаем для топа бесплатных качальщиков
             if user_id:
                 user_free_counts[user_id] = user_free_counts.get(user_id, 0) + 1
 
-    # Топ 10 бесплатных качальщиков
+    # === 3. Рассчитываем проценты ===
+    # Процент монетизации = (ads + silent) / total * 100
+    checks_today = ads_shown_today + silent_passes_today
+    monetization_rate_today = (checks_today / total_downloads_today * 100) if total_downloads_today > 0 else 0
+
+    # Конверсия рекламы = ads / (ads + silent) * 100
+    # (сколько % от проверок закончились показом рекламы)
+    ad_conversion_today = (ads_shown_today / checks_today * 100) if checks_today > 0 else 0
+
+    # === 4. Топ 10 бесплатных качальщиков ===
     top_users = sorted(user_free_counts.items(), key=lambda x: -x[1])[:10]
 
-    # Получаем информацию о юзерах
     top_free_downloaders = []
     if top_users:
         user_ids = [u[0] for u in top_users]
@@ -467,11 +495,15 @@ async def get_flyer_stats(
             })
 
     return FlyerStatsResponse(
-        youtube_full_today=youtube_full_today,
-        youtube_full_free_today=youtube_full_free_today,
-        youtube_full_with_flyer_today=youtube_full_with_flyer_today,
-        youtube_full_total=youtube_full_total,
-        youtube_full_free_total=youtube_full_free_total,
-        youtube_full_with_flyer_total=youtube_full_with_flyer_total,
+        ads_shown_today=ads_shown_today,
+        silent_passes_today=silent_passes_today,
+        free_downloads_today=free_downloads_today,
+        total_downloads_today=total_downloads_today,
+        ads_shown_total=ads_shown_total,
+        silent_passes_total=silent_passes_total,
+        free_downloads_total=free_downloads_total,
+        total_downloads=total_downloads,
+        monetization_rate_today=round(monetization_rate_today, 1),
+        ad_conversion_today=round(ad_conversion_today, 1),
         top_free_downloaders=top_free_downloaders,
     )

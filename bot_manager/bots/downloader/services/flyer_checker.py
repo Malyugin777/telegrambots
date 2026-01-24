@@ -174,12 +174,18 @@ async def check_subscription(
 
         logger.info(f"[FLYER] User {telegram_id}: calling API check()...")
         result = await flyer.check(telegram_id, language_code=language_code, message=custom_message)
-        logger.info(f"[FLYER] User {telegram_id}: API returned skip={result}")
 
         if result:
-            logger.info(f"[FLYER] User {telegram_id}: subscribed (silent pass)")
+            # Юзер подписан — тихий проход
+            # Пробуем получить info для детализации (почему skip=True)
+            try:
+                info = await flyer.info(telegram_id)
+                attached_at = info.get('attached_at', 'unknown')
+                logger.info(f"[FLYER] User {telegram_id}: SILENT PASS (subscribed since {attached_at})")
+            except Exception:
+                logger.info(f"[FLYER] User {telegram_id}: SILENT PASS (subscribed)")
         else:
-            logger.info(f"[FLYER] User {telegram_id}: not subscribed, showing tasks")
+            logger.info(f"[FLYER] User {telegram_id}: AD SHOWN (not subscribed)")
 
         return result
     except Exception as e:

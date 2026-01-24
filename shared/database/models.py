@@ -98,8 +98,8 @@ class ActionLog(Base):
     __tablename__ = "action_logs"
 
     id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    bot_id = Column(Integer, ForeignKey("bots.id", ondelete="SET NULL"), nullable=True, index=True)
     action = Column(String(100), nullable=False, index=True)
     details = Column(JSON, nullable=True)
     created_at = Column(DateTime, server_default=func.now(), index=True)
@@ -114,6 +114,12 @@ class ActionLog(Base):
 
     user = relationship("User", back_populates="action_logs")
     bot = relationship("Bot", back_populates="action_logs")
+
+    # Composite indexes for optimized queries
+    __table_args__ = (
+        Index("idx_action_log_bot_action", "bot_id", "action"),  # For bot stats
+        Index("idx_action_log_user_action", "user_id", "action"),  # For user stats
+    )
 
 
 class AdminUser(Base):

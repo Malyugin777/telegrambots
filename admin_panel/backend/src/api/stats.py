@@ -121,38 +121,57 @@ async def get_load_chart(
     """
     Get load chart data for the last N days.
     Shows downloads and new users per day.
+    Optimized: 2 queries instead of 14 (7 days × 2 metrics).
     """
+    start_date = (datetime.utcnow() - timedelta(days=days - 1)).replace(
+        hour=0, minute=0, second=0, microsecond=0
+    )
+
+    # Downloads per day - single query with GROUP BY
+    result = await db.execute(
+        select(
+            func.date(ActionLog.created_at).label("date"),
+            func.count(ActionLog.id).label("count")
+        )
+        .where(
+            ActionLog.created_at >= start_date,
+            ActionLog.action == "download_success"
+        )
+        .group_by(func.date(ActionLog.created_at))
+        .order_by(func.date(ActionLog.created_at))
+    )
+    downloads_map = {str(row.date): row.count for row in result}
+
+    # New users per day - single query with GROUP BY
+    result = await db.execute(
+        select(
+            func.date(User.created_at).label("date"),
+            func.count(User.id).label("count")
+        )
+        .where(User.created_at >= start_date)
+        .group_by(func.date(User.created_at))
+        .order_by(func.date(User.created_at))
+    )
+    users_map = {str(row.date): row.count for row in result}
+
+    # Build response with all days (fill missing days with 0)
     downloads_data = []
     users_data = []
 
-    # Include today (i=0) through (days-1) days ago
     for i in range(days - 1, -1, -1):
-        day_start = (datetime.utcnow() - timedelta(days=i)).replace(
+        day = (datetime.utcnow() - timedelta(days=i)).replace(
             hour=0, minute=0, second=0, microsecond=0
         )
-        day_end = day_start + timedelta(days=1)
-        date_str = day_start.strftime("%Y-%m-%d")
+        date_str = day.strftime("%Y-%m-%d")
 
-        # Downloads per day
-        result = await db.execute(
-            select(func.count(ActionLog.id)).where(
-                ActionLog.created_at >= day_start,
-                ActionLog.created_at < day_end,
-                ActionLog.action == "download_success"
-            )
-        )
-        downloads_count = result.scalar() or 0
-        downloads_data.append(ChartDataPoint(date=date_str, value=downloads_count))
-
-        # New users per day
-        result = await db.execute(
-            select(func.count(User.id)).where(
-                User.created_at >= day_start,
-                User.created_at < day_end
-            )
-        )
-        users_count = result.scalar() or 0
-        users_data.append(ChartDataPoint(date=date_str, value=users_count))
+        downloads_data.append(ChartDataPoint(
+            date=date_str,
+            value=downloads_map.get(date_str, 0)
+        ))
+        users_data.append(ChartDataPoint(
+            date=date_str,
+            value=users_map.get(date_str, 0)
+        ))
 
     return LoadChartResponse(
         messages=downloads_data,  # Renamed to downloads in frontend
@@ -162,30 +181,45 @@ async def get_load_chart(
 
 @router.get("/platforms")
 async def get_platform_stats(
+    days: int = Query(90, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Get download statistics by platform."""
-    # Parse platform from details->info field
-    # Format: {"info": "video:instagram"} or {"info": "instagram:https://..."}
+    """
+    Get download statistics by platform.
+    Limited to last N days to prevent OOM (default 90 days).
+    """
+    start_date = datetime.utcnow() - timedelta(days=days)
 
-    # Count downloads by parsing the info field
-    # Не используем GROUP BY на JSON - получаем все записи и группируем в Python
+    # Try to use PostgreSQL JSON extraction for 'platform' field first
+    # Then fall back to parsing 'info' field for older records
     result = await db.execute(
         select(ActionLog.details)
-        .where(ActionLog.action == "download_success")
+        .where(
+            ActionLog.action == "download_success",
+            ActionLog.created_at >= start_date
+        )
     )
 
     platform_counts: dict[str, int] = {}
     for row in result:
         details = row[0]
-        if details and isinstance(details, dict) and 'info' in details:
+        if not details or not isinstance(details, dict):
+            continue
+
+        # Try direct 'platform' field first (newer format)
+        platform = details.get('platform')
+
+        # Fall back to parsing 'info' field (older format)
+        if not platform and 'info' in details:
             info = details['info']
             # Parse "video:instagram" -> "instagram"
             if ':' in info:
                 platform = info.split(':')[-1]  # Get last part after ':'
             else:
                 platform = info
+
+        if platform:
             platform_counts[platform] = platform_counts.get(platform, 0) + 1
 
     return {
@@ -198,12 +232,17 @@ async def get_platform_stats(
 
 @router.get("/performance", response_model=PerformanceResponse)
 async def get_performance_stats(
+    days: int = Query(30, ge=1, le=365),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Get performance metrics (download time, file size, speed) by platform."""
+    """
+    Get performance metrics (download time, file size, speed) by platform.
+    Limited to last N days to prevent OOM (default 30 days).
+    """
+    start_date = datetime.utcnow() - timedelta(days=days)
 
-    # Overall metrics
+    # Overall metrics (last N days)
     result = await db.execute(
         select(
             func.avg(ActionLog.download_time_ms).label('avg_time'),
@@ -212,7 +251,8 @@ async def get_performance_stats(
             func.count(ActionLog.id).label('total')
         ).where(
             ActionLog.action == "download_success",
-            ActionLog.download_time_ms.isnot(None)
+            ActionLog.download_time_ms.isnot(None),
+            ActionLog.created_at >= start_date
         )
     )
     row = result.first()
@@ -225,9 +265,7 @@ async def get_performance_stats(
         total_downloads=row.total or 0
     )
 
-    # Per-platform metrics
-    # Parse platform from details->info field
-    # Не используем GROUP BY на JSON - получаем все записи и группируем в Python
+    # Per-platform metrics (last N days)
     result = await db.execute(
         select(
             ActionLog.details,
@@ -236,35 +274,44 @@ async def get_performance_stats(
             ActionLog.download_speed_kbps
         ).where(
             ActionLog.action == "download_success",
-            ActionLog.download_time_ms.isnot(None)
+            ActionLog.download_time_ms.isnot(None),
+            ActionLog.created_at >= start_date
         )
     )
 
     platform_metrics: dict[str, dict] = {}
     for row in result:
         details = row.details
-        if details and isinstance(details, dict) and 'info' in details:
+        if not details or not isinstance(details, dict):
+            continue
+
+        # Try direct 'platform' field first (newer format)
+        platform = details.get('platform')
+
+        # Fall back to parsing 'info' field (older format)
+        if not platform and 'info' in details:
             info = details['info']
-            # Parse "video:instagram" -> "instagram"
             if ':' in info:
                 parts = info.split(':')
-                # Handle both "video:instagram" and "instagram:url"
                 platform = parts[1] if parts[1] not in ['http', 'https'] else parts[0]
             else:
                 platform = info
 
-            if platform not in platform_metrics:
-                platform_metrics[platform] = {
-                    'time': [],
-                    'size': [],
-                    'speed': [],
-                    'total': 0
-                }
+        if not platform:
+            continue
 
-            platform_metrics[platform]['time'].append(row.download_time_ms or 0)
-            platform_metrics[platform]['size'].append(row.file_size_bytes or 0)
-            platform_metrics[platform]['speed'].append(row.download_speed_kbps or 0)
-            platform_metrics[platform]['total'] += 1
+        if platform not in platform_metrics:
+            platform_metrics[platform] = {
+                'time': [],
+                'size': [],
+                'speed': [],
+                'total': 0
+            }
+
+        platform_metrics[platform]['time'].append(row.download_time_ms or 0)
+        platform_metrics[platform]['size'].append(row.file_size_bytes or 0)
+        platform_metrics[platform]['speed'].append(row.download_speed_kbps or 0)
+        platform_metrics[platform]['total'] += 1
 
     platforms = []
     for name, metrics in sorted(platform_metrics.items(), key=lambda x: -x[1]['total']):
@@ -291,74 +338,50 @@ async def get_api_usage(
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    """Get API usage statistics (RapidAPI, yt-dlp, Cobalt)."""
-
-    # Get today's start and month's start
+    """
+    Get API usage statistics (RapidAPI, yt-dlp, Cobalt).
+    Optimized: 2 queries instead of 6.
+    """
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
     month_start = datetime.utcnow().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
-    # RapidAPI usage
-    # Today
+    # Today's usage - single query with GROUP BY
     result = await db.execute(
-        select(func.count(ActionLog.id)).where(
+        select(
+            ActionLog.api_source,
+            func.count(ActionLog.id).label("count")
+        )
+        .where(
             ActionLog.created_at >= today_start,
-            ActionLog.api_source == APISource.RAPIDAPI,
-            ActionLog.action == "download_success"
+            ActionLog.action == "download_success",
+            ActionLog.api_source.isnot(None)
         )
+        .group_by(ActionLog.api_source)
     )
-    rapidapi_today = result.scalar() or 0
+    today_counts = {row.api_source: row.count for row in result}
 
-    # This month
+    # Month's usage - single query with GROUP BY
     result = await db.execute(
-        select(func.count(ActionLog.id)).where(
+        select(
+            ActionLog.api_source,
+            func.count(ActionLog.id).label("count")
+        )
+        .where(
             ActionLog.created_at >= month_start,
-            ActionLog.api_source == APISource.RAPIDAPI,
-            ActionLog.action == "download_success"
+            ActionLog.action == "download_success",
+            ActionLog.api_source.isnot(None)
         )
+        .group_by(ActionLog.api_source)
     )
-    rapidapi_month = result.scalar() or 0
+    month_counts = {row.api_source: row.count for row in result}
 
-    # yt-dlp usage
-    # Today
-    result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= today_start,
-            ActionLog.api_source == APISource.YTDLP,
-            ActionLog.action == "download_success"
-        )
-    )
-    ytdlp_today = result.scalar() or 0
-
-    # This month
-    result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= month_start,
-            ActionLog.api_source == APISource.YTDLP,
-            ActionLog.action == "download_success"
-        )
-    )
-    ytdlp_month = result.scalar() or 0
-
-    # Cobalt usage (optional)
-    # Today
-    result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= today_start,
-            ActionLog.api_source == APISource.COBALT,
-            ActionLog.action == "download_success"
-        )
-    )
-    cobalt_today = result.scalar() or 0
-
-    # This month
-    result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= month_start,
-            ActionLog.api_source == APISource.COBALT,
-            ActionLog.action == "download_success"
-        )
-    )
-    cobalt_month = result.scalar() or 0
+    # Extract counts for each API
+    rapidapi_today = today_counts.get(APISource.RAPIDAPI, 0)
+    rapidapi_month = month_counts.get(APISource.RAPIDAPI, 0)
+    ytdlp_today = today_counts.get(APISource.YTDLP, 0)
+    ytdlp_month = month_counts.get(APISource.YTDLP, 0)
+    cobalt_today = today_counts.get(APISource.COBALT, 0)
+    cobalt_month = month_counts.get(APISource.COBALT, 0)
 
     # RapidAPI limit: 6000 per month (hardcoded for now)
     rapidapi_limit = 6000
@@ -389,6 +412,7 @@ async def get_flyer_stats(
 ):
     """
     Статистика FlyerService (Mom's Strategy).
+    Optimized: SQL counts + limited Python processing.
 
     Логика:
     - flyer_ad_shown action = 10-е скачивание, юзер НЕ подписан, показали рекламу
@@ -397,81 +421,89 @@ async def get_flyer_stats(
     """
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # === 1. Считаем показы рекламы (flyer_ad_shown) ===
+    # === 1. SQL: Считаем показы рекламы (flyer_ad_shown) ===
     result = await db.execute(
-        select(func.count(ActionLog.id))
-        .where(ActionLog.action == "flyer_ad_shown", ActionLog.created_at >= today_start)
-    )
-    ads_shown_today = result.scalar() or 0
-
-    result = await db.execute(
-        select(func.count(ActionLog.id))
+        select(
+            func.count(ActionLog.id).filter(ActionLog.created_at >= today_start).label("today"),
+            func.count(ActionLog.id).label("total")
+        )
         .where(ActionLog.action == "flyer_ad_shown")
     )
-    ads_shown_total = result.scalar() or 0
+    row = result.first()
+    ads_shown_today = row.today or 0
+    ads_shown_total = row.total or 0
 
-    # === 2. Считаем успешные скачивания ===
+    # === 2. SQL: Общее количество скачиваний ===
     result = await db.execute(
-        select(ActionLog.details, ActionLog.user_id, ActionLog.created_at)
+        select(
+            func.count(ActionLog.id).filter(ActionLog.created_at >= today_start).label("today"),
+            func.count(ActionLog.id).label("total")
+        )
         .where(ActionLog.action == "download_success")
     )
+    row = result.first()
+    total_downloads_today = row.today or 0
+    total_downloads = row.total or 0
 
-    # Счётчики
+    # === 3. Python: Анализируем только СЕГОДНЯШНИЕ скачивания для details ===
+    result = await db.execute(
+        select(ActionLog.details, ActionLog.user_id)
+        .where(
+            ActionLog.action == "download_success",
+            ActionLog.created_at >= today_start
+        )
+    )
+
     silent_passes_today = 0
-    silent_passes_total = 0
     free_downloads_today = 0
-    free_downloads_total = 0
-    total_downloads_today = 0
-    total_downloads = 0
 
-    # Счётчик тихих проходов по юзерам (халявщики = подписались и качают бесплатно)
+    for row in result:
+        details = row.details
+        if not details or not isinstance(details, dict):
+            free_downloads_today += 1
+            continue
+
+        if details.get('flyer_required', False):
+            silent_passes_today += 1
+        else:
+            free_downloads_today += 1
+
+    # === 4. SQL: Топ халявщиков за последние 30 дней ===
+    # (Ограничиваем период чтобы не грузить всю историю)
+    last_30_days = datetime.utcnow() - timedelta(days=30)
+    result = await db.execute(
+        select(ActionLog.details, ActionLog.user_id)
+        .where(
+            ActionLog.action == "download_success",
+            ActionLog.created_at >= last_30_days
+        )
+    )
+
     user_silent_counts: dict[int, int] = {}
+    silent_passes_total = 0
+    free_downloads_total = 0
 
     for row in result:
         details = row.details
         user_id = row.user_id
-        created_at = row.created_at
-
-        total_downloads += 1
-        is_today = created_at and created_at >= today_start
-
-        if is_today:
-            total_downloads_today += 1
 
         if not details or not isinstance(details, dict):
-            # Нет details = старая запись, считаем как free
             free_downloads_total += 1
-            if is_today:
-                free_downloads_today += 1
             continue
 
-        # Проверяем flyer_required
-        flyer_required = details.get('flyer_required', False)
-
-        if flyer_required:
-            # 10-е скачивание, юзер был подписан (silent pass)
+        if details.get('flyer_required', False):
             silent_passes_total += 1
-            if is_today:
-                silent_passes_today += 1
-            # Считаем для топа халявщиков (подписались и качают без рекламы)
             if user_id:
                 user_silent_counts[user_id] = user_silent_counts.get(user_id, 0) + 1
         else:
-            # Бесплатное скачивание (не 10-е или honey period)
             free_downloads_total += 1
-            if is_today:
-                free_downloads_today += 1
 
-    # === 3. Рассчитываем проценты ===
-    # Процент монетизации = (ads + silent) / total * 100
+    # === 5. Рассчитываем проценты ===
     checks_today = ads_shown_today + silent_passes_today
     monetization_rate_today = (checks_today / total_downloads_today * 100) if total_downloads_today > 0 else 0
-
-    # Конверсия рекламы = ads / (ads + silent) * 100
-    # (сколько % от проверок закончились показом рекламы)
     ad_conversion_today = (ads_shown_today / checks_today * 100) if checks_today > 0 else 0
 
-    # === 4. Топ 10 халявщиков (подписались и качают без рекламы) ===
+    # === 6. Топ 10 халявщиков ===
     top_users = sorted(user_silent_counts.items(), key=lambda x: -x[1])[:10]
 
     top_free_downloaders = []
@@ -490,7 +522,7 @@ async def get_flyer_stats(
                 "telegram_id": user.telegram_id if user else None,
                 "username": user.username if user else None,
                 "name": user.first_name if user else None,
-                "free_count": count,  # Количество тихих проходов
+                "free_count": count,
             })
 
     return FlyerStatsResponse(

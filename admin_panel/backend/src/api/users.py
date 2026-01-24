@@ -51,55 +51,87 @@ async def list_users(
     """List all telegram users with pagination and filtering."""
     from ..models import BotUser
 
-    query = select(User)
+    # Base filter conditions
+    conditions = []
+    join_bot_user = False
 
     # Filter by bot
     if bot_id:
-        query = query.join(BotUser, User.id == BotUser.user_id).where(BotUser.bot_id == bot_id)
+        join_bot_user = True
+        conditions.append(BotUser.bot_id == bot_id)
 
     # Apply filters
     if role:
-        query = query.where(User.role == role)
+        conditions.append(User.role == role)
     if is_banned is not None:
-        query = query.where(User.is_banned == is_banned)
+        conditions.append(User.is_banned == is_banned)
     if search:
-        query = query.where(
+        conditions.append(
             User.username.ilike(f"%{search}%") |
             User.first_name.ilike(f"%{search}%") |
             User.telegram_id.cast(str).ilike(f"%{search}%")
         )
 
     # Get total count
-    count_query = select(func.count()).select_from(query.subquery())
+    count_query = select(func.count(User.id))
+    if join_bot_user:
+        count_query = count_query.join(BotUser, User.id == BotUser.user_id)
+    for cond in conditions:
+        count_query = count_query.where(cond)
     result = await db.execute(count_query)
     total = result.scalar() or 0
 
-    # Apply pagination
-    query = query.offset((page - 1) * page_size).limit(page_size)
+    # Subquery for downloads count (optimized - single query with GROUP BY)
+    downloads_subq = (
+        select(ActionLog.user_id, func.count(ActionLog.id).label("downloads_count"))
+        .where(ActionLog.action == "download_success")
+        .group_by(ActionLog.user_id)
+        .subquery()
+    )
+
+    # Main query with LEFT JOIN - one query instead of N+1
+    query = (
+        select(
+            User,
+            func.coalesce(downloads_subq.c.downloads_count, 0).label("downloads_count"),
+        )
+        .outerjoin(downloads_subq, User.id == downloads_subq.c.user_id)
+    )
+
+    # Join BotUser if filtering by bot
+    if join_bot_user:
+        query = query.join(BotUser, User.id == BotUser.user_id)
+
+    # Apply filters
+    for cond in conditions:
+        query = query.where(cond)
+
+    # Apply pagination and order
     query = query.order_by(User.created_at.desc())
+    query = query.offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
-    users = result.scalars().all()
+    rows = result.all()
 
-    # Enrich with downloads count
+    # Build response - no additional queries needed
     users_data = []
-    for user in users:
-        downloads_count = await get_user_downloads_count(db, user.id)
-        user_dict = {
-            "id": user.id,
-            "telegram_id": user.telegram_id,
-            "username": user.username,
-            "first_name": user.first_name,
-            "last_name": user.last_name,
-            "language_code": user.language_code,
-            "role": user.role,
-            "is_banned": user.is_banned,
-            "ban_reason": user.ban_reason,
-            "created_at": user.created_at,
-            "last_active_at": user.last_active_at,
-            "downloads_count": downloads_count,
-        }
-        users_data.append(UserResponse(**user_dict))
+    for row in rows:
+        user = row[0]
+        downloads_count = row[1]
+        users_data.append(UserResponse(
+            id=user.id,
+            telegram_id=user.telegram_id,
+            username=user.username,
+            first_name=user.first_name,
+            last_name=user.last_name,
+            language_code=user.language_code,
+            role=user.role,
+            is_banned=user.is_banned,
+            ban_reason=user.ban_reason,
+            created_at=user.created_at,
+            last_active_at=user.last_active_at,
+            downloads_count=downloads_count,
+        ))
 
     return UserListResponse(
         data=users_data,

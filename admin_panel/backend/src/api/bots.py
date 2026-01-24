@@ -51,47 +51,78 @@ async def list_bots(
     _=Depends(get_current_user),
 ):
     """List all bots with pagination and filtering."""
-    query = select(Bot)
-
-    # Apply filters
+    # Base filter conditions
+    conditions = []
     if status_filter:
-        query = query.where(Bot.status == status_filter)
+        conditions.append(Bot.status == status_filter)
     if search:
-        query = query.where(
+        conditions.append(
             Bot.name.ilike(f"%{search}%") | Bot.username.ilike(f"%{search}%")
         )
 
     # Get total count
-    count_query = select(func.count()).select_from(query.subquery())
+    count_query = select(func.count(Bot.id))
+    for cond in conditions:
+        count_query = count_query.where(cond)
     result = await db.execute(count_query)
     total = result.scalar() or 0
 
-    # Apply pagination
-    query = query.offset((page - 1) * page_size).limit(page_size)
+    # Subqueries for stats (optimized - single query with GROUP BY)
+    users_subq = (
+        select(BotUser.bot_id, func.count(BotUser.id).label("users_count"))
+        .group_by(BotUser.bot_id)
+        .subquery()
+    )
+
+    downloads_subq = (
+        select(ActionLog.bot_id, func.count(ActionLog.id).label("downloads_count"))
+        .where(ActionLog.action == "download_success")
+        .group_by(ActionLog.bot_id)
+        .subquery()
+    )
+
+    # Main query with LEFT JOINs - one query instead of N+1
+    query = (
+        select(
+            Bot,
+            func.coalesce(users_subq.c.users_count, 0).label("users_count"),
+            func.coalesce(downloads_subq.c.downloads_count, 0).label("downloads_count"),
+        )
+        .outerjoin(users_subq, Bot.id == users_subq.c.bot_id)
+        .outerjoin(downloads_subq, Bot.id == downloads_subq.c.bot_id)
+    )
+
+    # Apply filters
+    for cond in conditions:
+        query = query.where(cond)
+
+    # Apply pagination and order
     query = query.order_by(Bot.created_at.desc())
+    query = query.offset((page - 1) * page_size).limit(page_size)
 
     result = await db.execute(query)
-    bots = result.scalars().all()
+    rows = result.all()
 
-    # Enrich with stats
+    # Build response - no additional queries needed
     bots_data = []
-    for bot in bots:
-        users_count, downloads_count = await get_bot_stats(db, bot.id)
-        bot_dict = {
-            "id": bot.id,
-            "name": bot.name,
-            "username": bot.username,
-            "description": bot.description,
-            "webhook_url": bot.webhook_url,
-            "status": bot.status,
-            "settings": bot.settings,
-            "token_hash": bot.token_hash,
-            "created_at": bot.created_at,
-            "updated_at": bot.updated_at,
-            "users_count": users_count,
-            "downloads_count": downloads_count,
-        }
-        bots_data.append(BotResponse(**bot_dict))
+    for row in rows:
+        bot = row[0]
+        users_count = row[1]
+        downloads_count = row[2]
+        bots_data.append(BotResponse(
+            id=bot.id,
+            name=bot.name,
+            username=bot.username,
+            description=bot.description,
+            webhook_url=bot.webhook_url,
+            status=bot.status,
+            settings=bot.settings,
+            token_hash=bot.token_hash,
+            created_at=bot.created_at,
+            updated_at=bot.updated_at,
+            users_count=users_count,
+            downloads_count=downloads_count,
+        ))
 
     return BotListResponse(
         data=bots_data,

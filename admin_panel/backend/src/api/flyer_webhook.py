@@ -86,9 +86,3 @@ async def flyer_webhook_events():
         "events": _recent_events[-20:],  # Last 20 events
         "total": len(_recent_events)
     }
-
-
-@router.get("")
-async def flyer_webhook_check():
-    """Health check for webhook endpoint."""
-    return {"status": "ok", "message": "FlyerService webhook is active"}

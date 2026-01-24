@@ -157,12 +157,17 @@ async def get_platforms_stats(
     Статистика по платформам или подтипам (bucket):
     - group_by=platform: youtube, instagram, tiktok, pinterest
     - group_by=bucket: youtube:shorts, youtube:full, instagram:reel, etc.
+
+    Limited to 10000 records to prevent OOM.
     """
     hours = parse_range(range)
     since = datetime.utcnow() - timedelta(hours=hours)
     use_bucket = group_by == "bucket"
 
-    # Получаем все download_success и download_error записи за период
+    # Limit records to prevent OOM (10k should be enough for statistics)
+    MAX_RECORDS = 10000
+
+    # Получаем download_success записи за период (с лимитом)
     success_result = await db.execute(
         select(
             ActionLog.details,
@@ -172,14 +177,14 @@ async def get_platforms_stats(
         ).where(
             ActionLog.created_at >= since,
             ActionLog.action == "download_success"
-        )
+        ).order_by(ActionLog.created_at.desc()).limit(MAX_RECORDS)
     )
 
     error_result = await db.execute(
         select(ActionLog.details).where(
             ActionLog.created_at >= since,
             ActionLog.action == "download_error"
-        )
+        ).order_by(ActionLog.created_at.desc()).limit(MAX_RECORDS)
     )
 
     # Группируем по платформам (или platform:bucket)
@@ -287,11 +292,15 @@ async def get_providers_stats(
     GET /api/v1/ops/providers?range=24h
 
     Статистика по провайдерам: success_rate, p95_total_ms, avg_speed, errors_by_class
+    Limited to 10000 records to prevent OOM.
     """
     hours = parse_range(range)
     since = datetime.utcnow() - timedelta(hours=hours)
 
-    # Успешные загрузки по провайдерам (включая details для download_host)
+    # Limit records to prevent OOM
+    MAX_RECORDS = 10000
+
+    # Успешные загрузки по провайдерам
     success_result = await db.execute(
         select(
             ActionLog.api_source,
@@ -303,7 +312,7 @@ async def get_providers_stats(
             ActionLog.created_at >= since,
             ActionLog.action == "download_success",
             ActionLog.api_source.isnot(None)
-        ).order_by(ActionLog.created_at.desc())
+        ).order_by(ActionLog.created_at.desc()).limit(MAX_RECORDS)
     )
 
     # Ошибки
@@ -315,7 +324,7 @@ async def get_providers_stats(
         ).where(
             ActionLog.created_at >= since,
             ActionLog.action == "download_error"
-        ).order_by(ActionLog.created_at.desc())
+        ).order_by(ActionLog.created_at.desc()).limit(MAX_RECORDS)
     )
 
     provider_data: dict = {}
@@ -450,7 +459,7 @@ async def get_quota_status(
     GET /api/v1/ops/quota
 
     Текущий остаток квоты по API + прогноз дней.
-    Данные берутся из последнего quota_snapshot в action_logs.details.quota
+    Optimized: Combined COUNT queries.
     """
     import os
 
@@ -461,12 +470,34 @@ async def get_quota_status(
     SAVENOW_PLAN_NAME = os.getenv("SAVENOW_PLAN_NAME", "Pro")
 
     now = datetime.utcnow()
+    since_24h = now - timedelta(hours=24)
+    since_7d = now - timedelta(days=7)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
     apis = []
 
-    # === 1. Social Download All In One (Instagram, TikTok, Pinterest) ===
-    # Ищем последнюю запись с quota в details для RAPIDAPI
+    # === Combined query for RAPIDAPI burn rates ===
+    # Single query with conditional counts instead of 3 separate queries
+    result = await db.execute(
+        select(
+            func.count(ActionLog.id).filter(ActionLog.created_at >= since_24h).label("burn_24h"),
+            func.count(ActionLog.id).filter(ActionLog.created_at >= since_7d).label("burn_7d"),
+            func.count(ActionLog.id).filter(ActionLog.created_at >= month_start).label("month_usage")
+        )
+        .where(
+            ActionLog.action == "download_success",
+            ActionLog.api_source == APISource.RAPIDAPI
+        )
+    )
+    row = result.first()
+    social_burn_24h = row.burn_24h or 0
+    social_burn_7d = row.burn_7d or 0
+    social_month_usage = row.month_usage or 0
+    social_burn_rate_7d = round(social_burn_7d / 7, 1) if social_burn_7d else None
+
+    # === Get latest quota info from RAPIDAPI ===
     social_result = await db.execute(
-        select(ActionLog.details, ActionLog.created_at)
+        select(ActionLog.details)
         .where(
             ActionLog.action == "download_success",
             ActionLog.api_source == APISource.RAPIDAPI
@@ -485,39 +516,6 @@ async def get_quota_status(
         social_remaining = quota.get("requests_remaining") if quota else None
         social_limit = quota.get("requests_limit") if quota else None
         social_reset = quota.get("requests_reset_sec") if quota else None
-
-    # burn_rate для Social Download
-    since_24h = now - timedelta(hours=24)
-    social_burn_result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= since_24h,
-            ActionLog.action == "download_success",
-            ActionLog.api_source == APISource.RAPIDAPI
-        )
-    )
-    social_burn_24h = social_burn_result.scalar() or 0
-
-    since_7d = now - timedelta(days=7)
-    social_burn_7d_result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= since_7d,
-            ActionLog.action == "download_success",
-            ActionLog.api_source == APISource.RAPIDAPI
-        )
-    )
-    social_burn_7d = social_burn_7d_result.scalar() or 0
-    social_burn_rate_7d = round(social_burn_7d / 7, 1) if social_burn_7d else None
-
-    # Месячное использование RapidAPI (для расчёта remaining)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    social_month_result = await db.execute(
-        select(func.count(ActionLog.id)).where(
-            ActionLog.created_at >= month_start,
-            ActionLog.action == "download_success",
-            ActionLog.api_source == APISource.RAPIDAPI
-        )
-    )
-    social_month_usage = social_month_result.scalar() or 0
 
     # Если API не отдаёт remaining - вычисляем из базы
     if social_remaining is None and social_month_usage > 0:
@@ -549,9 +547,8 @@ async def get_quota_status(
     ))
 
     # === 2. SaveNow / YouTube Info & Download API ===
-    # SaveNow использует units (токены), а не requests. Длинные видео = больше токенов.
     savenow_result = await db.execute(
-        select(ActionLog.details, ActionLog.created_at)
+        select(ActionLog.details)
         .where(
             ActionLog.action == "download_success",
             ActionLog.api_source == APISource.SAVENOW
@@ -569,14 +566,11 @@ async def get_quota_status(
         units_remaining = quota.get("units_remaining") if quota else None
         units_reset = quota.get("units_reset_sec") if quota else None
 
-    # Для SaveNow считаем использованные токены из квоты, а не количество скачиваний
-    # used_this_month = limit - remaining (точные данные из API)
+    # Для SaveNow: used = limit - remaining
     units_used_month = None
     if units_remaining is not None:
         units_used_month = SAVENOW_UNITS_LIMIT - units_remaining
 
-    # Прогноз: сколько % квоты используем к концу месяца
-    # Показываем текущий % использования (точные данные из API)
     savenow_current_percent = None
     if units_used_month is not None:
         savenow_current_percent = round((units_used_month / SAVENOW_UNITS_LIMIT) * 100, 2)
@@ -586,12 +580,11 @@ async def get_quota_status(
         plan=SAVENOW_PLAN_NAME,
         units_remaining=units_remaining,
         units_limit=SAVENOW_UNITS_LIMIT,
-        requests_remaining=None,  # SaveNow не использует requests, только units
+        requests_remaining=None,
         reset_hours=round(units_reset / 3600, 1) if units_reset else None,
-        # burn_rate_24h для SaveNow = использовано токенов за месяц
         burn_rate_24h=float(units_used_month) if units_used_month else None,
         burn_rate_7d=None,
-        forecast_average=savenow_current_percent,  # текущий % использования
+        forecast_average=savenow_current_percent,
         forecast_pessimistic=None
     ))
 

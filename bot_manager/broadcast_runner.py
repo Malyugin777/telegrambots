@@ -70,7 +70,8 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
         # Распаковываем данные
         broadcast = dict(row._mapping)
 
-        if broadcast["status"] != "running":
+        # Status в БД хранится в UPPERCASE (enum PostgreSQL)
+        if broadcast["status"] != "RUNNING":
             logger.info(f"Broadcast {broadcast_id} is not running (status={broadcast['status']}), skipping")
             return
 
@@ -119,7 +120,7 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
             await session.execute(
                 text("""
                     UPDATE broadcasts
-                    SET status = 'completed',
+                    SET status = 'COMPLETED',
                         completed_at = :completed_at,
                         sent_count = :sent,
                         delivered_count = :delivered,
@@ -144,7 +145,7 @@ async def process_broadcast(bot: Bot, broadcast_id: int):
             await session.execute(
                 text("""
                     UPDATE broadcasts
-                    SET status = 'cancelled', completed_at = :completed_at
+                    SET status = 'CANCELLED', completed_at = :completed_at
                     WHERE id = :id
                 """),
                 {"id": broadcast_id, "completed_at": datetime.utcnow()}
@@ -176,9 +177,9 @@ async def main():
                 async with async_session() as session:
                     from sqlalchemy import text
 
-                    # Находим рассылки со статусом running (lowercase в БД)
+                    # Находим рассылки со статусом RUNNING (uppercase в PostgreSQL enum)
                     result = await session.execute(
-                        text("SELECT id FROM broadcasts WHERE status = 'running' LIMIT 1")
+                        text("SELECT id FROM broadcasts WHERE status = 'RUNNING' LIMIT 1")
                     )
                     row = result.fetchone()
 
@@ -191,7 +192,7 @@ async def main():
                         result = await session.execute(
                             text("""
                                 SELECT id FROM broadcasts
-                                WHERE status = 'scheduled'
+                                WHERE status = 'SCHEDULED'
                                 AND scheduled_at <= NOW()
                                 LIMIT 1
                             """)
@@ -205,7 +206,7 @@ async def main():
                             await session.execute(
                                 text("""
                                     UPDATE broadcasts
-                                    SET status = 'running', started_at = NOW()
+                                    SET status = 'RUNNING', started_at = NOW()
                                     WHERE id = :id
                                 """),
                                 {"id": broadcast_id}

@@ -98,14 +98,20 @@ class VideoDownloader:
 
         # Для TikTok предпочитаем H.264 (лучше совместимость с Telegram)
         is_tiktok = 'tiktok' in url.lower()
-        # Для YouTube полных видео ограничиваем качество 720p для меньшего размера
-        is_youtube_full = ('youtube.com' in url.lower() or 'youtu.be' in url.lower()) and '/shorts/' not in url.lower()
+        # YouTube: определяем Shorts vs Full
+        is_youtube = 'youtube.com' in url.lower() or 'youtu.be' in url.lower()
+        is_youtube_shorts = is_youtube and '/shorts/' in url.lower()
+        is_youtube_full = is_youtube and not is_youtube_shorts
         # Для Pinterest пробуем все форматы (HLS, mp4, любые)
         is_pinterest = 'pinterest' in url.lower() or 'pin.it' in url.lower()
 
         if is_tiktok:
             # H.264 форматы для TikTok (без проблем с SAR)
             format_string = 'best[ext=mp4][vcodec^=avc]/best[ext=mp4][vcodec^=h264]/best[ext=mp4]/best'
+        elif is_youtube_shorts:
+            # YouTube Shorts - adaptive 720p (combined streams только 360p!)
+            # Shorts обычно вертикальные 1080x1920 или 720x1280
+            format_string = 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=1080]+bestaudio'
         elif is_youtube_full:
             # YouTube полные видео - ТОЛЬКО adaptive 720p (video+audio раздельно)
             # НЕ используем combined streams (best) - они только до 360p
@@ -141,8 +147,7 @@ class VideoDownloader:
             'geo_bypass': True,
             'buffersize': 1024 * 64,  # 64KB буфер
 
-            # YouTube: для Shorts используем ios клиент (быстрые готовые mp4)
-            # Для Full НЕ используем ios/android - они требуют PO Token и дают только 360p
+            # YouTube: дефолтные клиенты (переопределяются ниже для Shorts/Full)
             'extractor_args': {
                 'youtube': {'player_client': ['ios', 'android']},
             },
@@ -152,6 +157,12 @@ class VideoDownloader:
         if is_tiktok:
             opts['impersonate'] = CHROME_TARGET
             opts['concurrent_fragment_downloads'] = 5
+
+        # Для YouTube Shorts: используем tv+web клиенты для adaptive форматов (720p/1080p)
+        # ios/android дают только combined 360p!
+        if is_youtube_shorts:
+            opts['extractor_args'] = {'youtube': {'player_client': ['tv', 'web']}}
+            logger.info(f"[YTDLP] Using tv+web clients for YouTube Shorts (adaptive 1080p)")
 
         # Для YouTube Full: используем несколько клиентов для надёжности
         if is_youtube_full:

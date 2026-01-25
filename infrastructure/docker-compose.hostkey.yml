@@ -1,0 +1,69 @@
+# Docker Compose for Hostkey server (bots only)
+# Connects to PostgreSQL and Redis on Aeza (185.96.80.254)
+
+services:
+  bot_manager:
+    build:
+      context: ..
+      dockerfile: bot_manager/Dockerfile
+    container_name: nexus_bot_manager
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override to connect to Aeza
+      - POSTGRES_HOST=185.96.80.254
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=nexus
+      - POSTGRES_PASSWORD=nexus_secure_pwd_2024
+      - POSTGRES_DB=nexus_db
+      - REDIS_HOST=185.96.80.254
+      - REDIS_PORT=6379
+    volumes:
+      - /tmp/downloads:/tmp/downloads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; r = redis.Redis(host='185.96.80.254'); r.ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  broadcast_worker:
+    build:
+      context: ..
+      dockerfile: bot_manager/Dockerfile.broadcast
+    container_name: nexus_broadcast_worker
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Override to connect to Aeza
+      - POSTGRES_HOST=185.96.80.254
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=nexus
+      - POSTGRES_PASSWORD=nexus_secure_pwd_2024
+      - POSTGRES_DB=nexus_db
+      - REDIS_HOST=185.96.80.254
+      - REDIS_PORT=6379
+    healthcheck:
+      test: ["CMD", "python", "-c", "import redis; r = redis.Redis(host='185.96.80.254'); r.ping()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  telegram_bot_api:
+    image: aiogram/telegram-bot-api:latest
+    container_name: telegram_bot_api
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_API_ID=611335
+      - TELEGRAM_API_HASH=d524b414d21f4d37f08684c1df41ac9c
+      - TELEGRAM_LOCAL=true
+    volumes:
+      - telegram_bot_api_data:/var/lib/telegram-bot-api
+    ports:
+      - "8081:8081"
+
+volumes:
+  telegram_bot_api_data:

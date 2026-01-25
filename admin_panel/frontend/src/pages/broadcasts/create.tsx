@@ -1,13 +1,19 @@
 import { Create, useForm, useSelect } from '@refinedev/antd';
-import { Form, Input, Select, DatePicker, Card, Row, Col, Divider, Button, Space } from 'antd';
-import { PlusOutlined, MinusCircleOutlined } from '@ant-design/icons';
+import { Form, Input, Select, DatePicker, Card, Row, Col, Divider, Button, Space, message } from 'antd';
+import { PlusOutlined, MinusCircleOutlined, SendOutlined } from '@ant-design/icons';
+import { useCreate, useCustomMutation, useNavigation } from '@refinedev/core';
 import dayjs from 'dayjs';
 import { useState } from 'react';
 import { ImageUpload } from '../../components';
 
 export const BroadcastCreate = () => {
-  const { formProps, saveButtonProps } = useForm();
+  const { formProps, saveButtonProps, form } = useForm();
   const [targetType, setTargetType] = useState('all');
+  const [sendingNow, setSendingNow] = useState(false);
+  const { list } = useNavigation();
+
+  const { mutateAsync: createBroadcast } = useCreate();
+  const { mutateAsync: startBroadcast } = useCustomMutation();
 
   const { selectProps: botSelectProps } = useSelect({
     resource: 'bots',
@@ -15,8 +21,55 @@ export const BroadcastCreate = () => {
     optionValue: 'id',
   });
 
+  const handleSaveAndSend = async () => {
+    try {
+      setSendingNow(true);
+      const values = await form.validateFields();
+
+      // Create broadcast
+      const result = await createBroadcast({
+        resource: 'broadcasts',
+        values,
+      });
+
+      const broadcastId = result.data?.id;
+      if (!broadcastId) {
+        throw new Error('Failed to create broadcast');
+      }
+
+      // Start broadcast
+      await startBroadcast({
+        url: `/broadcasts/${broadcastId}/start`,
+        method: 'post',
+        values: {},
+      });
+
+      message.success('Рассылка создана и запущена!');
+      list('broadcasts');
+    } catch (error: any) {
+      message.error(error?.message || 'Ошибка при создании рассылки');
+    } finally {
+      setSendingNow(false);
+    }
+  };
+
   return (
-    <Create saveButtonProps={saveButtonProps}>
+    <Create
+      saveButtonProps={saveButtonProps}
+      footerButtons={({ saveButtonProps: defaultSaveProps }) => (
+        <Space>
+          <Button {...defaultSaveProps}>Сохранить как черновик</Button>
+          <Button
+            type="primary"
+            icon={<SendOutlined />}
+            onClick={handleSaveAndSend}
+            loading={sendingNow}
+          >
+            Сохранить и отправить
+          </Button>
+        </Space>
+      )}
+    >
       <Form {...formProps} layout="vertical" initialValues={{ target_type: 'all' }}>
         <Row gutter={24}>
           <Col span={16}>

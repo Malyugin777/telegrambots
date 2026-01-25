@@ -22,7 +22,7 @@ jobs:
             cd /root/telegrambots
             git pull origin main
             cd infrastructure
-            docker compose up -d --build admin_api
+            docker compose -f docker-compose.aeza.yml up -d --build admin_api
             cd ../admin_panel/frontend
             npm ci
             npm run build

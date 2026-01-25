@@ -1,0 +1,27 @@
+# Docker Compose for Aeza server (admin panel only)
+# Connects to PostgreSQL and Redis on Hostkey (66.151.33.167)
+
+version: '3.8'
+
+services:
+  admin_api:
+    build:
+      context: ..
+      dockerfile: admin_panel/backend/Dockerfile
+    container_name: admin_api
+    restart: unless-stopped
+    environment:
+      # PostgreSQL on Hostkey
+      - POSTGRES_HOST=66.151.33.167
+      - POSTGRES_PORT=5432
+      - POSTGRES_USER=nexus
+      - POSTGRES_PASSWORD=nexus_secure_pwd_2024
+      - POSTGRES_DB=nexus_db
+      # Redis on Hostkey
+      - REDIS_URL_OVERRIDE=redis://66.151.33.167:6379/0
+      # JWT
+      - JWT_SECRET=super_secret_jwt_key_change_in_production_2024
+      # Production
+      - DEBUG=False
+    ports:
+      - "8000:8000"

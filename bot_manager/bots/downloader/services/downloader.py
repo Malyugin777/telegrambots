@@ -107,9 +107,10 @@ class VideoDownloader:
             # H.264 форматы для TikTok (без проблем с SAR)
             format_string = 'best[ext=mp4][vcodec^=avc]/best[ext=mp4][vcodec^=h264]/best[ext=mp4]/best'
         elif is_youtube_full:
-            # YouTube полные видео - макс 720p, используем adaptive (video+audio раздельно)
-            # best = combined (360p), bestvideo+bestaudio = adaptive (720p)
-            format_string = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio/best[height<=720][ext=mp4]/best'
+            # YouTube полные видео - ТОЛЬКО adaptive 720p (video+audio раздельно)
+            # НЕ используем combined streams (best) - они только до 360p
+            # Если adaptive недоступен - пусть yt-dlp fails и pytubefix возьмёт на себя
+            format_string = 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/bestvideo[height<=720]+bestaudio'
         elif is_pinterest:
             # Pinterest видео - пробуем все возможные форматы (HLS, mp4, webm)
             format_string = 'best[ext=mp4]/best[ext=webm]/bestvideo+bestaudio/best'

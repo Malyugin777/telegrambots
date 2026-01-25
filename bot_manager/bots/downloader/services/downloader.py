@@ -285,8 +285,13 @@ class VideoDownloader:
             if result.file_path and not result.is_photo:
                 # Rate limiting для ffmpeg процессов
                 if RATE_LIMITING_ENABLED:
-                    # Ожидаем освобождения слота (вместо отказа)
+                    # Ожидаем освобождения слота с таймаутом (макс 30 сек)
+                    ffmpeg_wait_start = asyncio.get_event_loop().time()
+                    ffmpeg_timeout = 30  # секунд
                     while not await acquire_ffmpeg_slot():
+                        if asyncio.get_event_loop().time() - ffmpeg_wait_start > ffmpeg_timeout:
+                            logger.warning("[FFMPEG] Timeout waiting for slot, proceeding anyway")
+                            break
                         await asyncio.sleep(0.5)  # Ждём 500ms и пробуем снова
 
                 try:

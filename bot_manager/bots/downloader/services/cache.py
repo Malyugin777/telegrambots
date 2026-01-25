@@ -103,6 +103,25 @@ async def close_redis():
 MAX_USER_DOWNLOADS = 2  # Макс одновременных скачиваний на юзера
 MAX_GLOBAL_FFMPEG = 5   # Макс одновременных ffmpeg процессов
 
+# Lua script для атомарного acquire слота (исправляет race condition)
+# Возвращает 1 если слот получен, 0 если лимит превышен
+ACQUIRE_SLOT_SCRIPT = """
+local key = KEYS[1]
+local max_slots = tonumber(ARGV[1])
+local ttl = tonumber(ARGV[2])
+
+local current = redis.call('GET', key)
+current = current and tonumber(current) or 0
+
+if current < max_slots then
+    redis.call('INCR', key)
+    redis.call('EXPIRE', key, ttl)
+    return 1
+else
+    return 0
+end
+"""
+
 
 async def check_user_limit(user_id: int) -> bool:
     """
@@ -123,7 +142,7 @@ async def check_user_limit(user_id: int) -> bool:
 
 async def acquire_user_slot(user_id: int) -> bool:
     """
-    Занять слот скачивания для юзера
+    Занять слот скачивания для юзера (атомарная операция через Lua script)
 
     Returns:
         True если слот получен, False если лимит превышен
@@ -132,15 +151,9 @@ async def acquire_user_slot(user_id: int) -> bool:
         r = await get_redis()
         key = f"downloads:user:{user_id}"
 
-        # Increment и проверяем
-        count = await r.incr(key)
-        await r.expire(key, 300)  # TTL 5 минут на случай сбоя
-
-        if count > MAX_USER_DOWNLOADS:
-            await r.decr(key)
-            return False
-
-        return True
+        # Атомарная операция через Lua script
+        result = await r.eval(ACQUIRE_SLOT_SCRIPT, 1, key, MAX_USER_DOWNLOADS, 300)
+        return result == 1
     except Exception as e:
         logger.warning(f"Acquire user slot error: {e}")
         return True
@@ -174,7 +187,7 @@ async def check_ffmpeg_limit() -> bool:
 
 async def acquire_ffmpeg_slot() -> bool:
     """
-    Занять слот ffmpeg процесса
+    Занять слот ffmpeg процесса (атомарная операция через Lua script)
 
     Returns:
         True если слот получен, False если лимит превышен
@@ -183,14 +196,9 @@ async def acquire_ffmpeg_slot() -> bool:
         r = await get_redis()
         key = "ffmpeg:active"
 
-        count = await r.incr(key)
-        await r.expire(key, 600)  # TTL 10 минут
-
-        if count > MAX_GLOBAL_FFMPEG:
-            await r.decr(key)
-            return False
-
-        return True
+        # Атомарная операция через Lua script
+        result = await r.eval(ACQUIRE_SLOT_SCRIPT, 1, key, MAX_GLOBAL_FFMPEG, 600)
+        return result == 1
     except Exception as e:
         logger.warning(f"Acquire ffmpeg slot error: {e}")
         return True

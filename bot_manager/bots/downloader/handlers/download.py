@@ -57,8 +57,8 @@ logger = logging.getLogger(__name__)
 # aiogram 3.24.0 НЕ поддерживает ClientTimeout в request_timeout (баг/ограничение)
 # Используем числовые таймауты (в секундах) вместо ClientTimeout
 # Local Bot API Server поддерживает до 2GB - увеличиваем таймауты
-TIMEOUT_DOCUMENT = 2700  # 45 минут для 2GB файлов
-TIMEOUT_VIDEO = 2700     # 45 минут для видео до 2GB (Local Bot API)
+TIMEOUT_DOCUMENT = 3600  # 60 минут для 2GB файлов
+TIMEOUT_VIDEO = 3600     # 60 минут для видео до 2GB (Local Bot API)
 TIMEOUT_PHOTO = 300      # 5 минут для фото
 TIMEOUT_CAROUSEL = 1200  # 20 минут для каруселей
 TIMEOUT_AUDIO = 600      # 10 минут для аудио
@@ -581,57 +581,60 @@ async def handle_url(message: types.Message):
     # Ops Dashboard: увеличиваем счётчик активных скачиваний
     await increment_active_downloads()
 
-    # Статус сообщение
-    status_msg = await message.answer(get_downloading_message())
-
-    # Данные о прогрессе скачивания (для обновления сообщения)
-    progress_data = {
-        'downloaded_bytes': 0,
-        'total_bytes': 0,
-        'speed': 0,
-        # Phase 7.0 Telemetry: stage breakdown
-        'first_byte_time': None,  # Время когда начали получать данные
-        'download_end_time': None,  # Время завершения скачивания
-    }
-
-    # Callback для прогресса yt-dlp
-    last_log_time = [0]  # Используем список чтобы изменять в замыкании
-    def progress_callback(d):
-        if d['status'] == 'downloading':
-            progress_data['downloaded_bytes'] = d.get('downloaded_bytes', 0)
-            progress_data['total_bytes'] = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
-            progress_data['speed'] = d.get('speed', 0)
-
-            # Phase 7.0 Telemetry: фиксируем момент первого байта
-            if progress_data['first_byte_time'] is None and progress_data['downloaded_bytes'] > 0:
-                progress_data['first_byte_time'] = time.time()
-
-            # Логируем прогресс раз в 60 секунд (для отладки)
-            now = time.time()
-            if now - last_log_time[0] >= 60:
-                downloaded_mb = progress_data['downloaded_bytes'] / (1024 * 1024)
-                total_mb = progress_data['total_bytes'] / (1024 * 1024) if progress_data['total_bytes'] else 0
-                speed_kbps = (progress_data['speed'] or 0) / 1024
-                logger.info(f"[PROGRESS] {downloaded_mb:.1f}MB / {total_mb:.1f}MB, speed={speed_kbps:.1f}KB/s")
-                last_log_time[0] = now
-
-        elif d['status'] == 'finished':
-            # Phase 7.0 Telemetry: фиксируем момент завершения скачивания
-            progress_data['download_end_time'] = time.time()
-
-    # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
-    download_start = time.time()
-
-    # Прогресс для долгих загрузок
-    done_event = asyncio.Event()
-    progress_task = asyncio.create_task(update_progress_message(status_msg, done_event, progress_data, download_start))
-
     # === ПЕРЕМЕННЫЕ ДЛЯ CLEANUP (инициализируем до try для доступа в finally) ===
     result = None  # Результат скачивания (содержит file_path)
     thumb_path = None  # Путь к thumbnail
     api_source = None  # Источник API для cleanup
+    status_msg = None  # Статус сообщение
+    progress_task = None  # Таск прогресса
+    done_event = None  # Событие для остановки прогресса
 
     try:
+        # Статус сообщение
+        status_msg = await message.answer(get_downloading_message())
+
+        # Данные о прогрессе скачивания (для обновления сообщения)
+        progress_data = {
+            'downloaded_bytes': 0,
+            'total_bytes': 0,
+            'speed': 0,
+            # Phase 7.0 Telemetry: stage breakdown
+            'first_byte_time': None,  # Время когда начали получать данные
+            'download_end_time': None,  # Время завершения скачивания
+        }
+
+        # Callback для прогресса yt-dlp
+        last_log_time = [0]  # Используем список чтобы изменять в замыкании
+        def progress_callback(d):
+            if d['status'] == 'downloading':
+                progress_data['downloaded_bytes'] = d.get('downloaded_bytes', 0)
+                progress_data['total_bytes'] = d.get('total_bytes') or d.get('total_bytes_estimate', 0)
+                progress_data['speed'] = d.get('speed', 0)
+
+                # Phase 7.0 Telemetry: фиксируем момент первого байта
+                if progress_data['first_byte_time'] is None and progress_data['downloaded_bytes'] > 0:
+                    progress_data['first_byte_time'] = time.time()
+
+                # Логируем прогресс раз в 60 секунд (для отладки)
+                now = time.time()
+                if now - last_log_time[0] >= 60:
+                    downloaded_mb = progress_data['downloaded_bytes'] / (1024 * 1024)
+                    total_mb = progress_data['total_bytes'] / (1024 * 1024) if progress_data['total_bytes'] else 0
+                    speed_kbps = (progress_data['speed'] or 0) / 1024
+                    logger.info(f"[PROGRESS] {downloaded_mb:.1f}MB / {total_mb:.1f}MB, speed={speed_kbps:.1f}KB/s")
+                    last_log_time[0] = now
+
+            elif d['status'] == 'finished':
+                # Phase 7.0 Telemetry: фиксируем момент завершения скачивания
+                progress_data['download_end_time'] = time.time()
+
+        # === ЗАМЕРЯЕМ ВРЕМЯ СКАЧИВАНИЯ ===
+        download_start = time.time()
+
+        # Прогресс для долгих загрузок
+        done_event = asyncio.Event()
+        progress_task = asyncio.create_task(update_progress_message(status_msg, done_event, progress_data, download_start))
+
         logger.info(f"[HANDLER_START] user={user_id}, platform={platform}, url={url[:100]}")
 
         # === ВЫБИРАЕМ ЗАГРУЗЧИК ===
@@ -1277,8 +1280,10 @@ async def handle_url(message: types.Message):
             pass
     finally:
         # Останавливаем фоновую задачу обновления прогресса
-        done_event.set()
-        progress_task.cancel()
+        if done_event:
+            done_event.set()
+        if progress_task:
+            progress_task.cancel()
 
         # === CLEANUP: Всегда чистим файлы (даже при ошибках) ===
         try:

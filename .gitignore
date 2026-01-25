@@ -45,3 +45,6 @@ htmlcov/
 
 # Claude Code (contains credentials)
 CLAUDE.md
+
+# GPT context files (may contain sensitive data)
+for_gpt/

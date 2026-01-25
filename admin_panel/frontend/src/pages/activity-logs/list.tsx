@@ -14,6 +14,7 @@ interface Log {
   details: Record<string, unknown> | null;
   created_at: string;
   username: string | null;
+  first_name: string | null;
   bot_name: string | null;
 }
 
@@ -145,9 +146,15 @@ export const LogList = () => {
         />
         <Table.Column
           dataIndex="username"
-          title="User"
-          width={150}
+          title="Username"
+          width={130}
           render={(value) => (value ? `@${value}` : '-')}
+        />
+        <Table.Column
+          dataIndex="first_name"
+          title="Имя"
+          width={120}
+          render={(value) => value || '-'}
         />
         <Table.Column
           dataIndex="details"

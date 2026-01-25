@@ -286,6 +286,7 @@ class LogResponse(BaseModel):
     created_at: datetime
     # Joined fields
     username: Optional[str] = None
+    first_name: Optional[str] = None
     bot_name: Optional[str] = None
 
     class Config:

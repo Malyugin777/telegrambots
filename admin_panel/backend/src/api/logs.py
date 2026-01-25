@@ -38,6 +38,7 @@ async def list_logs(
             ActionLog.details,
             ActionLog.created_at,
             User.username.label("username"),
+            User.first_name.label("first_name"),
             Bot.name.label("bot_name"),
         )
         .outerjoin(User, ActionLog.user_id == User.id)
@@ -87,6 +88,7 @@ async def list_logs(
             details=row.details,
             created_at=row.created_at,
             username=row.username,
+            first_name=row.first_name,
             bot_name=row.bot_name,
         )
         for row in rows

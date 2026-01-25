@@ -19,25 +19,16 @@ from ..auth import get_current_user
 
 
 class FlyerStatsResponse(BaseModel):
-    """Статистика FlyerService (Mom's Strategy)."""
+    """Статистика FlyerService."""
     # Сегодня
-    ads_shown_today: int  # Показано рекламы (10-е скачивание, юзер НЕ подписан)
-    silent_passes_today: int  # Тихие проходы (10-е скачивание, юзер подписан)
-    free_downloads_today: int  # Бесплатные скачивания (не 10-е или honey period)
-    total_downloads_today: int  # Всего скачиваний
+    downloads_today: int           # Все скачивания
+    ad_offers_today: int           # Уникальные юзеры которым показали рекламу
+    subscribed_today: int          # Подписались (flyer_sub_completed)
 
     # За всё время
-    ads_shown_total: int
-    silent_passes_total: int
-    free_downloads_total: int
-    total_downloads: int
-
-    # Процент монетизации
-    monetization_rate_today: float  # % скачиваний с проверкой (ads + silent)
-    ad_conversion_today: float  # % показов рекламы от проверок
-
-    # Топ халявщиков - подписались и качают без рекламы (user_id, silent_pass_count)
-    top_free_downloaders: List[dict]
+    downloads_total: int
+    ad_offers_total: int
+    subscribed_total: int
 
 router = APIRouter()
 
@@ -411,29 +402,14 @@ async def get_flyer_stats(
     _=Depends(get_current_user),
 ):
     """
-    Статистика FlyerService (Mom's Strategy).
-    Optimized: SQL counts + limited Python processing.
-
-    Логика:
-    - flyer_ad_shown action = 10-е скачивание, юзер НЕ подписан, показали рекламу
-    - download_success + flyer_required=True = 10-е скачивание, юзер подписан (silent pass)
-    - download_success + flyer_required=False = бесплатное скачивание (не 10-е или honey period)
+    Статистика FlyerService.
+    - downloads: все скачивания
+    - ad_offers: уникальные юзеры которым показали рекламу
+    - subscribed: кто подписался через FlyerService
     """
     today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
 
-    # === 1. SQL: Считаем показы рекламы (flyer_ad_shown) ===
-    result = await db.execute(
-        select(
-            func.count(ActionLog.id).filter(ActionLog.created_at >= today_start).label("today"),
-            func.count(ActionLog.id).label("total")
-        )
-        .where(ActionLog.action == "flyer_ad_shown")
-    )
-    row = result.first()
-    ads_shown_today = row.today or 0
-    ads_shown_total = row.total or 0
-
-    # === 2. SQL: Общее количество скачиваний ===
+    # === 1. Скачивания (всего) ===
     result = await db.execute(
         select(
             func.count(ActionLog.id).filter(ActionLog.created_at >= today_start).label("today"),
@@ -442,99 +418,38 @@ async def get_flyer_stats(
         .where(ActionLog.action == "download_success")
     )
     row = result.first()
-    total_downloads_today = row.today or 0
-    total_downloads = row.total or 0
+    downloads_today = row.today or 0
+    downloads_total = row.total or 0
 
-    # === 3. Python: Анализируем только СЕГОДНЯШНИЕ скачивания для details ===
+    # === 2. Предложения рекламы (УНИКАЛЬНЫЕ юзеры) ===
     result = await db.execute(
-        select(ActionLog.details, ActionLog.user_id)
-        .where(
-            ActionLog.action == "download_success",
-            ActionLog.created_at >= today_start
+        select(
+            func.count(func.distinct(ActionLog.user_id)).filter(ActionLog.created_at >= today_start).label("today"),
+            func.count(func.distinct(ActionLog.user_id)).label("total")
         )
+        .where(ActionLog.action == "flyer_ad_shown")
     )
+    row = result.first()
+    ad_offers_today = row.today or 0
+    ad_offers_total = row.total or 0
 
-    silent_passes_today = 0
-    free_downloads_today = 0
-
-    for row in result:
-        details = row.details
-        if not details or not isinstance(details, dict):
-            free_downloads_today += 1
-            continue
-
-        if details.get('flyer_required', False):
-            silent_passes_today += 1
-        else:
-            free_downloads_today += 1
-
-    # === 4. SQL: Топ халявщиков за последние 30 дней ===
-    # (Ограничиваем период чтобы не грузить всю историю)
-    last_30_days = datetime.utcnow() - timedelta(days=30)
+    # === 3. Подписки (flyer_sub_completed) ===
     result = await db.execute(
-        select(ActionLog.details, ActionLog.user_id)
-        .where(
-            ActionLog.action == "download_success",
-            ActionLog.created_at >= last_30_days
+        select(
+            func.count(ActionLog.id).filter(ActionLog.created_at >= today_start).label("today"),
+            func.count(ActionLog.id).label("total")
         )
+        .where(ActionLog.action == "flyer_sub_completed")
     )
-
-    user_silent_counts: dict[int, int] = {}
-    silent_passes_total = 0
-    free_downloads_total = 0
-
-    for row in result:
-        details = row.details
-        user_id = row.user_id
-
-        if not details or not isinstance(details, dict):
-            free_downloads_total += 1
-            continue
-
-        if details.get('flyer_required', False):
-            silent_passes_total += 1
-            if user_id:
-                user_silent_counts[user_id] = user_silent_counts.get(user_id, 0) + 1
-        else:
-            free_downloads_total += 1
-
-    # === 5. Рассчитываем проценты ===
-    checks_today = ads_shown_today + silent_passes_today
-    monetization_rate_today = (checks_today / total_downloads_today * 100) if total_downloads_today > 0 else 0
-    ad_conversion_today = (ads_shown_today / checks_today * 100) if checks_today > 0 else 0
-
-    # === 6. Топ 10 халявщиков ===
-    top_users = sorted(user_silent_counts.items(), key=lambda x: -x[1])[:10]
-
-    top_free_downloaders = []
-    if top_users:
-        user_ids = [u[0] for u in top_users]
-        users_result = await db.execute(
-            select(User.id, User.telegram_id, User.username, User.first_name)
-            .where(User.id.in_(user_ids))
-        )
-        users_map = {row.id: row for row in users_result}
-
-        for user_id, count in top_users:
-            user = users_map.get(user_id)
-            top_free_downloaders.append({
-                "user_id": user_id,
-                "telegram_id": user.telegram_id if user else None,
-                "username": user.username if user else None,
-                "name": user.first_name if user else None,
-                "free_count": count,
-            })
+    row = result.first()
+    subscribed_today = row.today or 0
+    subscribed_total = row.total or 0
 
     return FlyerStatsResponse(
-        ads_shown_today=ads_shown_today,
-        silent_passes_today=silent_passes_today,
-        free_downloads_today=free_downloads_today,
-        total_downloads_today=total_downloads_today,
-        ads_shown_total=ads_shown_total,
-        silent_passes_total=silent_passes_total,
-        free_downloads_total=free_downloads_total,
-        total_downloads=total_downloads,
-        monetization_rate_today=round(monetization_rate_today, 1),
-        ad_conversion_today=round(ad_conversion_today, 1),
-        top_free_downloaders=top_free_downloaders,
+        downloads_today=downloads_today,
+        ad_offers_today=ad_offers_today,
+        subscribed_today=subscribed_today,
+        downloads_total=downloads_total,
+        ad_offers_total=ad_offers_total,
+        subscribed_total=subscribed_total,
     )

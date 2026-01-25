@@ -1,1 +1,0 @@
-export { BotMessageList } from './list';

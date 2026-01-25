@@ -27,6 +27,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - hostkey_network
 
   broadcast_worker:
     build:
@@ -51,6 +53,8 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+    networks:
+      - hostkey_network
 
   telegram_bot_api:
     image: aiogram/telegram-bot-api:latest
@@ -64,6 +68,12 @@ services:
       - telegram_bot_api_data:/var/lib/telegram-bot-api
     ports:
       - "8081:8081"
+    networks:
+      - hostkey_network
 
 volumes:
   telegram_bot_api_data:
+
+networks:
+  hostkey_network:
+    driver: bridge

@@ -47,16 +47,9 @@ class BroadcastStatus(str, enum.Enum):
 async def process_broadcast(bot: Bot, broadcast_id: int):
     """Обработать одну рассылку."""
     async with async_session() as session:
-        # Получаем данные рассылки напрямую из БД
-        result = await session.execute(
-            select("*").select_from(
-                session.get_bind().dialect.identifier_preparer.format_table(
-                    session.get_bind().dialect.identifier_preparer.quote("broadcasts")
-                )
-            )
-        )
-        # Упрощённый запрос
         from sqlalchemy import text
+
+        # Получаем данные рассылки напрямую из БД
         result = await session.execute(
             text("SELECT * FROM broadcasts WHERE id = :id"),
             {"id": broadcast_id}

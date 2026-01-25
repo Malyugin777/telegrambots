@@ -81,6 +81,7 @@ class UserTrackingMiddleware(BaseMiddleware):
                     first_name=tg_user.first_name,
                     last_name=tg_user.last_name,
                     language_code=tg_user.language_code or "ru",
+                    last_active_at=datetime.utcnow(),
                 )
                 session.add(db_user)
                 await session.commit()

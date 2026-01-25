@@ -215,7 +215,7 @@ async def main():
                             await process_broadcast(bot, broadcast_id)
 
             except Exception as e:
-                logger.error(f"Error in broadcast loop: {e}")
+                logger.exception(f"Error in broadcast loop: {e}")
 
             await asyncio.sleep(CHECK_INTERVAL)
 

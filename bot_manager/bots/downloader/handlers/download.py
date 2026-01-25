@@ -22,6 +22,7 @@ from ..services.pytubefix_downloader import PytubeDownloader
 from ..services.instaloader_downloader import InstaloaderDownloader
 from ..services.savenow_downloader import SaveNowDownloader
 from ..services.routing import get_routing_chain, get_source_key
+from ..services.provider_health import check_provider
 from ..services.cache import (
     get_cached_file_ids,
     cache_file_ids,
@@ -840,18 +841,44 @@ async def handle_url(message: types.Message):
             errors = {}  # provider -> error message
 
             for provider_name in providers:
+                # Быстрый пинг провайдера (5 сек по умолчанию)
+                connect_timeout = routing_chain.get_connect_timeout(provider_name)
+                logger.info(f"[YOUTUBE] Ping {provider_name} (timeout={connect_timeout}s)...")
+                is_ok, ping_error = await check_provider(provider_name, url, connect_timeout)
+
+                if not is_ok:
+                    logger.warning(f"[FALLBACK] {provider_name} ping failed: {ping_error}")
+                    errors[provider_name] = f"ping: {ping_error}"
+                    await error_logger.log_fallback(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        provider=provider_name,
+                        reason=ping_error,
+                        url=url
+                    )
+                    continue  # Сразу к следующему провайдеру
+
                 if provider_name == "ytdlp":
-                    logger.info(f"[YOUTUBE] Trying yt-dlp: {url}")
+                    logger.info(f"[YOUTUBE] Downloading via yt-dlp: {url}")
                     ytdlp_result = await downloader.download(url, progress_callback=progress_callback)
                     if ytdlp_result.success:
                         result = ytdlp_result
                         api_source = "ytdlp"
                         break
                     errors["ytdlp"] = ytdlp_result.error
-                    logger.warning(f"[YOUTUBE] yt-dlp failed: {ytdlp_result.error}")
+                    logger.warning(f"[FALLBACK] ytdlp download failed: {ytdlp_result.error}")
+                    await error_logger.log_fallback(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        provider="ytdlp",
+                        reason=ytdlp_result.error or "unknown",
+                        url=url
+                    )
 
                 elif provider_name == "pytubefix":
-                    logger.info(f"[YOUTUBE] Trying pytubefix: {url}")
+                    logger.info(f"[YOUTUBE] Downloading via pytubefix: {url}")
                     pytube_result = await pytubefix.download(url, quality="720p")
                     if pytube_result.success:
                         api_source = "pytubefix"
@@ -872,10 +899,18 @@ async def handle_url(message: types.Message):
                         )
                         break
                     errors["pytubefix"] = pytube_result.error
-                    logger.warning(f"[YOUTUBE] pytubefix failed: {pytube_result.error}")
+                    logger.warning(f"[FALLBACK] pytubefix download failed: {pytube_result.error}")
+                    await error_logger.log_fallback(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        provider="pytubefix",
+                        reason=pytube_result.error or "unknown",
+                        url=url
+                    )
 
                 elif provider_name == "savenow":
-                    logger.info(f"[YOUTUBE] Trying SaveNow API: {url}")
+                    logger.info(f"[YOUTUBE] Downloading via SaveNow API: {url}")
                     await status_msg.edit_text("⏳ Пробую альтернативный способ...")
 
                     file_result = await savenow.download_adaptive(url, duration_hint=duration_hint)
@@ -908,7 +943,15 @@ async def handle_url(message: types.Message):
                         )
                         break
                     errors["savenow"] = file_result.error
-                    logger.warning(f"[YOUTUBE] SaveNow failed: {file_result.error}")
+                    logger.warning(f"[FALLBACK] savenow download failed: {file_result.error}")
+                    await error_logger.log_fallback(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        provider="savenow",
+                        reason=file_result.error or "unknown",
+                        url=url
+                    )
 
             # Если все провайдеры упали
             if result is None or not result.success:
@@ -946,8 +989,26 @@ async def handle_url(message: types.Message):
             errors = {}
 
             for provider_name in providers:
+                # Быстрый пинг провайдера
+                connect_timeout = routing_chain.get_connect_timeout(provider_name)
+                logger.info(f"[{platform.upper()}] Ping {provider_name} (timeout={connect_timeout}s)...")
+                is_ok, ping_error = await check_provider(provider_name, url, connect_timeout)
+
+                if not is_ok:
+                    logger.warning(f"[FALLBACK] {provider_name} ping failed: {ping_error}")
+                    errors[provider_name] = f"ping: {ping_error}"
+                    await error_logger.log_fallback(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        provider=provider_name,
+                        reason=ping_error,
+                        url=url
+                    )
+                    continue  # Сразу к следующему провайдеру
+
                 if provider_name == "ytdlp":
-                    logger.info(f"[{platform.upper()}] Trying yt-dlp: {url}")
+                    logger.info(f"[{platform.upper()}] Downloading via yt-dlp: {url}")
                     ytdlp_result = await downloader.download(url, progress_callback=progress_callback)
                     if ytdlp_result.success:
                         result = ytdlp_result
@@ -986,7 +1047,15 @@ async def handle_url(message: types.Message):
                         logger.warning(f"[{platform.upper()}] yt-dlp attempt=2 failed: {ytdlp_result.error[:100]}")
 
                     errors["ytdlp"] = ytdlp_result.error
-                    logger.warning(f"[{platform.upper()}] yt-dlp failed: {ytdlp_result.error}")
+                    logger.warning(f"[FALLBACK] ytdlp download failed: {ytdlp_result.error}")
+                    await error_logger.log_fallback(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        provider="ytdlp",
+                        reason=ytdlp_result.error or "unknown",
+                        url=url
+                    )
 
                 elif provider_name == "rapidapi":
                     logger.info(f"[{platform.upper()}] Trying RapidAPI: {url}")
@@ -1018,7 +1087,15 @@ async def handle_url(message: types.Message):
                         )
                         break
                     errors["rapidapi"] = file_result.error
-                    logger.warning(f"[{platform.upper()}] RapidAPI failed: {file_result.error}")
+                    logger.warning(f"[FALLBACK] rapidapi download failed: {file_result.error}")
+                    await error_logger.log_fallback(
+                        telegram_id=user_id,
+                        bot_username="SaveNinja_bot",
+                        platform=platform,
+                        provider="rapidapi",
+                        reason=file_result.error or "unknown",
+                        url=url
+                    )
 
             # Если все провайдеры упали
             if result is None or not result.success:

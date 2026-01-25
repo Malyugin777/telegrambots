@@ -32,7 +32,8 @@ class ProviderConfig:
     """Конфиг одного провайдера в chain"""
     name: str
     enabled: bool = True
-    timeout_sec: int = 60
+    timeout_sec: int = 60     # Download timeout
+    connect_sec: int = 5      # Connection/ping timeout (быстрая проверка)
 
 
 @dataclass
@@ -48,11 +49,18 @@ class RoutingChain:
         return [p.name for p in self.providers if p.enabled]
 
     def get_timeout(self, provider_name: str) -> int:
-        """Получить timeout для провайдера"""
+        """Получить download timeout для провайдера"""
         for p in self.providers:
             if p.name == provider_name:
                 return p.timeout_sec
         return 60  # default
+
+    def get_connect_timeout(self, provider_name: str) -> int:
+        """Получить connection/ping timeout для провайдера"""
+        for p in self.providers:
+            if p.name == provider_name:
+                return p.connect_sec
+        return 5  # default
 
 
 async def get_routing_chain(source: str) -> RoutingChain:
@@ -95,7 +103,8 @@ async def get_routing_chain(source: str) -> RoutingChain:
                     providers.append(ProviderConfig(
                         name=p["name"],
                         enabled=p.get("enabled", True),
-                        timeout_sec=p.get("timeout_sec", 60)
+                        timeout_sec=p.get("timeout_sec", 60),
+                        connect_sec=p.get("connect_sec", 5)
                     ))
                 else:
                     providers.append(ProviderConfig(name=p))

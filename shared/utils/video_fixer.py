@@ -225,6 +225,56 @@ def download_thumbnail(thumbnail_url: str) -> Optional[str]:
         return None
 
 
+def generate_thumbnail_from_video(video_path: str, timestamp: float = 1.0) -> Optional[str]:
+    """
+    Генерирует thumbnail из кадра видео.
+
+    Используется для вертикальных видео (Shorts, TikTok, Reels),
+    где YouTube/платформа даёт горизонтальный thumbnail.
+
+    Args:
+        video_path: Путь к видео файлу
+        timestamp: Время в секундах для извлечения кадра (default: 1.0)
+
+    Returns:
+        Путь к thumbnail файлу или None при ошибке
+    """
+    if not video_path or not os.path.exists(video_path):
+        return None
+
+    try:
+        os.makedirs(DOWNLOAD_DIR, exist_ok=True)
+
+        unique_id = uuid.uuid4().hex[:12]
+        output_path = os.path.join(DOWNLOAD_DIR, f"thumb_{unique_id}.jpg")
+
+        # Извлекаем кадр и ресайзим до 320px по длинной стороне
+        cmd = [
+            'ffmpeg', '-y', '-hide_banner', '-loglevel', 'error',
+            '-ss', str(timestamp),  # Seek до timestamp
+            '-i', video_path,
+            '-vframes', '1',  # Только 1 кадр
+            '-vf', "scale='min(320,iw)':'min(320,ih)':force_original_aspect_ratio=decrease",
+            '-q:v', '5',  # JPEG качество
+            output_path
+        ]
+
+        result = subprocess.run(cmd, capture_output=True, timeout=10)
+
+        if result.returncode == 0 and os.path.exists(output_path):
+            thumb_size = os.path.getsize(output_path)
+            logger.info(f"[THUMBNAIL] Generated from video: {output_path}, size={thumb_size}")
+            return output_path
+        else:
+            stderr = result.stderr.decode() if result.stderr else 'unknown'
+            logger.warning(f"[THUMBNAIL] Generate from video failed: {stderr[:100]}")
+            return None
+
+    except Exception as e:
+        logger.warning(f"[THUMBNAIL] Generate from video ERROR: {e}")
+        return None
+
+
 def fix_video(video_path: str) -> Optional[str]:
     """
     Исправляет SAR/DAR для ВСЕХ видео (TikTok, Pinterest, YouTube, Instagram).

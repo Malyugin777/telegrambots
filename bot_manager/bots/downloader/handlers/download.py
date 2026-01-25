@@ -46,7 +46,7 @@ from ..messages import (
 )
 from bot_manager.middlewares import log_action
 from bot_manager.services.error_logger import error_logger
-from shared.utils.video_fixer import get_video_dimensions, get_video_duration, download_thumbnail, ensure_faststart
+from shared.utils.video_fixer import get_video_dimensions, get_video_duration, download_thumbnail, ensure_faststart, generate_thumbnail_from_video
 from shared.database import AsyncSessionLocal
 from ..services.flyer_checker import check_and_allow
 
@@ -1119,7 +1119,14 @@ async def handle_url(message: types.Message):
 
             # Скачиваем/используем thumbnail (превью)
             # Это даёт preview "как у конкурентов" вместо чёрного прямоугольника
-            if result.info and result.info.thumbnail:
+            is_vertical = height > width if (height and width) else False
+
+            if is_vertical:
+                # Вертикальное видео (Shorts, Reels, TikTok) - генерируем thumbnail из видео
+                # YouTube/платформы дают горизонтальные thumbnails которые выглядят растянуто
+                thumb_path = generate_thumbnail_from_video(result.file_path, timestamp=1.0)
+                logger.info(f"[THUMBNAIL] Generated from vertical video: {width}x{height}")
+            elif result.info and result.info.thumbnail:
                 thumbnail_value = result.info.thumbnail
                 if thumbnail_value.startswith('http'):
                     # URL — скачиваем и ужимаем
